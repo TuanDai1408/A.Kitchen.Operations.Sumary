@@ -3433,7 +3433,7 @@ var QLK = (function(){
         '<select id="qlkCatSel" multiple size="1" style="min-width:200px;max-width:260px;height:36px">'+catOpts+'</select></div>'+
       '<div class="fld"><label>Loại vật tư</label>'+
         '<select id="qlkType" style="min-width:180px"><option value="">Tất cả</option>'+
-        (QLK_DATA.types||[]).map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('')+
+        (D.types||[]).map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('')+
         '</select></div>'+
       '<button class="btn btn-out" id="qlkRefresh">⟳ Tải lại</button>'+
     '</div>'+
