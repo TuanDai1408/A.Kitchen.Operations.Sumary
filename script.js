@@ -1,4 +1,4 @@
-﻿/* =========================================================================
+/* =========================================================================
    API CONFIGURATION
    Thay thế URL và TOKEN bằng giá trị thật từ Apps Script Web App
    ========================================================================= */
@@ -3406,7 +3406,7 @@ var QLK = (function(){
   function onData(res){ loading=false;
     try {
       if(!res||!res.success){ showError((res&&res.error)||'Không đọc được dữ liệu kho.'); return; }
-      D=res; f.from=res.meta.period_from||''; f.to=res.meta.period_to||''; f.slocs=[]; f.cats=[];f.type=''; f.q='';
+      D=res; f.from=res.meta.period_from||''; f.to=res.meta.period_to||''; f.slocs=[]; f.cats=[]; f.type=''; f.q='';
       built=false; buildSkeleton(); update();
     } catch(err){ showError('Lỗi hiển thị: '+((err&&err.message)?err.message:err)); }
   }
@@ -3491,10 +3491,9 @@ var QLK = (function(){
       var b=e.target.closest('button'); if(!b) return; toggleSloc(b.dataset.sloc); });
     document.getElementById('qlkSlocInfo').addEventListener('click', function(e){
       var c=e.target.closest('[data-sloc]'); if(!c) return; toggleSloc(c.dataset.sloc); });
-    document.getElementById('qlkView').addEventListener('click', function(e){
+    var qlkTypeEl = document.getElementById('qlkType');
+    if (qlkTypeEl) qlkTypeEl.addEventListener('change', function(){
       f.type = this.value; update(); });
-      // var b=e.target.closest('button'); if(!b) return; view=b.dataset.v;
-      // this.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); }); update(); });
     document.getElementById('qlkRefresh').addEventListener('click', function(){ refreshAllTabs(true); });
     document.getElementById('qlkMoreToggle').addEventListener('click', function(){
       moreOpen=!moreOpen;
@@ -3519,7 +3518,7 @@ var QLK = (function(){
   function slocName(s){ return (D.sloc_meta && D.sloc_meta[s] && D.sloc_meta[s].name) || ''; }
 
   function filtered(){
-    // 1) Lọc transactions theo đủ chiều: ngày / site / kho con / nhóm hàng
+    // 1) Lọc transactions theo đủ chiều: ngày / site / kho con / nhóm hàng / loại vật tư
     var tx=D.transactions.filter(function(t){
       if(f.from && t.date && t.date<f.from) return false;
       if(f.to && t.date && t.date>f.to) return false;
