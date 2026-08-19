@@ -3406,7 +3406,7 @@ var QLK = (function(){
   function onData(res){ loading=false;
     try {
       if(!res||!res.success){ showError((res&&res.error)||'Không đọc được dữ liệu kho.'); return; }
-      D=res; f.from=res.meta.period_from||''; f.to=res.meta.period_to||''; f.slocs=[]; f.cats=[]; f.q='';
+      D=res; f.from=res.meta.period_from||''; f.to=res.meta.period_to||''; f.slocs=[]; f.cats=[];f.type=''; f.q='';
       built=false; buildSkeleton(); update();
     } catch(err){ showError('Lỗi hiển thị: '+((err&&err.message)?err.message:err)); }
   }
@@ -3431,9 +3431,10 @@ var QLK = (function(){
         '<div class="qlk-chips" id="qlkSlocWrap">'+slocChips+'</div></div>'+
       '<div class="fld"><label>Nhóm hàng (giữ Ctrl chọn nhiều)</label>'+
         '<select id="qlkCatSel" multiple size="1" style="min-width:200px;max-width:260px;height:36px">'+catOpts+'</select></div>'+
-      '<div class="fld"><label>Hiển thị theo</label>'+
-        '<div class="tg" id="qlkView" style="display:inline-flex;background:#F1F1F1;border-radius:8px;padding:3px">'+
-          '<button data-v="value" class="on">Giá trị (₫)</button><button data-v="qty">Số lượng</button></div></div>'+
+      '<div class="fld"><label>Loại vật tư</label>'+
+        '<select id="qlkType" style="min-width:180px"><option value="">Tất cả</option>'+
+        (QLK_DATA.types||[]).map(function(t){return '<option value="'+esc(t)+'">'+esc(t)+'</option>';}).join('')+
+        '</select></div>'+
       '<button class="btn btn-out" id="qlkRefresh">⟳ Tải lại</button>'+
     '</div>'+
     '<div class="qlk-note qlk-mb">Kho <b>'+esc(m.site)+' — '+esc(m.site_name||'')+'</b> • Kỳ '+
@@ -3491,8 +3492,9 @@ var QLK = (function(){
     document.getElementById('qlkSlocInfo').addEventListener('click', function(e){
       var c=e.target.closest('[data-sloc]'); if(!c) return; toggleSloc(c.dataset.sloc); });
     document.getElementById('qlkView').addEventListener('click', function(e){
-      var b=e.target.closest('button'); if(!b) return; view=b.dataset.v;
-      this.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); }); update(); });
+      f.type = this.value; update(); });
+      // var b=e.target.closest('button'); if(!b) return; view=b.dataset.v;
+      // this.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); }); update(); });
     document.getElementById('qlkRefresh').addEventListener('click', function(){ refreshAllTabs(true); });
     document.getElementById('qlkMoreToggle').addEventListener('click', function(){
       moreOpen=!moreOpen;
@@ -3524,11 +3526,12 @@ var QLK = (function(){
       if(f.site && (t.site_name||'')!==f.site) return false;
       if(f.slocs.length && f.slocs.indexOf(t.sloc)<0) return false;
       if(f.cats.length && f.cats.indexOf(t.category)<0) return false;
+      if(f.type && (t.type||'')!==f.type) return false;
       return true; });
     // 2) Nếu có lọc theo Kho con/Ngày (chiều chỉ có ở transactions) -> chỉ giữ những mã
     //    thực sự có giao dịch khớp bộ lọc, để Top NVL / tồn kho / cảnh báo cũng ăn theo SLoc.
     var artSet=null;
-    if(f.slocs.length){ artSet={}; tx.forEach(function(t){ artSet[t.article]=1; }); }
+    if(f.slocs.length || f.type){ artSet={}; tx.forEach(function(t){ artSet[t.article]=1; }); }
     var it=D.items.filter(function(x){
       if(f.site && (x.site_name||'')!==f.site) return false;
       if(f.cats.length && f.cats.indexOf(x.category)<0) return false;
