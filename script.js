@@ -2,7 +2,8 @@
    API CONFIGURATION
    Thay thế URL và TOKEN bằng giá trị thật từ Apps Script Web App
    ========================================================================= */
-const API_URL = 'https://script.google.com/macros/s/AKfycbx6v9BuTauEhRuA3HGWtZhbfxdC3zX3kCSHyU1ACaTO-Lf7es8LR1zPiqHj7a_-1OGg2g/exec';
+// const API_URL = 'https://script.google.com/macros/s/AKfycbx6v9BuTauEhRuA3HGWtZhbfxdC3zX3kCSHyU1ACaTO-Lf7es8LR1zPiqHj7a_-1OGg2g/exec';
+const API_URL = 'https://script.google.com/macros/s/AKfycbyzOmnfiG6Tt0AoEkJo5qq3Hg7UYrpVeEZnt5m7kE4aKiWdFE1yHOXN-eRWelnxjEtsUw/exec';
 const API_TOKEN = 'TRANTUANDAISIBAFOOD';
 
 // Professional donut chart palette - high contrast, accessible
