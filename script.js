@@ -2401,6 +2401,10 @@ var METRICS_KH = [
     get:function(o){ return { actual:o.LaiGop.actual, plan:o.LaiGop.plan }; } },
   { key:'Huy', label:'Tỷ lệ suất hủy %', icon:IC.trash, color:'#C0342C', higherBetter:false, fmt:fmtPct,
     get:function(o){ return { actual:o.Huy.actual, plan:o.Huy.plan }; } },
+  // ===== THÊM MỚI (ngay trên EBITDA) =====
+  { key:'VatTuTieuHao', label:'Số lượng vật tư tiêu hao', icon:IC.stack, color:'#7C3AED', higherBetter:false, fmt:fmt,
+    get:function(o){ return { actual:o.VatTuTieuHao.actual, plan:o.VatTuTieuHao.plan }; } },
+  // ======================================
   { key:'EBITDA', label:'EBITDA', icon:IC.wallet, color:'#1D4ED8', higherBetter:true, fmt:fmtMoney,
     get:function(o){ return { actual:o.EBITDA.hasActual ? o.EBITDA.actual : null, plan:o.EBITDA.plan }; } }
 ];
@@ -2423,6 +2427,7 @@ function kh_periodAgg(per, sites){
             FoodCost:{actualVal:0,planVal:0,actualPct:0,planPct:0},
             LaiGop:{actual:0,plan:0},
             Huy:{actualHuy:0,actualTong:0,actual:0,plan:KH.nguong.huyPct},
+            VatTuTieuHao:{actual:0, plan:0},   // ← THÊM DÒNG NÀY
             EBITDA:{actual:0,plan:0,hasActual:false} };
   sites.forEach(function(s){
     var a = per.bySite[s]; if (!a) return;
@@ -2431,6 +2436,9 @@ function kh_periodAgg(per, sites){
     o.FoodCost.actualVal += a.FoodCost.actualVal; o.FoodCost.planVal += a.FoodCost.planVal;
     o.LaiGop.actual += a.LaiGop.actual; o.LaiGop.plan += a.LaiGop.plan;
     o.Huy.actualHuy += a.HuyPct.actualHuy; o.Huy.actualTong += a.HuyPct.actualTong;
+    // ← THÊM 2 DÒNG NÀY
+    o.VatTuTieuHao.actual += a.VatTuTieuHao ? a.VatTuTieuHao.actual : 0;
+    o.VatTuTieuHao.plan   += a.VatTuTieuHao ? a.VatTuTieuHao.plan   : 0;
     if (a.EBITDA.hasActual){ o.EBITDA.actual += a.EBITDA.actual; o.EBITDA.hasActual = true; }
     o.EBITDA.plan += a.EBITDA.plan;
   });
@@ -2447,6 +2455,7 @@ function kh_aggAll(sites, periods){
             FoodCost:{actualVal:0,planVal:0,actualPct:0,planPct:0},
             LaiGop:{actual:0,plan:0},
             Huy:{actualHuy:0,actualTong:0,actual:0,plan:KH.nguong.huyPct},
+            VatTuTieuHao:{actual:0, plan:0},   // ← THÊM DÒNG NÀY
             EBITDA:{actual:0,plan:0,hasActual:false} };
   periods.forEach(function(per){
     var p = kh_periodAgg(per, sites);
@@ -2455,6 +2464,9 @@ function kh_aggAll(sites, periods){
     o.FoodCost.actualVal+=p.FoodCost.actualVal; o.FoodCost.planVal+=p.FoodCost.planVal;
     o.LaiGop.actual+=p.LaiGop.actual; o.LaiGop.plan+=p.LaiGop.plan;
     o.Huy.actualHuy+=p.Huy.actualHuy; o.Huy.actualTong+=p.Huy.actualTong;
+    // ← THÊM 2 DÒNG NÀY
+    o.VatTuTieuHao.actual += p.VatTuTieuHao ? p.VatTuTieuHao.actual : 0;
+    o.VatTuTieuHao.plan   += p.VatTuTieuHao ? p.VatTuTieuHao.plan   : 0;
     if (p.EBITDA.hasActual){ o.EBITDA.actual+=p.EBITDA.actual; o.EBITDA.hasActual=true; }
     o.EBITDA.plan+=p.EBITDA.plan;
   });
@@ -2794,7 +2806,7 @@ function drawKhAch(){
 /* ---------- BẢNG CHI TIẾT ---------- */
 /* ---------- BẢNG CHI TIẾT (thu gọn theo nhóm chỉ tiêu, bấm để mở) ---------- */
 // Đơn vị hiển thị cho từng chỉ tiêu - dùng cả khi render bảng lẫn khi xuất Excel
-var KH_DONVI = { DoanhThu:'đ', SanLuong:'suất', FoodCost:'%', LaiGop:'đ', Huy:'%', EBITDA:'đ' };
+var KH_DONVI = { DoanhThu:'đ', SanLuong:'suất', FoodCost:'%', LaiGop:'đ', Huy:'%',VatTuTieuHao:'đv', EBITDA:'đ' };
 
 // Tính 1 dòng chi tiết {actual, plan, diff, ach} cho 1 chỉ tiêu + 1 kỳ - dùng chung
 // cho cả việc render bảng và xuất Excel để đảm bảo số liệu luôn khớp nhau.
