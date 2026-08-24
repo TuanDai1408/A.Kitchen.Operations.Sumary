@@ -64,6 +64,9 @@
     .g2{grid-template-columns:repeat(2,1fr);}
     .g5{grid-template-columns:repeat(5,1fr);}
     .g3{grid-template-columns:repeat(3,1fr);}
+    .g7{grid-template-columns:repeat(7,1fr);}
+    @media(max-width:1400px){.g7{grid-template-columns:repeat(4,1fr);}}
+    @media(max-width:900px){.g7{grid-template-columns:repeat(2,1fr);}}
     @media(max-width:1100px){.g3{grid-template-columns:repeat(2,1fr);}}
     @media(max-width:1300px){.g5{grid-template-columns:repeat(3,1fr);}}
     @media(max-width:700px){.g5{grid-template-columns:repeat(2,1fr);}}
