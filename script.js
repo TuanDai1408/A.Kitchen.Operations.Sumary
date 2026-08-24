@@ -66,6 +66,7 @@ var REV = null;                 // payload từ getRevenueFoodCostData()
 var REV_LOADING = false;
 var REV_INIT = false;           // đã nạp dropdown filter lần đầu chưa
 var RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
+var REV_RAW = null;   // payload từ getRevenueRawData (rows + dims + opex + huy)
 //var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month' };
 var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month', barDim:'khachHang' };
 // barDim: 'khachHang' (default) | 'site'
@@ -1292,55 +1293,206 @@ function fcCls(p, ng){
   if (p <= ng.foodCostMax) return 'fc-mid';
   return 'fc-hi';
 }
+function computeAndDrawRevenue() {
+  if (!REV_RAW || !REV_RAW.rows) return;
+
+  var f = RF;
+  var cur = rev_filterRows(REV_RAW.rows, f);
+  var pr = rev_prevRange(f.from, f.to);
+  var prev = pr
+    ? rev_filterRows(REV_RAW.rows, {
+        from: pr.from, to: pr.to, sites: f.sites,
+        kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
+      })
+    : [];
+
+  var aCur = rev_agg(); cur.forEach(function (r) { rev_push(aCur, r); });
+  var aPrev = rev_agg(); prev.forEach(function (r) { rev_push(aPrev, r); });
+  var kpi = rev_finalize(aCur);
+  var kpiPrev = rev_finalize(aPrev);
+
+  // OPEX (giống backend: khớp site + tháng trong khoảng)
+  var opexItems = REV_RAW.opexItems || [];
+  var opexAmt = 0, opexMatched = 0;
+  var months = {};
+  if (f.from && f.to) {
+    var d = new Date(f.from + 'T00:00:00'), end = new Date(f.to + 'T00:00:00');
+    while (d <= end) {
+      months[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')] = 1;
+      d.setMonth(d.getMonth() + 1); d.setDate(1);
+    }
+  }
+  var siteList = (f.sites && f.sites.length) ? f.sites : null;
+  opexItems.forEach(function (it) {
+    var per = String(it.period || 'ALL');
+    var siteOk = (it.site === 'ALL') || !siteList || siteList.indexOf(it.site) >= 0;
+    var periodOk = (per === 'ALL') || !f.from || months[per];
+    if (siteOk && periodOk) { opexAmt += it.amount; opexMatched++; }
+  });
+  kpi.opex = opexAmt;
+  kpi.hasOpex = opexMatched > 0 && opexAmt > 0;
+  kpi.ebitda = kpi.hasOpex ? (kpi.grossProfit - opexAmt) : null;
+  kpi.ebitdaPct = (kpi.hasOpex && kpi.netRevenue > 0)
+    ? ((kpi.grossProfit - opexAmt) / kpi.netRevenue) * 100 : null;
+
+  // Hủy từ Report (đã có sẵn trong REV_RAW.huyReport)
+  var huy = REV_RAW.huyReport || { total: { suatHuy: 0, tongSuat: 0, pct: 0 }, bySite: {} };
+  // Có thể lọc thêm bySite theo RF.sites nếu cần chính xác hơn
+  kpi.huyReportPct = huy.total.pct;
+  kpi.huySuatHuy = huy.total.suatHuy;
+  kpi.huyTongSuat = huy.total.tongSuat;
+  kpi.huyHasReport = huy.total.tongSuat > 0;
+  if (kpi.huyHasReport) kpi.huyQtyPct = huy.total.pct;
+
+  var dayset = {};
+  cur.forEach(function (r) { if (r.ngay) dayset[r.ngay] = 1; });
+  kpi.operatingDays = Object.keys(dayset).length;
+  kpi.netPerDay = kpi.operatingDays > 0 ? kpi.netRevenue / kpi.operatingDays : 0;
+
+  var bySite = rev_groupBy(cur, function (r) { return r.site; }, 'netRevenue');
+  // gắn huy theo site nếu cần (giống backend)
+  bySite.forEach(function (s) {
+    var h = (huy.bySite && huy.bySite[s.key]) || null;
+    if (h) { s.huyReportPct = h.pct; s.huyQtyPct = h.pct; }
+  });
+
+  var byNhom = rev_groupBy(cur, function (r) { return r.nhomSP; }, 'netRevenue');
+  var byKenh = rev_groupBy(cur, function (r) { return r.kenhBanHang; }, 'netRevenue');
+  var byNVKD = rev_groupBy(cur, function (r) { return r.nvKinhDoanh; }, 'netRevenue');
+  var byKH = rev_groupBy(cur, function (r) { return r.tenKH; }, 'netRevenue');
+  var byLyDo = rev_groupBy(
+    cur.filter(function (r) { return r.isReturn; }),
+    function (r) { return r.lyDoTraHang || '(Không ghi lý do)'; },
+    'returnValue'
+  );
+  var byDate = rev_groupBy(cur, function (r) { return r.ngay; });
+  byDate.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
+
+  // Gán vào REV đúng shape mà drawRevenue đang dùng
+  REV = {
+    ok: true,
+    dims: REV_RAW.dims,
+    kpi: kpi,
+    kpiPrev: kpiPrev,
+    byDate: byDate,
+    bySite: bySite,
+    byNhomSP: byNhom,
+    byKenh: byKenh,
+    byNVKD: byNVKD,
+    byKhachHang: byKH.slice(0, 50),
+    byLyDoTraHang: byLyDo,
+    opexItems: opexItems,
+    nguong: REV_RAW.nguong,
+    updatedAt: REV_RAW.updatedAt,
+    totalLines: REV_RAW.totalLines,
+    filteredLines: cur.length,
+    prevRange: pr
+    // periodCompare / siteDetail: bổ sung nếu chart/drill-down đang dùng
+  };
+
+  if (TAB === 'revenue') drawRevenue();
+}
 
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
-function loadRevenue(opts){
+function loadRevenue(opts) {
   opts = opts || {};
   if (REV_LOADING) return;
+  // Đã có raw và không force → chỉ vẽ lại theo filter hiện tại
+  if (REV_RAW && !opts.force) {
+    computeAndDrawRevenue();
+    return;
+  }
+
   REV_LOADING = true;
   var box = document.getElementById('tab-revenue');
   if (!opts.silent && box) {
-    box.innerHTML = '<div class="card"><div class="empty">Đang tải dữ liệu doanh thu từ Transactions...</div></div>';
+    box.innerHTML = '<div class="card"><div class="empty">Đang tải dữ liệu doanh thu...</div></div>';
   }
 
-  callAPI('getRevenueFoodCostData', {filters: JSON.stringify(RF)})
-    .then(function(res){
+  callAPI('getRevenueRawData')   // ← không gửi filters
+    .then(function (res) {
       REV_LOADING = false;
       if (res && res.updatedAt) {
         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
       }
-      if (!res || !res.ok){
-        if (box) box.innerHTML = '<div class="card"><div class="empty">'+
-          esc((res && res.message) || 'Không đọc được dữ liệu doanh thu')+'</div></div>';
+      if (!res || !res.ok) {
+        if (box) box.innerHTML = '<div class="card"><div class="empty">' +
+          esc((res && res.message) || 'Không đọc được dữ liệu doanh thu') + '</div></div>';
         return;
       }
-      if (res.empty){
-        if (box) box.innerHTML = '<div class="card"><div class="empty">'+esc(res.message)+'</div></div>';
+      if (res.empty) {
+        if (box) box.innerHTML = '<div class="card"><div class="empty">' + esc(res.message) + '</div></div>';
         return;
       }
-      try {
-        REV = res;
-        if (!REV_INIT){ buildRevFilters(); REV_INIT = true; }
-        if (TAB === 'revenue') drawRevenue();
-      } catch (e) {
-        console.error('Lỗi render tab doanh thu:', e);
-        if (box) box.innerHTML = '<div class="card"><div class="empty">'+
-          'Lỗi hiển thị dữ liệu doanh thu: '+esc(String(e && e.message ? e.message : e))+
-          '</div></div>';
+
+      REV_RAW = res;
+      if (!REV_INIT) {
+        // Gán dims vào object giả để buildRevFilters dùng như cũ
+        REV = { dims: res.dims, updatedAt: res.updatedAt };
+        buildRevFilters();
+        REV_INIT = true;
       }
+      computeAndDrawRevenue();
     })
-    .catch(function(err){
+    .catch(function (err) {
       REV_LOADING = false;
-      if (box) box.innerHTML = '<div class="card"><div class="empty">'+
-        'Lỗi tải dữ liệu từ server: '+esc(String(err && err.message ? err.message : err))+
-        '</div></div>';
+      if (box) box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
+        esc(String(err && err.message ? err.message : err)) + '</div></div>';
     });
 }
 
+// function loadRevenue(opts){
+//   opts = opts || {};
+//   if (REV_LOADING) return;
+//   REV_LOADING = true;
+//   var box = document.getElementById('tab-revenue');
+//   if (!opts.silent && box) {
+//     box.innerHTML = '<div class="card"><div class="empty">Đang tải dữ liệu doanh thu từ Transactions...</div></div>';
+//   }
+
+//   callAPI('getRevenueFoodCostData', {filters: JSON.stringify(RF)})
+//     .then(function(res){
+//       REV_LOADING = false;
+//       if (res && res.updatedAt) {
+//         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
+//         setLive(true, liveLabel(res.updatedAt));
+//       }
+//       if (!res || !res.ok){
+//         if (box) box.innerHTML = '<div class="card"><div class="empty">'+
+//           esc((res && res.message) || 'Không đọc được dữ liệu doanh thu')+'</div></div>';
+//         return;
+//       }
+//       if (res.empty){
+//         if (box) box.innerHTML = '<div class="card"><div class="empty">'+esc(res.message)+'</div></div>';
+//         return;
+//       }
+//       try {
+//         REV = res;
+//         if (!REV_INIT){ buildRevFilters(); REV_INIT = true; }
+//         if (TAB === 'revenue') drawRevenue();
+//       } catch (e) {
+//         console.error('Lỗi render tab doanh thu:', e);
+//         if (box) box.innerHTML = '<div class="card"><div class="empty">'+
+//           'Lỗi hiển thị dữ liệu doanh thu: '+esc(String(e && e.message ? e.message : e))+
+//           '</div></div>';
+//       }
+//     })
+//     .catch(function(err){
+//       REV_LOADING = false;
+//       if (box) box.innerHTML = '<div class="card"><div class="empty">'+
+//         'Lỗi tải dữ liệu từ server: '+esc(String(err && err.message ? err.message : err))+
+//         '</div></div>';
+//     });
+// }
+
+// function renderRevenue(){
+//   if (!REV){ loadRevenue(); return; }
+//   drawRevenue();
+// }
 function renderRevenue(){
-  if (!REV){ loadRevenue(); return; }
-  drawRevenue();
+  if (!REV_RAW){ loadRevenue(); return; }
+  computeAndDrawRevenue();
 }
 
 /* ---------- DỰNG DROPDOWN BỘ LỌC (chạy 1 lần sau khi có dims) ---------- */
@@ -1391,6 +1543,103 @@ function updateRevMsLabel(){
 }
 
 /* ---------- RENDER CHÍNH TAB DOANH THU ---------- */
+function rev_filterRows(rows, f) {
+  f = f || RF;
+  var from = f.from || '', to = f.to || '';
+  var sites = (f.sites && f.sites.length) ? f.sites : null;
+  return rows.filter(function (r) {
+    if (from && r.ngay < from) return false;
+    if (to && r.ngay > to) return false;
+    if (sites && sites.indexOf(r.site) < 0) return false;
+    if (f.kenh && r.kenhBanHang !== f.kenh) return false;
+    if (f.nhomSP && r.nhomSP !== f.nhomSP) return false;
+    if (f.nvkd && r.nvKinhDoanh !== f.nvkd) return false;
+    if (f.khachHang && r.tenKH !== f.khachHang) return false;
+    return true;
+  });
+}
+
+function rev_prevRange(from, to) {
+  if (!from || !to) return null;
+  var d1 = new Date(from + 'T00:00:00');
+  var d2 = new Date(to + 'T00:00:00');
+  var days = Math.round((d2 - d1) / 86400000) + 1;
+  var pTo = new Date(d1.getTime() - 86400000);
+  var pFrom = new Date(pTo.getTime() - (days - 1) * 86400000);
+  function fmt(d) {
+    return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
+  }
+  return { from: fmt(pFrom), to: fmt(pTo) };
+}
+
+// Port tối thiểu logic agg từ backend (giống revenue_agg_ / push_ / finalize_)
+function rev_agg() {
+  return {
+    grossRevenue: 0, discount: 0, returnValue: 0, returnQty: 0, salesQty: 0,
+    qtyPHA: 0, qtyKG: 0, qtyCHY: 0, netPHA: 0, netKG: 0, netCHY: 0,
+    foodCost: 0, invoices: {}, lines: 0
+  };
+}
+function rev_push(a, r) {
+  if (r.isReturn) {
+    a.returnValue += r.thanhTien;
+    a.returnQty += r.soLuong;
+  } else {
+    a.grossRevenue += r.thanhTien;
+    a.discount += (r.ckTruocThue || 0);
+    a.salesQty += r.soLuong;
+    a.foodCost += r.giaVon;
+    if (r.soHoaDon) a.invoices[r.soHoaDon] = 1;
+    var u = String(r.dvt || '').trim().toUpperCase();
+    var lineNet = r.thanhTien - (r.ckTruocThue || 0);
+    if (u === 'PHA') { a.qtyPHA += r.soLuong; a.netPHA += lineNet; }
+    else if (u === 'KG') { a.qtyKG += r.soLuong; a.netKG += lineNet; }
+    else if (u === 'CHY') { a.qtyCHY += r.soLuong; a.netCHY += lineNet; }
+  }
+  a.lines++;
+}
+function rev_finalize(a) {
+  var net = a.grossRevenue - a.discount - a.returnValue;
+  var gp = net - a.foodCost;
+  return {
+    grossRevenue: a.grossRevenue,
+    discount: a.discount,
+    returnValue: a.returnValue,
+    returnQty: a.returnQty,
+    salesQty: a.salesQty,
+    qtyPHA: a.qtyPHA, qtyKG: a.qtyKG, qtyCHY: a.qtyCHY,
+    netRevenue: net,
+    foodCost: a.foodCost,
+    foodCostPct: net > 0 ? (a.foodCost / net) * 100 : 0,
+    grossProfit: gp,
+    grossMarginPct: net > 0 ? (gp / net) * 100 : 0,
+    huyQtyPct: (a.salesQty + a.returnQty) > 0 ? (a.returnQty / (a.salesQty + a.returnQty)) * 100 : 0,
+    huyValuePct: a.grossRevenue > 0 ? (a.returnValue / a.grossRevenue) * 100 : 0,
+    asp: a.qtyPHA > 0 ? a.netPHA / a.qtyPHA : 0,
+    aspKG: a.qtyKG > 0 ? a.netKG / a.qtyKG : 0,
+    aspCHY: a.qtyCHY > 0 ? a.netCHY / a.qtyCHY : 0,
+    invoiceCount: Object.keys(a.invoices).length,
+    lines: a.lines
+  };
+}
+
+function rev_groupBy(rows, keyFn, sortKey, limit) {
+  var map = {};
+  rows.forEach(function (r) {
+    var k = keyFn(r);
+    if (k === '' || k == null) return;
+    if (!map[k]) map[k] = rev_agg();
+    rev_push(map[k], r);
+  });
+  var out = Object.keys(map).map(function (k) {
+    var m = rev_finalize(map[k]);
+    m.key = k;
+    return m;
+  });
+  if (sortKey) out.sort(function (a, b) { return (b[sortKey] || 0) - (a[sortKey] || 0); });
+  return limit ? out.slice(0, limit) : out;
+}
+
 function drawRevenue(){
   var k = REV.kpi, p = REV.kpiPrev, ng = REV.nguong;
   var d = function(cur, prev){ return prev > 0 ? r1(((cur-prev)/prev)*100) : null; };
@@ -2342,7 +2591,7 @@ function bindRevenueEvents(){
 
 /* ---------- BIND BỘ LỌC TAB DOANH THU (gọi 1 lần khi khởi động) ---------- */
 function bindRevenueFilters(){
-  var reload = function(){ REV = null; RUI.drillSite = ''; loadRevenue(); };
+  var reload = function(){ RUI.drillSite = ''; computeAndDrawRevenue(); };
 
   document.getElementById('rFrom').addEventListener('change', function(){ RF.from = this.value; reload(); });
   document.getElementById('rTo').addEventListener('change',   function(){ RF.to   = this.value; reload(); });
@@ -2373,7 +2622,8 @@ function bindRevenueFilters(){
   document.getElementById('rBtnReset').addEventListener('click', function(){
     RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
     RUI.drillSite = ''; REV_INIT = false; REV = null;
-    loadRevenue();
+    //loadRevenue();
+    computeAndDrawRevenue();
   });
   document.getElementById('rBtnRefresh').addEventListener('click', function(){
     refreshAllTabs(true);
@@ -3189,6 +3439,7 @@ function setLive(ok, txt){
 }
 /** Xóa cache mọi tab để lần render tới buộc gọi server */
 function invalidateAllCaches(){
+  try { REV_RAW = null; } catch(e){}
   try { REV = null; } catch(e){}
   try { if (typeof RUI !== 'undefined') RUI.drillSite = ''; } catch(e){}
   try { KH = null; } catch(e){}
