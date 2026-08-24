@@ -2402,7 +2402,7 @@ var METRICS_KH = [
   { key:'Huy', label:'Tỷ lệ suất hủy %', icon:IC.trash, color:'#C0342C', higherBetter:false, fmt:fmtPct,
     get:function(o){ return { actual:o.Huy.actual, plan:o.Huy.plan }; } },
   // ===== THÊM MỚI (ngay trên EBITDA) =====
-  { key:'VatTuTieuHao', label:'Số lượng vật tư tiêu hao', icon:IC.stack, color:'#7C3AED', higherBetter:false, fmt:fmt,
+  { key:'VatTuTieuHao', label:'Giá trị vật tư tiêu hao', icon:IC.stack, color:'#7C3AED', higherBetter:false, fmt:fmtMoney,
     get:function(o){ return { actual:o.VatTuTieuHao.actual, plan:o.VatTuTieuHao.plan }; } },
   // ======================================
   { key:'EBITDA', label:'EBITDA', icon:IC.wallet, color:'#1D4ED8', higherBetter:true, fmt:fmtMoney,
@@ -2678,7 +2678,7 @@ function drawKehoach(){
 /* ---------- KPI 6 CHỈ TIÊU ---------- */
 function drawKehoachKPI(sites, periods){
   var totalAgg = kh_aggAll(sites, periods);
-  var html = '<div class="grid g6">';
+  var html = '<div class="grid g7">';
   METRICS_KH.forEach(function(m){
     var v = m.get(totalAgg);
     var ach = kh_ach(m, v.actual, v.plan);
@@ -2806,7 +2806,7 @@ function drawKhAch(){
 /* ---------- BẢNG CHI TIẾT ---------- */
 /* ---------- BẢNG CHI TIẾT (thu gọn theo nhóm chỉ tiêu, bấm để mở) ---------- */
 // Đơn vị hiển thị cho từng chỉ tiêu - dùng cả khi render bảng lẫn khi xuất Excel
-var KH_DONVI = { DoanhThu:'đ', SanLuong:'suất', FoodCost:'%', LaiGop:'đ', Huy:'%',VatTuTieuHao:'đv', EBITDA:'đ' };
+var KH_DONVI = { DoanhThu:'đ', SanLuong:'suất', FoodCost:'%', LaiGop:'đ', Huy:'%',VatTuTieuHao:'đ', EBITDA:'đ' };
 
 // Tính 1 dòng chi tiết {actual, plan, diff, ach} cho 1 chỉ tiêu + 1 kỳ - dùng chung
 // cho cả việc render bảng và xuất Excel để đảm bảo số liệu luôn khớp nhau.
