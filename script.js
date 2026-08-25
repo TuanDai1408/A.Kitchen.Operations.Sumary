@@ -1368,6 +1368,23 @@ function computeAndDrawRevenue() {
   var byDate = rev_groupBy(cur, function (r) { return r.ngay; });
   byDate.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
 
+  // ===== THÊM MỚI: dữ liệu cho chart "So sánh theo kỳ" =====
+  // Dùng TOÀN BỘ rows (chỉ áp filter site/kênh/nhóm/NVKD/KH, KHÔNG lọc ngày)
+  // giống hệt cách backend làm trong getRevenueFoodCostData, để thấy xu hướng dài hạn.
+  var allNoDate = rev_filterRows(REV_RAW.rows, {
+    sites: f.sites, kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
+  });
+  var periodCompare = {
+    day:     rev_groupByPeriod(allNoDate, 'day'),
+    week:    rev_groupByPeriod(allNoDate, 'week'),
+    month:   rev_groupByPeriod(allNoDate, 'month'),
+    quarter: rev_groupByPeriod(allNoDate, 'quarter'),
+    year:    rev_groupByPeriod(allNoDate, 'year')
+  };
+
+  // ===== THÊM MỚI: dữ liệu cho "Chi tiết theo cửa hàng / site" =====
+  var siteDetail = rev_buildSiteDetail(REV_RAW.dims, cur, f, opexItems, huy);
+
   // Gán vào REV đúng shape mà drawRevenue đang dùng
   REV = {
     ok: true,
@@ -1375,23 +1392,51 @@ function computeAndDrawRevenue() {
     kpi: kpi,
     kpiPrev: kpiPrev,
     byDate: byDate,
+    periodCompare: periodCompare,   // ← MỚI
     bySite: bySite,
     byNhomSP: byNhom,
     byKenh: byKenh,
     byNVKD: byNVKD,
     byKhachHang: byKH.slice(0, 50),
     byLyDoTraHang: byLyDo,
+    siteDetail: siteDetail,         // ← MỚI
     opexItems: opexItems,
     nguong: REV_RAW.nguong,
     updatedAt: REV_RAW.updatedAt,
     totalLines: REV_RAW.totalLines,
     filteredLines: cur.length,
     prevRange: pr
-    // periodCompare / siteDetail: bổ sung nếu chart/drill-down đang dùng
   };
 
   if (TAB === 'revenue') drawRevenue();
 }
+//   var byDate = rev_groupBy(cur, function (r) { return r.ngay; });
+//   byDate.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
+
+//   // Gán vào REV đúng shape mà drawRevenue đang dùng
+//   REV = {
+//     ok: true,
+//     dims: REV_RAW.dims,
+//     kpi: kpi,
+//     kpiPrev: kpiPrev,
+//     byDate: byDate,
+//     bySite: bySite,
+//     byNhomSP: byNhom,
+//     byKenh: byKenh,
+//     byNVKD: byNVKD,
+//     byKhachHang: byKH.slice(0, 50),
+//     byLyDoTraHang: byLyDo,
+//     opexItems: opexItems,
+//     nguong: REV_RAW.nguong,
+//     updatedAt: REV_RAW.updatedAt,
+//     totalLines: REV_RAW.totalLines,
+//     filteredLines: cur.length,
+//     prevRange: pr
+//     // periodCompare / siteDetail: bổ sung nếu chart/drill-down đang dùng
+//   };
+
+//   if (TAB === 'revenue') drawRevenue();
+// }
 
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
 function loadRevenue(opts) {
@@ -1638,6 +1683,140 @@ function rev_groupBy(rows, keyFn, sortKey, limit) {
   });
   if (sortKey) out.sort(function (a, b) { return (b[sortKey] || 0) - (a[sortKey] || 0); });
   return limit ? out.slice(0, limit) : out;
+}
+/* ---- Bổ sung cho chart "So sánh theo kỳ" + drill-down "Chi tiết theo site" ---- */
+
+function rev_periodKey(ngay, gran) {
+  var m = String(ngay || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return null;
+  var y = +m[1], mo = +m[2], da = +m[3];
+  if (gran === 'day')   return { key: ngay, label: m[3] + '/' + m[2] };
+  if (gran === 'month') return { key: y + '-' + String(mo).padStart(2, '0'), label: 'T' + mo + '/' + y };
+  if (gran === 'quarter') {
+    var q = Math.floor((mo - 1) / 3) + 1;
+    return { key: y + '-Q' + q, label: 'Q' + q + '/' + y };
+  }
+  if (gran === 'year') return { key: String(y), label: String(y) };
+  if (gran === 'week') {
+    var d = new Date(Date.UTC(y, mo - 1, da));
+    var dayNum = (d.getUTCDay() + 6) % 7;
+    d.setUTCDate(d.getUTCDate() - dayNum + 3);
+    var firstThu = new Date(Date.UTC(d.getUTCFullYear(), 0, 4));
+    var week = 1 + Math.round(((d - firstThu) / 86400000 - 3 + ((firstThu.getUTCDay() + 6) % 7)) / 7);
+    var wy = d.getUTCFullYear();
+    return { key: wy + '-W' + String(week).padStart(2, '0'), label: 'Tuần ' + week + '/' + wy };
+  }
+  return null;
+}
+
+function rev_groupByPeriod(rows, gran) {
+  var map = {}, labelOf = {};
+  rows.forEach(function (r) {
+    var pk = rev_periodKey(r.ngay, gran);
+    if (!pk) return;
+    if (!map[pk.key]) { map[pk.key] = rev_agg(); labelOf[pk.key] = pk.label; }
+    rev_push(map[pk.key], r);
+  });
+  return Object.keys(map).sort().map(function (k) {
+    var m = rev_finalize(map[k]);
+    return {
+      key: k, label: labelOf[k],
+      netRevenue: m.netRevenue, grossProfit: m.grossProfit,
+      foodCost: m.foodCost, foodCostPct: m.foodCostPct, grossMarginPct: m.grossMarginPct
+    };
+  });
+}
+
+// Port từ revenue_resolveOpex_ trong Code.gs — tính OPEX áp dụng cho 1 phạm vi site+kỳ
+function rev_resolveOpex(opexItems, f, siteList) {
+  if (!opexItems || !opexItems.length) return { amount: 0, matched: 0 };
+  var months = {};
+  if (f && f.from && f.to) {
+    var d = new Date(f.from + 'T00:00:00'), end = new Date(f.to + 'T00:00:00');
+    while (d <= end) {
+      months[d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')] = 1;
+      d.setMonth(d.getMonth() + 1); d.setDate(1);
+    }
+  }
+  var noRange = !(f && f.from && f.to);
+  var total = 0, matched = 0;
+  opexItems.forEach(function (it) {
+    var per = it.period || 'ALL';
+    var siteOk = (it.site === 'ALL') || (siteList && siteList.indexOf(it.site) >= 0) || (!siteList || !siteList.length);
+    var periodOk = (per === 'ALL') || noRange || months[per];
+    if (siteOk && periodOk) { total += it.amount; matched++; }
+  });
+  return { amount: total, matched: matched };
+}
+
+// Port từ revenue_matchHuySite_ trong Code.gs
+function rev_matchHuySite(huyReport, siteName) {
+  if (huyReport.bySite[siteName]) return huyReport.bySite[siteName];
+  var norm = function (s) { return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim(); };
+  var target = norm(siteName);
+  var keys = Object.keys(huyReport.bySite);
+  for (var i = 0; i < keys.length; i++) {
+    if (norm(keys[i]) === target) return huyReport.bySite[keys[i]];
+  }
+  return null;
+}
+
+// Port từ khối build siteDetail trong getRevenueFoodCostData (Code.gs)
+function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
+  var siteDetail = {};
+  (dims.sites || []).forEach(function (s) {
+    var rs = cur.filter(function (r) { return r.site === s; });
+    if (!rs.length) return;
+    var a = rev_agg(); rs.forEach(function (r) { rev_push(a, r); });
+    var m = rev_finalize(a);
+
+    var opexSite = rev_resolveOpex(opexItems, f, [s]);
+    m.opex = opexSite.amount;
+    m.hasOpex = opexSite.matched > 0 && opexSite.amount > 0;
+    m.ebitda = m.hasOpex ? (m.grossProfit - opexSite.amount) : null;
+
+    var hSite = rev_matchHuySite(huyReport, s);
+    var huyChiTiet = [];
+    if (hSite) {
+      m.huyReportPct = hSite.pct;
+      m.huySuatHuy = hSite.suatHuy;
+      m.huyTongSuat = hSite.tongSuat;
+      m.huyHasReport = true;
+      m.huyQtyPct = hSite.pct;
+      huyChiTiet = (hSite.chiTiet || []).slice().sort(function (a, b) { return a.ngay < b.ngay ? 1 : -1; });
+    } else {
+      m.huyHasReport = false;
+    }
+
+    var ds = {}; rs.forEach(function (r) { if (r.ngay) ds[r.ngay] = 1; });
+    m.operatingDays = Object.keys(ds).length;
+    m.netPerDay = m.operatingDays > 0 ? m.netRevenue / m.operatingDays : 0;
+
+    siteDetail[s] = {
+      kpi: m,
+      huyChiTiet: huyChiTiet,
+      byKhachHang: rev_groupBy(rs, function (r) { return r.tenKH; }, 'netRevenue', 50),
+      topSanPham: rev_groupBy(rs, function (r) { return r.tenSP; }, 'netRevenue', 20),
+      topFoodCost: rev_groupBy(rs, function (r) { return r.tenSP; }, 'foodCostPct', 100)
+        .filter(function (x) { return x.netRevenue > 0 && x.foodCostPct > 0; })
+        .sort(function (a, b) { return b.foodCostPct - a.foodCostPct; })
+        .slice(0, 15),
+      byNhomSP: rev_groupBy(rs, function (r) { return r.nhomSP; }, 'netRevenue'),
+      byDate: (function () {
+        var d = rev_groupBy(rs, function (r) { return r.ngay; });
+        d.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
+        return d;
+      })(),
+      returns: rs.filter(function (r) { return r.isReturn; }).map(function (r) {
+        return {
+          ngay: r.ngay, soHoaDon: r.soHoaDon, tenKH: r.tenKH, tenSP: r.tenSP,
+          soLuong: r.soLuong, thanhTien: r.thanhTien,
+          lyDo: r.lyDoTraHang || '(Không ghi lý do)', soBillingGoc: r.soBillingGoc
+        };
+      }).slice(0, 200)
+    };
+  });
+  return siteDetail;
 }
 
 function drawRevenue(){
