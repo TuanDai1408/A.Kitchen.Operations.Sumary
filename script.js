@@ -3634,19 +3634,44 @@ function refreshAllTabs(manual){
   invalidateAllCaches();
   if (manual) setLive(true, 'Đang làm mới...');
 
-  // 1) Vận hành (Report) — onData sẽ setLive / updAt
+  // Report luôn tải nhẹ (poll getDataVersion() mỗi 10s vốn đã dựa vào loadData())
   loadData(!!manual);
 
-  // 2) Doanh thu (Transactions) — chỉ nạp cache, không đụng tab đang xem
-  try { loadRevenue({ silent: true }); } catch(e){ try { loadRevenue(); } catch(e2){} }
-
-  // 3) Kế hoạch
-  try { loadKeHoach(); } catch(e){}
-
-  // 4) Kho + Dinh dưỡng (module)
-  try { if (typeof QLK !== 'undefined' && QLK.reload) QLK.reload(); } catch(e){}
-  try { if (typeof DD !== 'undefined' && DD.reload) DD.reload(); } catch(e){}
+  // Các tab còn lại: CHỈ tải ngay nếu đang mở đúng tab đó.
+  // invalidateAllCaches() đã xoá REV_RAW/KH/QLK.D/DD.D về null, nên khi người
+  // dùng CHUYỂN sang tab đó sau này, renderRevenue()/renderKeHoach()/QLK.render()/
+  // DD.render() (đã có sẵn) sẽ tự phát hiện chưa có dữ liệu và tự load lại.
+  if (TAB === 'revenue') {
+    try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
+  }
+  if (TAB === 'kehoach') {
+    try { loadKeHoach(); } catch(e){}
+  }
+  if (TAB === 'quanlykho') {
+    try { if (typeof QLK !== 'undefined' && QLK.reload) QLK.reload(); } catch(e){}
+  }
+  if (TAB === 'dinhduong') {
+    try { if (typeof DD !== 'undefined' && DD.reload) DD.reload(); } catch(e){}
+  }
 }
+// function refreshAllTabs(manual){
+//   invalidateAllCaches();
+//   if (manual) setLive(true, 'Đang làm mới...');
+
+//   // 1) Vận hành (Report) — onData sẽ setLive / updAt
+//   loadData(!!manual);
+
+//   // 2) Doanh thu (Transactions) — chỉ nạp cache, không đụng tab đang xem
+//   try { loadRevenue({ silent: true }); } catch(e){ try { loadRevenue(); } catch(e2){} }
+
+//   // 3) Kế hoạch
+//   try { loadKeHoach(); } catch(e){}
+
+//   // 4) Kho + Dinh dưỡng (module)
+//   try { if (typeof QLK !== 'undefined' && QLK.reload) QLK.reload(); } catch(e){}
+//   try { if (typeof DD !== 'undefined' && DD.reload) DD.reload(); } catch(e){}
+// }
+
 
 function loadData(manual){
   if (manual) { setLive(true, 'Đang làm mới...'); }
@@ -4602,6 +4627,6 @@ loadData();
 //       }).catch(function(){});
 //   } catch (e) {}
 // })();
-startPolling();
-startHardRefresh();     // refresh cứng toàn dashboard mỗi 60 giây
+// startPolling();
+// startHardRefresh();     // refresh cứng toàn dashboard mỗi 60 giây
 
