@@ -4587,21 +4587,21 @@ bindRevenueFilters();   // bộ lọc riêng cho tab Doanh thu & Food Cost
 bindKehoachFilters();   // bộ lọc riêng cho tab So sánh Kế hoạch
 loadData();
 /* ----- Ghi log truy cập kèm thông tin trình duyệt ----- */
-(function logVisitClient(){
-  try {
-    callPostAPI('logDashboardAccess', {
-        trigger: 'client',
-        userAgent: navigator.userAgent || '',
-        language: navigator.language || '',
-        platform: navigator.platform || '',
-        screen: (screen.width || 0) + 'x' + (screen.height || 0),
-        timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || '',
-        referrer: document.referrer || '',
-        path: location.pathname || '',
-        note: ''
-      }).catch(function(){});
-  } catch (e) {}
-})();
+// (function logVisitClient(){
+//   try {
+//     callPostAPI('logDashboardAccess', {
+//         trigger: 'client',
+//         userAgent: navigator.userAgent || '',
+//         language: navigator.language || '',
+//         platform: navigator.platform || '',
+//         screen: (screen.width || 0) + 'x' + (screen.height || 0),
+//         timezone: (Intl.DateTimeFormat().resolvedOptions().timeZone) || '',
+//         referrer: document.referrer || '',
+//         path: location.pathname || '',
+//         note: ''
+//       }).catch(function(){});
+//   } catch (e) {}
+// })();
 startPolling();
 startHardRefresh();     // refresh cứng toàn dashboard mỗi 60 giây
 
