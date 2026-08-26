@@ -1337,7 +1337,10 @@ function computeAndDrawRevenue() {
     ? ((kpi.grossProfit - opexAmt) / kpi.netRevenue) * 100 : null;
 
   // Hủy từ Report (đã có sẵn trong REV_RAW.huyReport)
-  var huy = REV_RAW.huyReport || { total: { suatHuy: 0, tongSuat: 0, pct: 0 }, bySite: {} };
+  // var huy = REV_RAW.huyReport || { total: { suatHuy: 0, tongSuat: 0, pct: 0 }, bySite: {} };
+  // Hủy từ Report — TÍNH LẠI CÓ LỌC theo ngày/site mỗi lần filter đổi,
+  // thay vì dùng REV_RAW.huyReport (số liệu tổng cố định, không ăn filter).
+  var huy = rev_huyFromReport(REV_RAW.huyRows, f);
   // Có thể lọc thêm bySite theo RF.sites nếu cần chính xác hơn
   kpi.huyReportPct = huy.total.pct;
   kpi.huySuatHuy = huy.total.suatHuy;
@@ -1760,6 +1763,46 @@ function rev_matchHuySite(huyReport, siteName) {
     if (norm(keys[i]) === target) return huyReport.bySite[keys[i]];
   }
   return null;
+}
+
+// Tính tỷ lệ suất hủy CÓ LỌC theo ngày/site, từ dữ liệu thô huyRows.
+// Port lại logic của revenue_huyFromReport_(f) trong Code.gs nhưng chạy client-side
+// để card/bảng/chart suất hủy ăn theo filter giống mọi KPI khác.
+function rev_huyFromReport(huyRows, f) {
+  var out = { total: { suatHuy: 0, tongSuat: 0, pct: 0 }, bySite: {} };
+  if (!huyRows || !huyRows.length) return out;
+
+  var from = (f && f.from) || '', to = (f && f.to) || '';
+  var sites = (f && f.sites && f.sites.length) ? f.sites : null;
+
+  huyRows.forEach(function (r) {
+    if (from && r.ngay < from) return;
+    if (to && r.ngay > to) return;
+    if (sites && sites.indexOf(r.tenSite) < 0) return;
+
+    out.total.suatHuy += r.suatHuy;
+    out.total.tongSuat += r.tongSuat;
+
+    var key = r.tenSite;
+    if (!out.bySite[key]) out.bySite[key] = { suatHuy: 0, tongSuat: 0, pct: 0, chiTiet: [] };
+    out.bySite[key].suatHuy += r.suatHuy;
+    out.bySite[key].tongSuat += r.tongSuat;
+    if (r.suatHuy > 0) {
+      out.bySite[key].chiTiet.push({
+        ngay: r.ngay, suatHuy: r.suatHuy, tongSuat: r.tongSuat,
+        pct: r.tongSuat > 0 ? (r.suatHuy / r.tongSuat) * 100 : 0,
+        nguoiBaoCao: r.nguoiBaoCao || ''
+      });
+    }
+  });
+
+  out.total.pct = out.total.tongSuat > 0 ? (out.total.suatHuy / out.total.tongSuat) * 100 : 0;
+  Object.keys(out.bySite).forEach(function (k) {
+    var s = out.bySite[k];
+    s.pct = s.tongSuat > 0 ? (s.suatHuy / s.tongSuat) * 100 : 0;
+    s.chiTiet.sort(function (a, b) { return a.ngay < b.ngay ? 1 : -1; });
+  });
+  return out;
 }
 
 // Port từ khối build siteDetail trong getRevenueFoodCostData (Code.gs)
