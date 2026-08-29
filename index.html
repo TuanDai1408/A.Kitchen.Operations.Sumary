@@ -27,7 +27,8 @@
       <button data-tab="overview" class="on">Báo cáo vận hành</button>
       <button data-tab="site">Chi tiết theo Site</button>
       <!-- <button data-tab="incident">Sự cố &amp; Adhoc</button> --> <!-- Đã ẩn tab Sự cố & Adhoc -->
-      <button data-tab="revenue">Doanh thu &amp; Food Cost</button>
+      <button data-tab="revenue">Doanh thu &amp; Food Cost (ALL)</button>
+      <button data-tab="sacn">Doanh thu &amp; Food Cost (SACN)</button>
       <button data-tab="kehoach">So sánh Kế hoạch</button>
       <button data-tab="quanlykho">Quản lý kho</button>
        <button data-tab="dinhduong">Thông tin dinh dưỡng</button>
@@ -69,7 +70,11 @@
     </div>
     <div class="sb-divider"></div>
     <div class="sb-group"><div class="sb-group-label">Tài chính</div>
-      <div class="sb-item" data-tab="revenue" data-tip="Doanh thu & Food Cost"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="sb-item-label">Doanh thu & Food Cost</span></div>
+      <div class="sb-item" data-tab="revenue" data-tip="Doanh thu & Food Cost (ALL)"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="sb-item-label">Doanh thu & Food Cost (ALL)</span></div>
+      <div class="sb-item" data-tab="sacn" data-tip="Doanh thu & Food Cost (SACN)">
+      <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
+      <span class="sb-item-label">Doanh thu & Food Cost (SACN)</span>
+      </div>
       <div class="sb-item" data-tab="kehoach" data-tip="So sánh Kế hoạch"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span class="sb-item-label">So sánh Kế hoạch</span></div>
     </div>
     <div class="sb-divider"></div>
@@ -203,6 +208,33 @@
   </div>
 </div>
 
+<div class="fbar hide" id="fbarSacn">
+  <div class="fbar-in">
+    <div class="fld"><label>Từ ngày</label><input type="date" id="sFrom"></div>
+    <div class="fld"><label>Đến ngày</label><input type="date" id="sTo"></div>
+
+    <div class="fld ms" id="sMsWrap">
+      <label>Cửa hàng / Site</label>
+      <button class="sel" id="sMsBtn"><span id="sMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
+      <div class="ms-pop" id="sMsPop">
+        <button class="ms-all" id="sMsAll">✓ Chọn tất cả</button>
+        <div id="sMsList"></div>
+      </div>
+    </div>
+
+    <div class="fld"><label>Kênh BH</label><select id="sKenh"><option value="">Tất cả kênh</option></select></div>
+    <div class="fld"><label>Nhóm SP</label><select id="sNhom"><option value="">Tất cả nhóm</option></select></div>
+    <div class="fld"><label>NVKD</label><select id="sNVKD"><option value="">Tất cả NVKD</option></select></div>
+    <div class="fld"><label>Khách hàng</label><select id="sKH"><option value="">Tất cả KH</option></select></div>
+
+    <div class="fld-btns">
+      <button class="btn btn-out" id="sBtnReset">↺ Đặt lại</button>
+      <button class="btn btn-fill" id="sBtnRefresh">⟳ Tải dữ liệu</button>
+    </div>
+  </div>
+</div>
+  
+
 <!-- ================= FILTER BAR RIÊNG CHO TAB SO SÁNH KẾ HOẠCH ================= -->
 <!-- Filter So sánh Kế hoạch -->
 <div class="fbar hide" id="fbarPlan">
@@ -252,6 +284,7 @@
   <div id="tab-site" class="hide"></div>
   <div id="tab-incident" class="hide"></div>
   <div id="tab-revenue" class="hide"></div>
+  <div id="tab-sacn" class="hide"></div>
   <div id="tab-kehoach" class="hide"></div>
   <div id="tab-quanlykho" class="hide"></div>
   <div id="tab-dinhduong" class="hide"></div>
