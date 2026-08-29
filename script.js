@@ -2327,16 +2327,37 @@ function drawRevenue(){
   html += '</div>';
 
   /* ===== KHỐI 2: SỐ LƯỢNG THEO ĐVT + ASP ===== */
-  html += '<div class="grid g6" style="margin-top:13px">';
+  // html += '<div class="grid g6" style="margin-top:13px">';
 
 
-  // Chỉ đếm dòng ĐVT = PHA
-  // Số lượng theo ĐVT
-  html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
-    'ĐVT = PHA', d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
+  // // Chỉ đếm dòng ĐVT = PHA
+  // // Số lượng theo ĐVT
+  // html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
+  //   'ĐVT = PHA', d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
 
-  html += kpiCard(IC.stack, 'Khối lượng đơn hàng (BTP)', fmt(k.qtyKG || 0),
-    'ĐVT = KG', d(k.qtyKG || 0, p.qtyKG || 0), true, C.gold);
+  // html += kpiCard(IC.stack, 'Khối lượng đơn hàng (BTP)', fmt(k.qtyKG || 0),
+  //   'ĐVT = KG', d(k.qtyKG || 0, p.qtyKG || 0), true, C.gold);
+
+ /* ===== KHỐI 2: SỐ LƯỢNG THEO ĐVT + ASP ===== */
+   html += '<div class="grid g6" style="margin-top:13px">';
+   
+   // 100 gram = 1 suất → 1 KG = 10 suất
+   var qtyBtpSuat = (k.qtyKG || 0) * 10;
+   var qtyBtpSuatPrev = (p.qtyKG || 0) * 10;
+   var tongSuat = (k.qtyPHA || 0) + qtyBtpSuat;
+   var tongSuatPrev = (p.qtyPHA || 0) + qtyBtpSuatPrev;
+   
+   // Số suất ăn = suất PHA (SACN) + suất quy đổi từ BTP
+   html += kpiCard(IC.meal, 'Số suất ăn', fmt(tongSuat),
+     'Số SACN: ' + fmt(k.qtyPHA || 0) + ' + Số suất BTP: ' + fmt(qtyBtpSuat),
+     d(tongSuat, tongSuatPrev), true, C.brand);
+   
+   // Khối lượng BTP (KG) + số suất ăn tương ứng
+   html += kpiCard(IC.stack, 'Khối lượng đơn hàng (BTP)', fmt(k.qtyKG || 0),
+     'ĐVT = KG • ≈ ' + fmt(qtyBtpSuat) + ' suất (100g = 1 suất)',
+     d(k.qtyKG || 0, p.qtyKG || 0), true, C.gold);
+
+   
 
   html += kpiCard(IC.clock, 'Số lần vận chuyển', fmt(k.qtyCHY || 0),
     'ĐVT = CHY', d(k.qtyCHY || 0, p.qtyCHY || 0), true, C.light);
