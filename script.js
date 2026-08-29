@@ -4282,7 +4282,7 @@ function switchTab(tab){
   // document.querySelector('.fbar').classList.toggle('hide', tab === 'revenue' || tab === 'kehoach' || tab === 'quanlykho'  || tab === 'dinhduong');
   // document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
   // document.getElementById('fbarPlan').classList.toggle('hide', tab !== 'kehoach');
-  document.querySelector('fbarMain').classList.toggle('hide',
+  document.querySelector('.fbar').classList.toggle('hide',
       tab === 'revenue' || tab === 'sacn' || tab === 'kehoach' || tab === 'quanlykho' || tab === 'dinhduong');
   document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
   document.getElementById('fbarSacn').classList.toggle('hide', tab !== 'sacn');
