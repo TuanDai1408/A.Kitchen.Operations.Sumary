@@ -3628,12 +3628,31 @@ function bindRevenueFilters(){
     updateRevMsLabel(); reload();
   });
 
+  // document.getElementById('rBtnReset').addEventListener('click', function(){
+  //   RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
+  //   RUI.drillSite = ''; REV_INIT = false; REV = null;
+  //   //loadRevenue();
+  //   computeAndDrawRevenue();
+  // });
   document.getElementById('rBtnReset').addEventListener('click', function(){
-    RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
-    RUI.drillSite = ''; REV_INIT = false; REV = null;
-    //loadRevenue();
-    computeAndDrawRevenue();
-  });
+  // 1) Xóa điều kiện lọc
+  RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
+  RUI.drillSite = '';
+
+  // 2) Đảm bảo còn dims để build lại filter (KHÔNG xóa REV_RAW / REV_INIT)
+  if ((!REV || !REV.dims) && REV_RAW) {
+    REV = { dims: REV_RAW.dims, updatedAt: REV_RAW.updatedAt };
+  }
+
+  // 3) Build lại UI: ngày mặc định 30 ngày gần nhất + bỏ chọn site/kênh/nhóm...
+  buildRevFilters();
+
+  // 4) Tính lại & vẽ dashboard theo bộ lọc mặc định
+  computeAndDrawRevenue();
+
+  toast('Đã đặt lại bộ lọc');
+   });
+   
   document.getElementById('rBtnRefresh').addEventListener('click', function(){
     refreshAllTabs(true);
   });
