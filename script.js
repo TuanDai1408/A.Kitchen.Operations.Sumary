@@ -2072,7 +2072,7 @@ function drawRevenueSacn(){
     SACN_EXCLUDE_MASITE.join(', ')+' khỏi toàn bộ số liệu bên dưới.</div>';
 
   /* KHỐI 1 — giữ nguyên như tab gốc */
-  html += '<div class="grid g6">';
+  html += '<div class="grid g4">';
   html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.grossRevenue),
     k.invoiceCount+' hóa đơn • '+fmt(k.qtyPHA || 0)+' suất (PHA)',
     d(k.grossRevenue, p.grossRevenue), true, C.brand);
@@ -2108,12 +2108,19 @@ function drawRevenueSacn(){
     '</div><div class="kpi-ic" style="background:'+C.light+'14;color:'+C.light+'">'+svg(IC.wallet,19)+'</div></div>'+
     '<div class="kpi-warn">Ước tính = Lãi gộp − OPEX. Chưa gồm chi phí tài chính, thuế.</div></div>';
 
+  // html += kpiCard(IC.line, 'DT thuần / ngày vận hành', fmtMoney(k.netPerDay),
+  //   k.operatingDays+' ngày có phát sinh', null, true, C.brand);
+  // html += '</div>';
+
+  // /* KHỐI 2 — CHỈ GIỮ "Số suất ăn" + "Đơn giá TB / Suất (PHA)" — ĐÃ BỎ 4 CARD BTP/CHY */
+  // html += '<div class="grid g6" style="margin-top:13px">';
+  // html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
+  //   'ĐVT = PHA', d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
+  // html += kpiCard(IC.meal, 'Đơn giá TB / Suất (PHA)', fmtMoney(k.asp),
+  //   fmt(k.qtyPHA)+' suất PHA', d(k.asp, p.asp), true, C.gold);
+  // html += '</div>';
   html += kpiCard(IC.line, 'DT thuần / ngày vận hành', fmtMoney(k.netPerDay),
     k.operatingDays+' ngày có phát sinh', null, true, C.brand);
-  html += '</div>';
-
-  /* KHỐI 2 — CHỈ GIỮ "Số suất ăn" + "Đơn giá TB / Suất (PHA)" — ĐÃ BỎ 4 CARD BTP/CHY */
-  html += '<div class="grid g6" style="margin-top:13px">';
   html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
     'ĐVT = PHA', d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
   html += kpiCard(IC.meal, 'Đơn giá TB / Suất (PHA)', fmtMoney(k.asp),
@@ -4275,8 +4282,8 @@ function switchTab(tab){
   // document.querySelector('.fbar').classList.toggle('hide', tab === 'revenue' || tab === 'kehoach' || tab === 'quanlykho'  || tab === 'dinhduong');
   // document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
   // document.getElementById('fbarPlan').classList.toggle('hide', tab !== 'kehoach');
-  document.querySelector('.fbar').classList.toggle('hide',
-      tab === 'revenue' || tab === 'kehoach' || tab === 'quanlykho' || tab === 'dinhduong');
+  document.querySelector('fbarMain').classList.toggle('hide',
+      tab === 'revenue' || tab === 'sacn' || tab === 'kehoach' || tab === 'quanlykho' || tab === 'dinhduong');
   document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
   document.getElementById('fbarSacn').classList.toggle('hide', tab !== 'sacn');
   document.getElementById('fbarPlan').classList.toggle('hide', tab !== 'kehoach');
