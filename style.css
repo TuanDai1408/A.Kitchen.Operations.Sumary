@@ -590,4 +590,61 @@
     }
     /* Ẩn header cũ */
     .hdr{display:none !important;}
+/* ========== Mobile: tối ưu tất cả filter bar ========== */
+@media (max-width: 900px) {
+  /* Cho phép wrap trên mobile */
+  #fbarRev .fbar-in,
+  #fbarSacn .fbar-in,
+  #fbarPlan .fbar-in,
+  .fbar .fbar-in {
+    flex-wrap: wrap !important;
+    gap: 10px 12px;
+    padding: 12px 14px;
+  }
 
+  #fbarRev .fld,
+  #fbarSacn .fld,
+  #fbarPlan .fld,
+  .fbar .fld {
+    flex: 1 1 calc(50% - 8px);   /* 2 cột trên tablet nhỏ */
+    min-width: 140px;
+  }
+
+  #fbarRev .fld-btns,
+  #fbarSacn .fld-btns,
+  #fbarPlan .fld-btns,
+  .fbar .fld-btns {
+    flex: 1 1 100%;
+    justify-content: flex-end;
+    margin-top: 4px;
+  }
+
+  /* Multi-select full width khi wrap */
+  #fbarRev .ms,
+  #fbarSacn .ms,
+  .fbar .ms {
+    flex: 1 1 100%;
+  }
+}
+
+@media (max-width: 560px) {
+  #fbarRev .fld,
+  #fbarSacn .fld,
+  #fbarPlan .fld,
+  .fbar .fld {
+    flex: 1 1 100%;              /* 1 cột trên điện thoại */
+    min-width: 0;
+  }
+
+  #fbarRev .fld input[type="date"],
+  #fbarSacn .fld input[type="date"],
+  #fbarRev .fld select,
+  #fbarSacn .fld select {
+    font-size: 16px;             /* tránh zoom trên iOS */
+  }
+
+  .fld-btns .btn {
+    flex: 1;
+    justify-content: center;
+  }
+}
