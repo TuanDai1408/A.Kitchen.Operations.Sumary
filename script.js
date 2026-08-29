@@ -2068,8 +2068,8 @@ function drawRevenueSacn(){
   var d = function(cur, prev){ return prev > 0 ? r1(((cur-prev)/prev)*100) : null; };
 
   var html = '<div class="fade">';
-  html += '<div class="qlk-note" style="margin-bottom:11px">Tab SACN: đã loại các site '+
-    SACN_EXCLUDE_MASITE.join(', ')+' khỏi toàn bộ số liệu bên dưới.</div>';
+  // html += '<div class="qlk-note" style="margin-bottom:11px">Tab SACN: đã loại các site '+
+  //   SACN_EXCLUDE_MASITE.join(', ')+' khỏi toàn bộ số liệu bên dưới.</div>';
 
   /* KHỐI 1 — giữ nguyên như tab gốc */
   html += '<div class="grid g4">';
