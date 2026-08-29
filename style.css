@@ -590,9 +590,25 @@
     }
     /* Ẩn header cũ */
     .hdr{display:none !important;}
+
 /* ========== Mobile: tối ưu tất cả filter bar ========== */
+
+
+@media (max-width: 1024px) {
+  /* Bỏ sticky filter trên mobile/tablet */
+  .fbar,
+  #fbarRev,
+  #fbarSacn,
+  #fbarPlan,
+  #fbarKho,
+  #fbarDD {
+    position: static !important;
+    top: auto !important;
+    z-index: auto;
+  }
+}
+
 @media (max-width: 900px) {
-  /* Cho phép wrap trên mobile */
   #fbarRev .fbar-in,
   #fbarSacn .fbar-in,
   #fbarPlan .fbar-in,
@@ -606,7 +622,7 @@
   #fbarSacn .fld,
   #fbarPlan .fld,
   .fbar .fld {
-    flex: 1 1 calc(50% - 8px);   /* 2 cột trên tablet nhỏ */
+    flex: 1 1 calc(50% - 8px);
     min-width: 140px;
   }
 
@@ -619,7 +635,6 @@
     margin-top: 4px;
   }
 
-  /* Multi-select full width khi wrap */
   #fbarRev .ms,
   #fbarSacn .ms,
   .fbar .ms {
@@ -632,7 +647,7 @@
   #fbarSacn .fld,
   #fbarPlan .fld,
   .fbar .fld {
-    flex: 1 1 100%;              /* 1 cột trên điện thoại */
+    flex: 1 1 100%;
     min-width: 0;
   }
 
@@ -640,7 +655,7 @@
   #fbarSacn .fld input[type="date"],
   #fbarRev .fld select,
   #fbarSacn .fld select {
-    font-size: 16px;             /* tránh zoom trên iOS */
+    font-size: 16px;   /* tránh zoom iOS */
   }
 
   .fld-btns .btn {
