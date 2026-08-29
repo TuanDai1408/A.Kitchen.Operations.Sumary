@@ -166,6 +166,66 @@
       min-width: 260px;
       max-height: 320px;
     }
+
+    /* ========== Filter SACN — giống hệt #fbarRev ========== */
+      #fbarSacn{
+        overflow: visible;
+      }
+      #fbarSacn .fbar-in{
+        flex-wrap: nowrap;
+        gap: 13px;
+        padding: 12px 18px;
+        max-width: 1560px;
+        margin: 0 auto;
+        overflow: visible;
+      }
+      #fbarSacn .fld{
+        flex: 1 1 0;
+        min-width: 0;
+        position: relative;
+      }
+      #fbarSacn .fld input[type="date"],
+      #fbarSacn .fld select,
+      #fbarSacn .fld button.sel{
+        width: 100%;
+        min-width: 0;
+        padding: 7px 10px;
+        font-size: 13.5px;
+      }
+      #fbarSacn .fld label{
+        white-space: nowrap;
+        font-size: 11.5px;
+        margin-bottom: 5px;
+      }
+      #fbarSacn .fld-btns{
+        flex: 0 0 auto;
+        margin-left: 0;
+        gap: 10px;
+      }
+      /* Multi-select Cửa hàng SACN */
+      #fbarSacn .ms{
+        position: relative;
+        z-index: 5;
+      }
+      #fbarSacn .ms:focus-within,
+      #fbarSacn .ms:has(.ms-pop.open){
+        z-index: 60;
+      }
+      #fbarSacn .ms .sel{
+        width: 100%;
+        min-width: 0;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      #fbarSacn .ms-pop{
+        z-index: 70;
+        left: 0;
+        right: auto;
+        width: max(100%, 260px);
+        min-width: 260px;
+        max-height: 320px;
+      }
         /* Filter Kho + Dinh dưỡng: full-width như .fbar các tab khác */
     /* Nội dung filter Kho / DD nằm trong .fbar → không margin âm */
     #fbarKhoIn .qlk-fbar,
@@ -381,7 +441,7 @@
     }
         /* ========== SIDEBAR LAYOUT ========== */
     :root{
-      --sidebar-w:252px;
+      --sidebar-w:280px;
       --sidebar-collapsed:68px;
       --sb-transition:0.25s cubic-bezier(.4,0,.2,1);
     }
@@ -456,7 +516,7 @@
     .sb-divider{height:1px;background:rgba(255,255,255,.1);margin:6px 12px 10px;}
     .sidebar.collapsed .sb-divider{margin:6px 8px 8px;}
     .sb-item{display:flex;align-items:center;gap:12px;padding:11px 14px;border-radius:10px;cursor:pointer;
-      transition:background .15s,color .15s;color:rgba(255,255,255,.78);font-size:13.5px;font-weight:600;
+      transition:background .15s,color .15s;color:rgba(255,255,255,.78);font-size:13px;font-weight:600;
       white-space:nowrap;min-height:44px;position:relative;}
     .sb-item:hover{background:rgba(255,255,255,.1);color:#fff;}
     .sb-item.active{background:#fff;color:#F5811F;box-shadow:0 2px 8px rgba(0,0,0,.1);}
@@ -464,7 +524,7 @@
     .sb-item svg{width:20px;height:20px;flex:0 0 20px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
     .sb-item-label{transition:opacity .2s;overflow:hidden;}
     /* .sb-item-label{transition:opacity .2s;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;} */
-    .sidebar.collapsed .sb-item-label{opacity:0;width:0;}
+    .sidebar.collapsed .sb-item-label{opacity:0;width:0;overflow: hidden;}
     .sidebar.collapsed .sb-item{justify-content:center;padding:11px 0;}
     .sidebar.collapsed .sb-item::after{content:attr(data-tip);position:absolute;left:calc(100% + 10px);top:50%;transform:translateY(-50%);
       background:rgba(30,30,30,.95);color:#fff;font-size:12px;font-weight:600;padding:6px 12px;border-radius:6px;
