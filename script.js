@@ -1368,6 +1368,24 @@ function computeAndDrawRevenueSacn(){
   kpi.huyHasReport = huy.total.tongSuat > 0;
   if (kpi.huyHasReport) kpi.huyQtyPct = huy.total.pct;
 
+  // ---- Số ngày có suất ăn > 0 (từ Report, đã lọc ngày/site) ----
+  var from = (f && f.from) || '', to = (f && f.to) || '';
+  var sitesFilter = (f && f.sites && f.sites.length) ? f.sites : null;
+  var dayHasSuat = {};
+  huyRowsSacn.forEach(function (r) {
+     if (from && r.ngay < from) return;
+     if (to && r.ngay > to) return;
+     if (sitesFilter && sitesFilter.indexOf(r.tenSite) < 0) return;
+     if ((r.tongSuat || 0) > 0) dayHasSuat[r.ngay] = 1;
+   });
+  kpi.daysWithSuat = Object.keys(dayHasSuat).length;
+
+// Suất TB / ngày có suất ăn > 0
+  kpi.avgSuatPerDay = (kpi.daysWithSuat > 0 && kpi.huyHasReport)
+     ? kpi.huyTongSuat / kpi.daysWithSuat
+     : null;
+  
+
   var dayset = {}; cur.forEach(function (r) { if (r.ngay) dayset[r.ngay] = 1; });
   kpi.operatingDays = Object.keys(dayset).length;
   kpi.netPerDay = kpi.operatingDays > 0 ? kpi.netRevenue / kpi.operatingDays : 0;
@@ -2107,6 +2125,18 @@ function drawRevenueSacn(){
                : '<div class="kpi-sub">nhập OPEX vào sheet OPEX_Input</div>')+
     '</div><div class="kpi-ic" style="background:'+C.light+'14;color:'+C.light+'">'+svg(IC.wallet,19)+'</div></div>'+
     '<div class="kpi-warn">Ước tính = Lãi gộp − OPEX. Chưa gồm chi phí tài chính, thuế.</div></div>';
+
+
+   var avgSuatSub = 'ĐVT = PHA';
+   if (k.avgSuatPerDay != null) {
+     avgSuatSub += ' • TB ' + fmt(Math.round(k.avgSuatPerDay)) +
+       ' suất/ngày (' + k.daysWithSuat + ' ngày có suất)';
+   } else if (k.huyHasReport === false) {
+     avgSuatSub += ' • Report chưa có dữ liệu';
+   }
+   
+   html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
+     avgSuatSub, d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
 
   // html += kpiCard(IC.line, 'DT thuần / ngày vận hành', fmtMoney(k.netPerDay),
   //   k.operatingDays+' ngày có phát sinh', null, true, C.brand);
