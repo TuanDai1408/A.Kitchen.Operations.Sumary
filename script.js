@@ -2156,12 +2156,12 @@ function drawRevenueSacn(){
   // ---- Số suất ăn: 1 card duy nhất, highlight TB suất/ngày ----
   var avgSuatHtml = '';
   if (k.avgSuatPerDay != null) {
-    avgSuatHtml =
-      '<div style="margin-top:6px;font-size:14px;font-weight:800;color:#7A1F2B;line-height:1.3">' +
-        'TB ' + fmt(Math.round(k.avgSuatPerDay)) + ' suất/ngày' +
-        ' <span style="font-weight:700;color:#7A1F2B;opacity:.85">(' +
-          (k.daysWithSuat || 0) + ' ngày có suất)</span>' +
-      '</div>';
+      avgSuatHtml =
+        '<div style="margin-top:6px;font-size:14px;font-weight:800;color:#7A1F2B;line-height:1.3">' +
+          'TB ' + fmt(Math.round(k.avgSuatPerDay)) + ' suất/ngày' +
+          ' <span style="font-size:11px;font-weight:400;color:#A8A8A8">(' +
+            (k.daysWithSuat || 0) + ' ngày có suất)</span>' +
+        '</div>';
   } else if (k.huyHasReport === false) {
     avgSuatHtml = '<div class="kpi-sub">Report chưa có dữ liệu</div>';
   }
