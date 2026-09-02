@@ -2127,16 +2127,16 @@ function drawRevenueSacn(){
     '<div class="kpi-warn">Ước tính = Lãi gộp − OPEX. Chưa gồm chi phí tài chính, thuế.</div></div>';
 
 
-   var avgSuatSub = 'ĐVT = PHA';
-   if (k.avgSuatPerDay != null) {
-     avgSuatSub += ' • TB ' + fmt(Math.round(k.avgSuatPerDay)) +
-       ' suất/ngày (' + k.daysWithSuat + ' ngày có suất)';
-   } else if (k.huyHasReport === false) {
-     avgSuatSub += ' • Report chưa có dữ liệu';
-   }
+   // var avgSuatSub = 'ĐVT = PHA';
+   // if (k.avgSuatPerDay != null) {
+   //   avgSuatSub += ' • TB ' + fmt(Math.round(k.avgSuatPerDay)) +
+   //     ' suất/ngày (' + k.daysWithSuat + ' ngày có suất)';
+   // } else if (k.huyHasReport === false) {
+   //   avgSuatSub += ' • Report chưa có dữ liệu';
+   // }
    
-   html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
-     avgSuatSub, d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
+   // html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
+   //   avgSuatSub, d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
 
   // html += kpiCard(IC.line, 'DT thuần / ngày vận hành', fmtMoney(k.netPerDay),
   //   k.operatingDays+' ngày có phát sinh', null, true, C.brand);
@@ -2151,8 +2151,47 @@ function drawRevenueSacn(){
   // html += '</div>';
   html += kpiCard(IC.line, 'DT thuần / ngày vận hành', fmtMoney(k.netPerDay),
     k.operatingDays+' ngày có phát sinh', null, true, C.brand);
-  html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
-    'ĐVT = PHA', d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
+
+
+  // ---- Số suất ăn: 1 card duy nhất, highlight TB suất/ngày ----
+  var avgSuatHtml = '';
+  if (k.avgSuatPerDay != null) {
+    avgSuatHtml =
+      '<div style="margin-top:6px;font-size:14px;font-weight:800;color:#7A1F2B;line-height:1.3">' +
+        'TB ' + fmt(Math.round(k.avgSuatPerDay)) + ' suất/ngày' +
+        ' <span style="font-weight:700;color:#7A1F2B;opacity:.85">(' +
+          (k.daysWithSuat || 0) + ' ngày có suất)</span>' +
+      '</div>';
+  } else if (k.huyHasReport === false) {
+    avgSuatHtml = '<div class="kpi-sub">Report chưa có dữ liệu</div>';
+  }
+
+  html +=
+    '<div class="kpi" style="border-left-color:' + C.brand + '">' +
+      '<div class="kpi-top"><div>' +
+        '<div class="kpi-lb">Số suất ăn</div>' +
+        '<div class="kpi-v">' + fmt(k.qtyPHA || 0) + '</div>' +
+        '<div class="kpi-sub">ĐVT = PHA</div>' +
+        avgSuatHtml +
+      '</div>' +
+      '<div class="kpi-ic" style="background:' + C.brand + '14;color:' + C.brand + '">' +
+        svg(IC.meal, 19) +
+      '</div></div>' +
+      (function () {
+        var delta = d(k.qtyPHA || 0, p.qtyPHA || 0);
+        if (delta === null || isNaN(delta) || delta === 0) return '';
+        var up = delta > 0;
+        var good = up === true;
+        return '<div class="kpi-d ' + (good ? 'up' : 'down') + '">' +
+          svg(up ? IC.up : IC.down, 13) +
+          Math.abs(delta) + '% <span style="color:#B0B0B0;font-weight:400">so kỳ trước</span></div>';
+      })() +
+    '</div>'; 
+  // html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.qtyPHA || 0),
+  //   'ĐVT = PHA', d(k.qtyPHA || 0, p.qtyPHA || 0), true, C.brand);
+  
+
+   
   html += kpiCard(IC.meal, 'Đơn giá TB / Suất (PHA)', fmtMoney(k.asp),
     fmt(k.qtyPHA)+' suất PHA', d(k.asp, p.asp), true, C.gold);
   html += '</div>';
