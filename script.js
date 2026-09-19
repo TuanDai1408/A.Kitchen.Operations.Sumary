@@ -92,6 +92,9 @@ var KH_LOADING = false;
 var KH_INIT = false;            // đã nạp dropdown site lần đầu chưa
 var PF = { gran:'month', nPeriods:24, site:'' };   // site='' nghĩa là cộng dồn tất cả
 // var KHUI = { metric:'DoanhThu' };
+// Site kế hoạch tổng hợp toàn hệ thống (khớp KeHoach_PL_Thang)
+var KEHOACH_SITE_TONG = 'Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)';
+
 var KHUI = { metric:'DoanhThu', expanded:{}, duAnOpen:false, thamSoOpen:false };
 var C = { brand:'#7A1F2B', dark:'#5E141E', light:'#9B3543', gold:'#C9A227', orange:'#D98C4A', gray:'#9AA0A6' };
 var PALETTE = [C.brand, C.gold, C.light, C.dark, C.orange, C.gray];
@@ -3766,36 +3769,133 @@ function kh_ach(m, actual, plan){
   return m.higherBetter ? (actual/plan)*100 : (plan/actual)*100;
 }
 
-function kh_selSites(){ return PF.site ? [PF.site] : (KH ? KH.sites : []); }
+// function kh_selSites(){ return PF.site ? [PF.site] : (KH ? KH.sites : []); }
+
+function kh_selSites(){
+  if (PF.site) return [PF.site];
+  if (!KH || !KH.sites) return [];
+  // Chỉ site thật — loại site tổng hợp
+  return KH.sites.filter(function(s){
+    return String(s).toLowerCase().indexOf('toàn hệ thống') < 0 &&
+           String(s).toLowerCase().indexOf('tong hop') < 0;
+  });
+}
 
 // Cộng dồn nhiều site trong 1 kỳ hiển thị -> 1 object chuẩn cho METRICS_KH.get()
+// function kh_periodAgg(per, sites){
+//   var o = { DoanhThu:{actual:0,plan:0}, SanLuong:{actual:0,plan:0},
+//             FoodCost:{actualVal:0,planVal:0,actualPct:0,planPct:0},
+//             LaiGop:{actual:0,plan:0},
+//             Huy:{actualHuy:0,actualTong:0,actual:0,plan:KH.nguong.huyPct},
+//             VatTuTieuHao:{actual:0, plan:0},   // ← THÊM DÒNG NÀY
+//             EBITDA:{actual:0,plan:0,hasActual:false} };
+//   sites.forEach(function(s){
+//     var a = per.bySite[s]; if (!a) return;
+//     o.DoanhThu.actual += a.DoanhThu.actual; o.DoanhThu.plan += a.DoanhThu.plan;
+//     o.SanLuong.actual += a.SanLuongTong.actual; o.SanLuong.plan += a.SanLuongTong.plan;
+//     o.FoodCost.actualVal += a.FoodCost.actualVal; o.FoodCost.planVal += a.FoodCost.planVal;
+//     o.LaiGop.actual += a.LaiGop.actual; o.LaiGop.plan += a.LaiGop.plan;
+//     o.Huy.actualHuy += a.HuyPct.actualHuy; o.Huy.actualTong += a.HuyPct.actualTong;
+//     // ← THÊM 2 DÒNG NÀY
+//     o.VatTuTieuHao.actual += a.VatTuTieuHao ? a.VatTuTieuHao.actual : 0;
+//     o.VatTuTieuHao.plan   += a.VatTuTieuHao ? a.VatTuTieuHao.plan   : 0;
+//     if (a.EBITDA.hasActual){ o.EBITDA.actual += a.EBITDA.actual; o.EBITDA.hasActual = true; }
+//     o.EBITDA.plan += a.EBITDA.plan;
+//   });
+//   o.FoodCost.actualPct = o.DoanhThu.actual>0 ? (o.FoodCost.actualVal/o.DoanhThu.actual)*100 : 0;
+//   o.FoodCost.planPct   = o.DoanhThu.plan>0   ? (o.FoodCost.planVal/o.DoanhThu.plan)*100   : 0;
+//   o.Huy.actual = o.Huy.actualTong>0 ? (o.Huy.actualHuy/o.Huy.actualTong)*100 : 0;
+//   return o;
+// }
+
+// Cộng dồn qua NHIỀU kỳ (dùng cho card KPI tổng - cộng đúng theo tử số/mẫu số
+
+
 function kh_periodAgg(per, sites){
-  var o = { DoanhThu:{actual:0,plan:0}, SanLuong:{actual:0,plan:0},
-            FoodCost:{actualVal:0,planVal:0,actualPct:0,planPct:0},
-            LaiGop:{actual:0,plan:0},
-            Huy:{actualHuy:0,actualTong:0,actual:0,plan:KH.nguong.huyPct},
-            VatTuTieuHao:{actual:0, plan:0},   // ← THÊM DÒNG NÀY
-            EBITDA:{actual:0,plan:0,hasActual:false} };
+  var o = {
+    DoanhThu:{actual:0,plan:0},
+    SanLuong:{actual:0,plan:0},
+    FoodCost:{actualVal:0,planVal:0,actualPct:0,planPct:0},
+    LaiGop:{actual:0,plan:0},
+    Huy:{actualHuy:0,actualTong:0,actual:0,plan:KH.nguong.huyPct},
+    VatTuTieuHao:{actual:0, plan:0},
+    EBITDA:{actual:0,plan:0,hasActual:false}
+  };
+
+  // 1) Actual: cộng các site thật (như cũ)
   sites.forEach(function(s){
     var a = per.bySite[s]; if (!a) return;
-    o.DoanhThu.actual += a.DoanhThu.actual; o.DoanhThu.plan += a.DoanhThu.plan;
-    o.SanLuong.actual += a.SanLuongTong.actual; o.SanLuong.plan += a.SanLuongTong.plan;
-    o.FoodCost.actualVal += a.FoodCost.actualVal; o.FoodCost.planVal += a.FoodCost.planVal;
-    o.LaiGop.actual += a.LaiGop.actual; o.LaiGop.plan += a.LaiGop.plan;
-    o.Huy.actualHuy += a.HuyPct.actualHuy; o.Huy.actualTong += a.HuyPct.actualTong;
-    // ← THÊM 2 DÒNG NÀY
+    o.DoanhThu.actual += a.DoanhThu.actual;
+    o.SanLuong.actual += a.SanLuongTong.actual;
+    o.FoodCost.actualVal += a.FoodCost.actualVal;
+    o.LaiGop.actual += a.LaiGop.actual;
+    o.Huy.actualHuy += a.HuyPct.actualHuy;
+    o.Huy.actualTong += a.HuyPct.actualTong;
     o.VatTuTieuHao.actual += a.VatTuTieuHao ? a.VatTuTieuHao.actual : 0;
-    o.VatTuTieuHao.plan   += a.VatTuTieuHao ? a.VatTuTieuHao.plan   : 0;
-    if (a.EBITDA.hasActual){ o.EBITDA.actual += a.EBITDA.actual; o.EBITDA.hasActual = true; }
-    o.EBITDA.plan += a.EBITDA.plan;
+    if (a.EBITDA.hasActual){
+      o.EBITDA.actual += a.EBITDA.actual;
+      o.EBITDA.hasActual = true;
+    }
   });
-  o.FoodCost.actualPct = o.DoanhThu.actual>0 ? (o.FoodCost.actualVal/o.DoanhThu.actual)*100 : 0;
-  o.FoodCost.planPct   = o.DoanhThu.plan>0   ? (o.FoodCost.planVal/o.DoanhThu.plan)*100   : 0;
-  o.Huy.actual = o.Huy.actualTong>0 ? (o.Huy.actualHuy/o.Huy.actualTong)*100 : 0;
+
+  // 2) Plan:
+  //    - Đang chọn 1 site  → plan của site đó
+  //    - Tất cả site      → plan của site tổng hợp (nếu có), không cộng từng site
+  var isAllSites = !PF.site;
+  if (isAllSites) {
+    var tongKey = (KH && KH.siteTong) ? KH.siteTong : KEHOACH_SITE_TONG;
+    var aTong = per.bySite[tongKey];
+    // Soft match nếu tên hơi lệch
+    if (!aTong && per.bySite) {
+      var target = String(tongKey).toLowerCase().replace(/\s+/g,' ').trim();
+      Object.keys(per.bySite).forEach(function(k){
+        if (aTong) return;
+        var nk = String(k).toLowerCase().replace(/\s+/g,' ').trim();
+        if (nk === target || nk.indexOf('toàn hệ thống') >= 0) aTong = per.bySite[k];
+      });
+    }
+    if (aTong) {
+      o.DoanhThu.plan = aTong.DoanhThu.plan;
+      o.SanLuong.plan = aTong.SanLuongTong.plan;
+      o.FoodCost.planVal = aTong.FoodCost.planVal;
+      o.LaiGop.plan = aTong.LaiGop.plan;
+      o.VatTuTieuHao.plan = aTong.VatTuTieuHao ? aTong.VatTuTieuHao.plan : 0;
+      o.EBITDA.plan = aTong.EBITDA.plan;
+      // Huy plan vẫn dùng ngưỡng chung
+    } else {
+      // Fallback: chưa có dòng tổng trên sheet → tạm cộng plan các site (hành vi cũ)
+      sites.forEach(function(s){
+        var a = per.bySite[s]; if (!a) return;
+        o.DoanhThu.plan += a.DoanhThu.plan;
+        o.SanLuong.plan += a.SanLuongTong.plan;
+        o.FoodCost.planVal += a.FoodCost.planVal;
+        o.LaiGop.plan += a.LaiGop.plan;
+        o.VatTuTieuHao.plan += a.VatTuTieuHao ? a.VatTuTieuHao.plan : 0;
+        o.EBITDA.plan += a.EBITDA.plan;
+      });
+    }
+  } else {
+    // 1 site: plan + actual cùng site (đã cộng actual ở trên; plan lấy lại)
+    sites.forEach(function(s){
+      var a = per.bySite[s]; if (!a) return;
+      o.DoanhThu.plan += a.DoanhThu.plan;
+      o.SanLuong.plan += a.SanLuongTong.plan;
+      o.FoodCost.planVal += a.FoodCost.planVal;
+      o.LaiGop.plan += a.LaiGop.plan;
+      o.VatTuTieuHao.plan += a.VatTuTieuHao ? a.VatTuTieuHao.plan : 0;
+      o.EBITDA.plan += a.EBITDA.plan;
+    });
+  }
+
+  o.FoodCost.actualPct = o.DoanhThu.actual > 0 ? (o.FoodCost.actualVal / o.DoanhThu.actual) * 100 : 0;
+  o.FoodCost.planPct   = o.DoanhThu.plan   > 0 ? (o.FoodCost.planVal   / o.DoanhThu.plan)   * 100 : 0;
+  o.Huy.actual = o.Huy.actualTong > 0 ? (o.Huy.actualHuy / o.Huy.actualTong) * 100 : 0;
   return o;
 }
 
-// Cộng dồn qua NHIỀU kỳ (dùng cho card KPI tổng - cộng đúng theo tử số/mẫu số
+
+
+
 // thay vì lấy trung bình cộng % đơn giản, để food cost% và suất hủy% chính xác)
 function kh_aggAll(sites, periods){
   var o = { DoanhThu:{actual:0,plan:0}, SanLuong:{actual:0,plan:0},
@@ -3868,10 +3968,19 @@ function renderKeHoach(){ if (!KH){ loadKeHoach(); return; } drawKehoach(); }
 
 function buildKehoachFilters(){
   var sel = document.getElementById('pfSite');
+  // sel.innerHTML = '<option value="">Tất cả site (cộng dồn)</option>'+
+  //   KH.sites.map(function(s){
+  //     return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
+  //   }).join('');
+
+  var siteOpts = (KH.sites || []).filter(function(s){
+  var t = String(s).toLowerCase();
+  return t.indexOf('toàn hệ thống') < 0 && t.indexOf('tong hop') < 0;
+});
   sel.innerHTML = '<option value="">Tất cả site (cộng dồn)</option>'+
-    KH.sites.map(function(s){
-      return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
-    }).join('');
+   siteOpts.map(function(s){
+     return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
+  }).join('');
 }
 
 function khInfoItem(label, val){
@@ -4005,7 +4114,10 @@ function drawKehoach(){
 
   if (!PF.site){
     html += '<div style="margin-top:9px;font-size:11px;color:#A8A8A8">'+
-      'Đang xem cộng dồn '+sites.length+' site. Chọn 1 site cụ thể ở bộ lọc phía trên để xem thông tin dự án và giả định kế hoạch.'+
+       'Đang xem toàn hệ thống: Thực tế = cộng '+sites.length+' site · Kế hoạch = dòng tổng hợp "'+
+      esc((KH && KH.siteTong) || KEHOACH_SITE_TONG)+'".'
+      //'Đang xem cộng dồn '+sites.length+' site. Chọn 1 site cụ thể ở bộ lọc phía trên để xem thông tin dự án và giả định kế hoạch.'
+       +
     '</div>';
   }
   html += '<div style="margin-top:9px;font-size:11px;color:#A8A8A8">'+
