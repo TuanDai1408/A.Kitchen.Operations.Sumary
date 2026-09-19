@@ -3977,7 +3977,7 @@ function buildKehoachFilters(){
   var t = String(s).toLowerCase();
   return t.indexOf('toàn hệ thống') < 0 && t.indexOf('tong hop') < 0;
 });
-  sel.innerHTML = '<option value="">Tất cả site (cộng dồn)</option>'+
+  sel.innerHTML = '<option value="">Toàn hệ thống A.Kitchen</option>'+
    siteOpts.map(function(s){
      return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
   }).join('');
