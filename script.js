@@ -58,7 +58,8 @@ var SEL_SITE = '';       // site đang xem ở tab chi tiết
 var CHARTS = {};         // instance Chart.js theo id canvas
 var VERSION = '';        // dấu hiệu dữ liệu mới
 var NGUOI = [];          // danh sách người báo cáo (cho dropdown)
-var F = { from:'', to:'', sites:[], nguoi:'', q:'' };
+var KHACH = [];   // danh sách khách hàng từ backend
+var F = { from:'', to:'', sites:[], nguoi:'', khach:'', q:'' };
 // var UI = { lineMode:'total', rankMetric:'tre', incLoai:'', incMucDo:'', expanded:'' };
 var UI = { lineMode:'total', rankMetric:'thatthoat', incLoai:'', incMucDo:'', expanded:'' };
 
@@ -262,11 +263,82 @@ function applyFilter(rows){
     if (F.to   && r.ngayBaoCao > F.to)   return false;
     if (F.sites.length && F.sites.indexOf(r.tenSite) < 0) return false;
     if (F.nguoi && r.nguoiBaoCao !== F.nguoi) return false;
+    if (F.khach && r.tenKhachHang !== F.khach) return false;
     // Ô tìm kiếm giờ chỉ soát trong nội dung đề xuất/kiến nghị
     if (q && String(r.deXuat||'').toLowerCase().indexOf(q) < 0) return false;
     return true;
   });
 }
+
+/**
+ * Khi không lọc khách hàng: nhiều dòng cùng site+ngày (mỗi KH 1 dòng)
+ * → gom 1 dòng / ngày để KPI, chart, bảng không bị trùng ngày.
+ * Khi đang lọc 1 KH: trả nguyên rows (đã filter).
+ */
+function groupRowsBySiteDate(rows){
+  if (F.khach) return rows.slice(); // đang lọc 1 KH → giữ từng dòng
+
+  var map = {};
+  rows.forEach(function(r){
+    var key = r.tenSite + '|' + r.ngayBaoCao;
+    if (!map[key]) {
+      // clone nông + reset các field cộng dồn
+      map[key] = Object.assign({}, r, {
+        id: r.tenSite + '|' + r.ngayBaoCao,
+        suatSang: 0, suatTrua: 0, suatChieu: 0,
+        suatNhanVien: 0, suatHuy: 0, tongSuat: 0,
+        soThatThoat: 0, nsCoMat: 0, nsVang: 0, nsTangCa: 0,
+        soKhieuNai: 0, soKhenNgoi: 0,
+        suatLuuMau: 0, suatGiaoVien: 0,
+        giaoTre: false, phutTre: 0,
+        coChiPhiNgoai: false, soTienChiPhi: 0,
+        hinhAnh: [],
+        _khachList: [],
+        mucDoVanDe: 0, diemVanDe: 0
+      });
+    }
+    var o = map[key];
+    o.suatSang      += r.suatSang || 0;
+    o.suatTrua      += r.suatTrua || 0;
+    o.suatChieu     += r.suatChieu || 0;
+    o.suatNhanVien  += r.suatNhanVien || 0;
+    o.suatHuy       += r.suatHuy || 0;
+    o.tongSuat      += r.tongSuat || 0;
+    o.soThatThoat   += r.soThatThoat || 0;
+    o.nsCoMat       += r.nsCoMat || 0;
+    o.nsVang        += r.nsVang || 0;
+    o.nsTangCa      += r.nsTangCa || 0;
+    o.soKhieuNai    += r.soKhieuNai || 0;
+    o.soKhenNgoi    += r.soKhenNgoi || 0;
+    o.suatLuuMau    += r.suatLuuMau || 0;
+    o.suatGiaoVien  += r.suatGiaoVien || 0;
+    if (r.giaoTre) { o.giaoTre = true; o.phutTre = Math.max(o.phutTre||0, r.phutTre||0); }
+    if (r.coChiPhiNgoai) { o.coChiPhiNgoai = true; o.soTienChiPhi += r.soTienChiPhi||0; }
+    if ((r.mucDoVanDe||0) > (o.mucDoVanDe||0)) {
+      o.mucDoVanDe = r.mucDoVanDe;
+      o.diemVanDe  = r.diemVanDe;
+      o.lyDoVanDe  = r.lyDoVanDe;
+    }
+    if (r.hinhAnh && r.hinhAnh.length) o.hinhAnh = o.hinhAnh.concat(r.hinhAnh);
+    if (r.tenKhachHang && o._khachList.indexOf(r.tenKhachHang) < 0)
+      o._khachList.push(r.tenKhachHang);
+    // giữ text “mới nhất” / ghép ngắn
+    if (r.suCoThietBi) o.suCoThietBi = r.suCoThietBi;
+    if (r.suCoNhanSu)  o.suCoNhanSu  = r.suCoNhanSu;
+    if (r.deXuat)      o.deXuat      = r.deXuat;
+    if (r.nguoiBaoCao) o.nguoiBaoCao = r.nguoiBaoCao;
+  });
+
+  return Object.keys(map).sort().map(function(k){
+    var o = map[k];
+    o.tenKhachHang = o._khachList.length
+      ? (o._khachList.length === 1 ? o._khachList[0] : o._khachList.length + ' khách hàng')
+      : '(Không tên)';
+    return o;
+  });
+}
+
+
 
 // Kỳ trước: cùng độ dài, liền kề phía trước -> dùng để tính % thay đổi
 function prevPeriod(rows){
@@ -277,13 +349,17 @@ function prevPeriod(rows){
     if (r.ngayBaoCao < pFrom || r.ngayBaoCao > pTo) return false;
     if (F.sites.length && F.sites.indexOf(r.tenSite) < 0) return false;
     if (F.nguoi && r.nguoiBaoCao !== F.nguoi) return false;   // giữ cùng điều kiện để so sánh đúng
+    if (F.khach && r.tenKhachHang !== F.khach) return false;
     return true;
   });
 }
 
 function agg(rows){
-  var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
-            coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{} };
+   var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
+          coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{},
+          suatLuuMau:0, suatGiaoVien:0 };
+  // var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
+  //           coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{} };
   rows.forEach(function(r){
     a.tongSuat+=r.tongSuat; a.sang+=r.suatSang; a.trua+=r.suatTrua; a.chieu+=r.suatChieu;
     a.nv+=r.suatNhanVien; a.huy+=r.suatHuy;
@@ -291,6 +367,8 @@ function agg(rows){
     a.thatThoat+=r.soThatThoat; a.coMat+=r.nsCoMat; a.vang+=r.nsVang;
     a.kn+=r.soKhieuNai; a.khen+=r.soKhenNgoi; a.dem++;
     if (r.coChiPhiNgoai) a.siteCP[r.tenSite]=1;
+    a.suatLuuMau   += (r.suatLuuMau || 0);
+    a.suatGiaoVien += (r.suatGiaoVien || 0);
   });
   a.soSiteCP = Object.keys(a.siteCP).length;
   return a;
@@ -837,9 +915,17 @@ function renderSite(){
   }
   if (!SEL_SITE || sl.indexOf(SEL_SITE) < 0) SEL_SITE = sl[0];
 
-  var rows = all.filter(function(r){ return r.tenSite === SEL_SITE; })
-                .sort(function(a,b){ return a.ngayBaoCao.localeCompare(b.ngayBaoCao); });
+  // var rows = all.filter(function(r){ return r.tenSite === SEL_SITE; })
+  //               .sort(function(a,b){ return a.ngayBaoCao.localeCompare(b.ngayBaoCao); });
+  // var a = agg(rows);
+
+  var rowsRaw = all.filter(function(r){ return r.tenSite === SEL_SITE; })
+                 .sort(function(a,b){ return a.ngayBaoCao.localeCompare(b.ngayBaoCao); });
+   // Không lọc KH → 1 dòng / ngày (cộng suất các KH)
+   // Có lọc KH → từng dòng báo cáo của KH đó
+  var rows = groupRowsBySiteDate(rowsRaw);
   var a = agg(rows);
+   
   var last = rows[rows.length-1];
   var soSuCo = rows.reduce(function(s,r){ return s + incidentsOf(r).length; }, 0);
   var treGio = r1(pct(a.soGiaoTre, a.dem));
@@ -852,15 +938,19 @@ function renderSite(){
     '<select id="selSite" style="border:1px solid #D6D6D6;border-radius:8px;padding:8px 12px;font-size:13.5px;'+
     'font-weight:600;font-family:inherit;outline:none">'+
     sl.map(function(s){ return '<option value="'+esc(s)+'"'+(s===SEL_SITE?' selected':'')+'>'+esc(s)+'</option>'; }).join('')+
-    '</select><span style="color:#A5A5A5;font-size:12.5px">'+rows.length+' ngày có báo cáo</span></div>';
+    '</select><span style="color:#A5A5A5;font-size:12.5px">'+rows.length+' ngày có báo cáo+
+  (F.khach ? ' · KH: '+esc(F.khach) : (rowsRaw.length > rows.length ? ' · '+rowsRaw.length+' dòng chi tiết' : ''))+
+     </span></div>';
 
   // card nhanh
-  html += '<div class="grid g4">'+
+  html += '<div class="grid g6">'+
     kpiCard(IC.user, 'Người báo cáo gần nhất', esc(last?last.nguoiBaoCao:'—'),
             last?('Cập nhật '+last.ngayBaoCao):'', null, true, C.brand)+
     kpiCard(IC.meal, 'Tổng suất kỳ này', fmt(a.tongSuat), a.dem+' ngày', null, true, C.gold)+
     kpiCard(IC.clock,'Tỷ lệ giao trễ', treGio+'%', a.soGiaoTre+' lượt trễ', null, false, C.light)+
     kpiCard(IC.warn, 'Số sự cố ghi nhận', soSuCo, 'trong kỳ', null, false, C.dark)+
+    kpiCard(IC.stack, 'Suất lưu mẫu', fmt(a.suatLuuMau||0), 'trong kỳ', null, true, '#7C3AED')+
+    kpiCard(IC.meal, 'Suất giáo viên (cả ngày)', fmt(a.suatGiaoVien||0), 'trong kỳ', null, true, '#0891B2')+
   '</div>';
 
   // line chart riêng site
@@ -888,7 +978,7 @@ function renderSite(){
     '<th></th><th>Ngày</th><th class="num" style="min-width:110px">Sáng</th>'+
     '<th class="num" style="min-width:110px">Trưa</th>'+
     '<th class="num" style="min-width:110px">Chiều</th>'+
-    '<th class="num">NV</th><th class="num">Hủy</th><th class="num">Tổng</th><th class="ctr">Giao</th>'+
+    '<th class="num">NV</th><th class="num">Hủy</th><th class="num">Lưu mẫu</th><th class="num">GV (cả ngày)</th><th>Khách hàng</th><th class="num">Tổng</th><th class="ctr">Giao</th>'+
     '<th class="num" style="min-width:118px">Thất thoát</th><th class="ctr">KN</th><th class="ctr">Khen</th>'+
     '</tr></thead><tbody>';
 
@@ -948,6 +1038,9 @@ function renderSite(){
       '<td class="num">'+dataBarNum(r.suatChieu, maxChieu, C.gold)+'</td>'+
       '<td class="num">'+fmt(r.suatNhanVien)+'</td>'+
       '<td class="num" style="color:#AAA">'+fmt(r.suatHuy)+'</td>'+
+      '<td class="num">'+fmt(r.suatLuuMau||0)+'</td>'+
+      '<td class="num">'+fmt(r.suatGiaoVien||0)+'</td>'+
+      '<td style="max-width:160px;color:#666">'+esc(r.tenKhachHang||'—')+'</td>'+
       '<td class="num bold-brand">'+dataBarNum(r.tongSuat, maxTong, C.brand)+'</td>'+
       '<td class="ctr">'+(r.giaoTre
         ? '<span class="tag" style="background:#EA580C18;color:#EA580C">Trễ'+(r.phutTre?' '+r.phutTre+"'":'')+'</span>'
@@ -967,10 +1060,13 @@ function renderSite(){
         ['Chi tiết ý kiến khách hàng', r.chiTietYKien],
         ['Chi phí phát sinh', r.coChiPhiNgoai ? (fmtVND(r.soTienChiPhi)+' – '+r.lyDoChiPhi) : ''],
         ['Đề xuất / kiến nghị', r.deXuat],
-        ['Người báo cáo', r.nguoiBaoCao]
+        ['Người báo cáo', r.nguoiBaoCao],
+        ['Khách hàng', r.tenKhachHang],
+        ['Suất lưu mẫu', fmt(r.suatLuuMau||0)],
+        ['Suất giáo viên (cả ngày)', fmt(r.suatGiaoVien||0)]
       ];
       // Sử dụng class 'detail-row' và 'detail-grid' đã định nghĩa CSS ở trên để tránh đè giao diện
-      html += '<tr class="detail-row"><td colspan="12">'+
+      html += '<tr class="detail-row"><td colspan="15">'+
         '<div class="detail-grid">'+
         det.map(function(x){
           return '<div class="detail-item">'+
