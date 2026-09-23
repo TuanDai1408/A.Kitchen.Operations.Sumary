@@ -5,11 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="icon" type="image/png" href="logo_akitchen-removebg-preview.png">
   <title>A.Kitchen • Dashboard Vận Hành</title>
+  <meta name="description" content="Dashboard vận hành, doanh thu, food cost và quản lý kho A.Kitchen - Tân Long Group.">
+  <meta property="og:title" content="A.Kitchen • Dashboard Vận Hành">
+  <meta property="og:description" content="Dashboard vận hành, doanh thu, food cost và quản lý kho A.Kitchen - Tân Long Group.">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-
 <!-- ================= HEADER ================= -->
 <header class="hdr">
   <div class="hdr-in">
@@ -22,7 +24,6 @@
         <div class="brand-t2">A.KITCHEN • TÂN LONG GROUP</div>
       </div>
     </div>
-
     <nav class="nav" id="nav">
       <button data-tab="overview" class="on">Báo cáo vận hành</button>
       <button data-tab="site">Chi tiết theo Site</button>
@@ -33,7 +34,6 @@
       <button data-tab="quanlykho">Quản lý kho</button>
        <button data-tab="dinhduong">Thông tin dinh dưỡng</button>
     </nav>
-
     <div class="live">
       <span class="dot" id="liveDot"></span>
       <span id="liveTxt">Đang kết nối...</span>
@@ -89,14 +89,11 @@
   </div>
 </aside>
 <div class="main-wrap">
-
-
 <!-- ================= FILTER BAR ================= -->
 <div class="fbar" >
   <div class="fbar-in">
     <div class="fld"><label>Từ ngày</label><input type="date" id="fFrom"></div>
     <div class="fld"><label>Đến ngày</label><input type="date" id="fTo"></div>
-
     <div class="fld ms" id="msWrap">
       <label>Site</label>
       <button class="sel" id="msBtn"><span id="msLabel">Tất cả site</span><span style="color:#AAA">▾</span></button>
@@ -105,37 +102,37 @@
         <div id="msList"></div>
       </div>
     </div>
-
-  <div class="fld">
-    <label>Khách hàng</label>
-    <select id="fKhach" style="min-width:200px">
-      <option value="">Tất cả khách hàng</option>
-    </select>
-  </div>
-
-    <div class="fld">
-      <label>Người báo cáo</label>
-      <select id="fNguoi" style="min-width:200px">
-        <option value="">Tất cả người báo cáo</option>
-      </select>
+    <!-- Khách hàng — multi-select checklist (giống Site) -->
+    <div class="fld ms" id="msKhachWrap">
+      <label>Khách hàng</label>
+      <button class="sel" id="msKhachBtn"><span id="msKhachLabel">Tất cả khách hàng</span><span style="color:#AAA">▾</span></button>
+      <div class="ms-pop" id="msKhachPop">
+        <button class="ms-all" id="msKhachAll">✓ Chọn tất cả</button>
+        <div id="msKhachList"></div>
+      </div>
     </div>
-
+    <!-- Người báo cáo — multi-select checklist (giống Site) -->
+    <div class="fld ms" id="msNguoiWrap">
+      <label>Người báo cáo</label>
+      <button class="sel" id="msNguoiBtn"><span id="msNguoiLabel">Tất cả người báo cáo</span><span style="color:#AAA">▾</span></button>
+      <div class="ms-pop" id="msNguoiPop">
+        <button class="ms-all" id="msNguoiAll">✓ Chọn tất cả</button>
+        <div id="msNguoiList"></div>
+      </div>
+    </div>
     <div class="fld grow">
       <label>Tìm trong đề xuất - kiến nghị</label>
       <input type="text" id="fQ" placeholder="Nhập từ khóa...">
     </div>
-
     <button class="btn btn-out" id="btnReset">↺ Đặt lại</button>
     <button class="btn btn-fill" id="btnRefresh">⟳ Làm mới</button>
   </div>
 </div>
-
 <!-- ================= FILTER BAR RIÊNG CHO TAB DOANH THU ================= -->
 <!-- <div class="fbar hide" id="fbarRev">
   <div class="fbar-in">
     <div class="fld"><label>Từ ngày (Billing date)</label><input type="date" id="rFrom"></div>
     <div class="fld"><label>Đến ngày</label><input type="date" id="rTo"></div>
-
     <div class="fld ms" id="rMsWrap">
       <label>Cửa hàng / MS</label>
       <button class="sel" id="rMsBtn"><span id="rMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
@@ -144,41 +141,32 @@
         <div id="rMsList"></div>
       </div>
     </div>
-
     <div class="fld">
       <label>Kênh bán hàng</label>
       <select id="rKenh" style="min-width:140px"><option value="">Tất cả kênh</option></select>
     </div>
-
     <div class="fld">
       <label>Nhóm sản phẩm</label>
       <select id="rNhom" style="min-width:150px"><option value="">Tất cả nhóm</option></select>
     </div>
-
     <div class="fld">
       <label>Nhân viên kinh doanh</label>
       <select id="rNVKD" style="min-width:140px"><option value="">Tất cả NVKD</option></select>
     </div>
-
     <div class="fld">
       <label>Khách hàng</label>
       <select id="rKH" style="min-width:150px"><option value="">Tất cả khách hàng</option></select>
     </div>
-
     <div class="fld-btns">
       <button class="btn btn-out" id="rBtnReset">↺ Đặt lại</button>
       <button class="btn btn-fill" id="rBtnRefresh">⟳ Tải dữ liệu</button>
     </div>
   </div>
 </div> -->
-
-
-
 <div class="fbar hide" id="fbarRev">
   <div class="fbar-in">
     <div class="fld"><label>Từ ngày</label><input type="date" id="rFrom"></div>
     <div class="fld"><label>Đến ngày</label><input type="date" id="rTo"></div>
-
     <div class="fld ms" id="rMsWrap">
       <label>Cửa hàng / Site</label>
       <button class="sel" id="rMsBtn"><span id="rMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
@@ -187,39 +175,32 @@
         <div id="rMsList"></div>
       </div>
     </div>
-
     <div class="fld">
       <label>Kênh BH</label>
       <select id="rKenh"><option value="">Tất cả kênh</option></select>
     </div>
-
     <div class="fld">
       <label>Nhóm SP</label>
       <select id="rNhom"><option value="">Tất cả nhóm</option></select>
     </div>
-
     <div class="fld">
       <label>NVKD</label>
       <select id="rNVKD"><option value="">Tất cả NVKD</option></select>
     </div>
-
     <div class="fld">
       <label>Khách hàng</label>
       <select id="rKH"><option value="">Tất cả KH</option></select>
     </div>
-
     <div class="fld-btns">
       <button class="btn btn-out" id="rBtnReset">↺ Đặt lại</button>
       <button class="btn btn-fill" id="rBtnRefresh">⟳ Tải dữ liệu</button>
     </div>
   </div>
 </div>
-
 <div class="fbar hide" id="fbarSacn">
   <div class="fbar-in">
     <div class="fld"><label>Từ ngày</label><input type="date" id="sFrom"></div>
     <div class="fld"><label>Đến ngày</label><input type="date" id="sTo"></div>
-
     <div class="fld ms" id="sMsWrap">
       <label>Cửa hàng / Site</label>
       <button class="sel" id="sMsBtn"><span id="sMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
@@ -228,12 +209,10 @@
         <div id="sMsList"></div>
       </div>
     </div>
-
     <div class="fld"><label>Kênh BH</label><select id="sKenh"><option value="">Tất cả kênh</option></select></div>
     <div class="fld"><label>Nhóm SP</label><select id="sNhom"><option value="">Tất cả nhóm</option></select></div>
     <div class="fld"><label>NVKD</label><select id="sNVKD"><option value="">Tất cả NVKD</option></select></div>
     <div class="fld"><label>Khách hàng</label><select id="sKH"><option value="">Tất cả KH</option></select></div>
-
     <div class="fld-btns">
       <button class="btn btn-out" id="sBtnReset">↺ Đặt lại</button>
       <button class="btn btn-fill" id="sBtnRefresh">⟳ Tải dữ liệu</button>
@@ -241,7 +220,6 @@
   </div>
 </div>
   
-
 <!-- ================= FILTER BAR RIÊNG CHO TAB SO SÁNH KẾ HOẠCH ================= -->
 <!-- Filter So sánh Kế hoạch -->
 <div class="fbar hide" id="fbarPlan">
@@ -278,12 +256,10 @@
     </div>
   </div>
 </div>
-
 <!-- Filter Quản lý kho — full-width, không hở 2 đầu -->
 <div class="fbar hide" id="fbarKho">
   <div class="fbar-in" id="fbarKhoIn"></div>
 </div>
-
 <!-- Filter Thông tin dinh dưỡng — full-width, không hở 2 đầu -->
 <div class="fbar hide" id="fbarDD">
   <div class="fbar-in" id="fbarDDIn"></div>
@@ -300,17 +276,14 @@
   <div id="tab-quanlykho" class="hide"></div>
   <div id="tab-dinhduong" class="hide"></div>
 </main>
-
 <div class="foot">
   A.Kitchen • Tân Long Group — Dashboard vận hành các site.
   Dữ liệu đọc trực tiếp từ sheet <b>Report</b>, cập nhật lúc <span id="updAt">—</span>.
 </div>
-
 <div class="lb" id="lightbox"><button class="lb-x" id="lbX">&times;</button><img id="lbImg" src="" alt=""></div>
 <div class="toast" id="toast"></div>
 <div id="akTip"></div>
 </div><!-- /.main-wrap  <-- THÊM DÒNG NÀY -->
-
 <script src="script.js"></script>
 </body>
 </html>
