@@ -939,7 +939,7 @@ function renderSite(){
     '<select id="selSite" style="border:1px solid #D6D6D6;border-radius:8px;padding:8px 12px;font-size:13.5px;'+
     'font-weight:600;font-family:inherit;outline:none">'+
     sl.map(function(s){ return '<option value="'+esc(s)+'"'+(s===SEL_SITE?' selected':'')+'>'+esc(s)+'</option>'; }).join('')+
-    '</select><span style="color:#A5A5A5;font-size:12.5px">'+rows.length+' ngày có báo cáo+
+    '</select><span style="color:#A5A5A5;font-size:12.5px">'+rows.length+' ngày có báo cáo'+
   (F.khach ? ' · KH: '+esc(F.khach) : (rowsRaw.length > rows.length ? ' · '+rowsRaw.length+' dòng chi tiết' : ''))+
      </span></div>';
 
