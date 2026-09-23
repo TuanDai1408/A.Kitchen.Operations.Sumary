@@ -554,7 +554,8 @@ function renderOverview(){
       '<span><i style="background:#FBFBFB;border:1px dashed #DDD"></i>Chưa báo cáo</span>'+
       '<span style="color:#B8B8B8;margin-left:auto">hover để xem lý do • bấm để mở chi tiết site</span>'+
     '</div>'+
-    '<div class="tw">'+heatmapHtml(rows, sl)+'</div></div>';
+    // '<div class="tw">'+heatmapHtml(rows, sl)+'</div></div>';
+    '<div class="tw">'+heatmapHtml(groupRowsBySiteDate(rows), sl)+'</div></div>';
 
   html += alertTableHtml(rows);
   html += '</div>';
@@ -1078,7 +1079,7 @@ function renderSite(){
   });
 
 
-  if (!rows.length) html += '<tr><td colspan="12"><div class="empty">Site này chưa có báo cáo trong kỳ</div></td></tr>';
+  if (!rows.length) html += '<tr><td colspan="15"><div class="empty">Site này chưa có báo cáo trong kỳ</div></td></tr>';
   html += '</tbody></table></div></div>';
 
   // gallery + đề xuất
@@ -4665,6 +4666,27 @@ function buildNguoiFilter(){
   el.value = F.nguoi;
 }
 
+// Dropdown khách hàng — chỉ liệt kê KH thuộc site đang chọn (giống người báo cáo)
+function buildKhachFilter(){
+  var el = document.getElementById('fKhach');
+  if (!el) return;
+  var ds = KHACH;
+  if (F.sites.length){
+    var inSite = {};
+    RAW.forEach(function(r){
+      if (F.sites.indexOf(r.tenSite) >= 0 && r.tenKhachHang) inSite[r.tenKhachHang] = 1;
+    });
+    ds = KHACH.filter(function(k){ return inSite[k]; });
+  }
+  if (F.khach && ds.indexOf(F.khach) < 0) F.khach = '';
+  el.innerHTML = '<option value="">Tất cả khách hàng</option>'+
+    ds.map(function(k){
+      return '<option value="'+esc(k)+'"'+(F.khach===k?' selected':'')+'>'+esc(k)+'</option>';
+    }).join('');
+  el.value = F.khach;
+}
+
+
 function setDefaultRange(){
   if (!DATES.length) return;
   var last = DATES[DATES.length-1];
@@ -4687,6 +4709,10 @@ function bindFilters(){
     F.nguoi = this.value; renderCurrent();
   });
 
+  document.getElementById('fKhach').addEventListener('change', function(){
+  F.khach = this.value; renderCurrent();
+});
+
   var qEl = document.getElementById('fQ');
   qEl.addEventListener('input', function(){
     clearTimeout(qEl._t);
@@ -4703,18 +4729,18 @@ function bindFilters(){
     var v = e.target.value;
     if (e.target.checked){ if (F.sites.indexOf(v)<0) F.sites.push(v); }
     else F.sites = F.sites.filter(function(s){ return s!==v; });
-    updateMsLabel(); buildNguoiFilter(); renderCurrent();
+    updateMsLabel(); buildNguoiFilter();buildKhachFilter(); renderCurrent();
   });
   document.getElementById('msAll').addEventListener('click', function(){
     F.sites = [];
     msPop.querySelectorAll('input').forEach(function(c){ c.checked=false; });
-    updateMsLabel(); buildNguoiFilter(); renderCurrent();
+    updateMsLabel(); buildNguoiFilter();buildKhachFilter(); renderCurrent();
   });
 
   document.getElementById('btnReset').addEventListener('click', function(){
-    F.sites = []; F.nguoi = ''; F.q = ''; document.getElementById('fQ').value = '';
+    F.sites = []; F.nguoi = '';F.khach = ''; F.q = ''; document.getElementById('fQ').value = '';
     UI.incLoai=''; UI.incMucDo=''; UI.expanded='';
-    setDefaultRange(); buildSiteFilter(); buildNguoiFilter(); renderCurrent();
+    setDefaultRange(); buildSiteFilter(); buildNguoiFilter();buildKhachFilter(); renderCurrent();
     toast('Đã đặt lại bộ lọc');
   });
 
@@ -4823,6 +4849,7 @@ function onData(res){
   RAW = res.rows || [];
   SITES = res.sites || [];
   NGUOI = res.nguoiBaoCao || [];
+  KHACH = res.khachHang || [];
   DATES = res.dates || [];
   if (res.nguong) NGUONG = res.nguong;
   VERSION = res.version;
@@ -4833,6 +4860,7 @@ function onData(res){
     setDefaultRange();
     buildSiteFilter();
     buildNguoiFilter();
+    buildKhachFilter();
     firstLoad = false;
   } else {
     // Giữ nguyên bộ lọc người dùng đang chọn, chỉ mở rộng biên ngày nếu có ngày mới
@@ -4846,6 +4874,7 @@ function onData(res){
     }
     buildSiteFilter();
     buildNguoiFilter();   // có người báo cáo mới thì dropdown tự bổ sung
+    buildKhachFilter();
   }
   // Tab doanh thu đọc sheet Transactions riêng -> không redraw theo version của Report
   renderCurrent();
