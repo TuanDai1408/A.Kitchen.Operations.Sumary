@@ -59,7 +59,7 @@ var CHARTS = {};         // instance Chart.js theo id canvas
 var VERSION = '';        // dấu hiệu dữ liệu mới
 var NGUOI = [];          // danh sách người báo cáo (cho dropdown)
 var KHACH = [];   // danh sách khách hàng từ backend
-var F = { from:'', to:'', sites:[], nguoi:'', khach:'', q:'' };
+var F = { from:'', to:'', sites:[], nguoi:[], khach:[], q:'' };  // nguoi/khach = multi-select arrays
 // var UI = { lineMode:'total', rankMetric:'tre', incLoai:'', incMucDo:'', expanded:'' };
 var UI = { lineMode:'total', rankMetric:'thatthoat', incLoai:'', incMucDo:'', expanded:'' };
 
@@ -262,8 +262,8 @@ function applyFilter(rows){
     if (F.from && r.ngayBaoCao < F.from) return false;
     if (F.to   && r.ngayBaoCao > F.to)   return false;
     if (F.sites.length && F.sites.indexOf(r.tenSite) < 0) return false;
-    if (F.nguoi && r.nguoiBaoCao !== F.nguoi) return false;
-    if (F.khach && r.tenKhachHang !== F.khach) return false;
+    if (F.nguoi.length && F.nguoi.indexOf(r.nguoiBaoCao) < 0) return false;
+    if (F.khach.length && F.khach.indexOf(r.tenKhachHang) < 0) return false;
     // Ô tìm kiếm giờ chỉ soát trong nội dung đề xuất/kiến nghị
     if (q && String(r.deXuat||'').toLowerCase().indexOf(q) < 0) return false;
     return true;
@@ -276,7 +276,8 @@ function applyFilter(rows){
  * Khi đang lọc 1 KH: trả nguyên rows (đã filter).
  */
 function groupRowsBySiteDate(rows){
-  if (F.khach) return rows.slice(); // đang lọc 1 KH → giữ từng dòng
+  // Chỉ giữ từng dòng khi chọn đúng 1 KH; còn lại gom theo site+ngày
+  if (F.khach && F.khach.length === 1) return rows.slice();
 
   var map = {};
   rows.forEach(function(r){
@@ -348,8 +349,8 @@ function prevPeriod(rows){
   return rows.filter(function(r){
     if (r.ngayBaoCao < pFrom || r.ngayBaoCao > pTo) return false;
     if (F.sites.length && F.sites.indexOf(r.tenSite) < 0) return false;
-    if (F.nguoi && r.nguoiBaoCao !== F.nguoi) return false;   // giữ cùng điều kiện để so sánh đúng
-    if (F.khach && r.tenKhachHang !== F.khach) return false;
+    if (F.nguoi.length && F.nguoi.indexOf(r.nguoiBaoCao) < 0) return false;
+    if (F.khach.length && F.khach.indexOf(r.tenKhachHang) < 0) return false;
     return true;
   });
 }
@@ -941,7 +942,9 @@ function renderSite(){
     sl.map(function(s){ return '<option value="'+esc(s)+'"'+(s===SEL_SITE?' selected':'')+'>'+esc(s)+'</option>'; }).join('')+
    '</select><span style="color:#A5A5A5;font-size:12.5px">'+
      rows.length+' ngày có báo cáo'+
-     (F.khach ? ' · KH: '+esc(F.khach) : (rowsRaw.length > rows.length ? ' · '+rowsRaw.length+' dòng chi tiết' : ''))+
+     (F.khach.length === 1 ? ' · KH: '+esc(F.khach[0]) :
+       (F.khach.length > 1 ? ' · '+F.khach.length+' KH đã chọn' :
+         (rowsRaw.length > rows.length ? ' · '+rowsRaw.length+' dòng chi tiết' : '')))+
    '</span></div>';
 
   // card nhanh
@@ -1109,46 +1112,81 @@ function renderSite(){
   destroyChart('chSite');
   var ctx = ctxOf('chSite');
   if (ctx){
+    // Danh sách KH trong phạm vi site (sau filter)
+    var khSet = {};
+    rowsRaw.forEach(function(r){ if (r.tenKhachHang) khSet[r.tenKhachHang] = 1; });
+    var khList = Object.keys(khSet).sort(function(a,b){ return a.localeCompare(b, 'vi'); });
+    var multiKH = khList.length > 1;
+
+    // Trục X = các ngày (từ rows đã group hoặc raw unique)
+    var dateList = [];
+    rows.forEach(function(r){
+      if (dateList.indexOf(r.ngayBaoCao) < 0) dateList.push(r.ngayBaoCao);
+    });
+    dateList.sort();
+
     var so = cloneOpt();
-    // Tooltip site: kèm ngày đầy đủ, tỷ lệ thất thoát và tình trạng giao hàng
     so.plugins.tooltip.callbacks = {
       title: function(items){
-      var ngay = rows[items[0].dataIndex].ngayBaoCao;
-      var p = String(ngay).split('-');
-      var d = new Date(Date.UTC(+p[0], +p[1]-1, +p[2]));
-      var thu = ['Chủ Nhật','Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Thứ 7'][d.getUTCDay()];
-      return 'Ngày ' + ngay + ' (' + thu + ')';
-    },
-      label: function(it){ return '  ' + it.dataset.label + ': ' + fmt(it.parsed.y) + ' suất'; },
-      afterBody: function(items){
-        var r = rows[items[0].dataIndex];
-        var out = [];
-        out.push('── Chi tiết suất ──');
-        out.push('Sáng: ' + fmt(r.suatSang) + '  •  Trưa: ' + fmt(r.suatTrua) + '  •  Chiều: ' + fmt(r.suatChieu));
-        out.push('NV: ' + fmt(r.suatNhanVien) + '  •  Hủy: ' + fmt(r.suatHuy));
-        out.push(r.giaoTre ? ('Giao trễ' + (r.phutTre ? ' ' + r.phutTre + ' phút' : '')) : 'Giao đúng giờ');
-        if (r.soKhieuNai > 0) out.push('Khiếu nại: ' + r.soKhieuNai);
-        return out;
-      }
-    };
-    // Trục trái: Tổng suất | Trục phải: Suất NV + Suất hủy
-    so.scales.y = {
-      position: 'left',
-      beginAtZero: true,
-      ticks: { font: { size: 10 } },
-      grid: { color: '#F0F0F0' },
-      title: { display: true, text: 'Tổng suất', font: { size: 10 }, color: '#9A9A9A' }
-    };
-    so.scales.y1 = {
-      position: 'right',
-      beginAtZero: true,
-      ticks: { font: { size: 10 }, color: C.light },
-      grid: { drawOnChartArea: false },
-      title: { display: true, text: 'NV / Hủy', font: { size: 10 }, color: C.light }
+        var ngay = dateList[items[0].dataIndex];
+        var p = String(ngay).split('-');
+        var d = new Date(Date.UTC(+p[0], +p[1]-1, +p[2]));
+        var thu = ['Chủ Nhật','Thứ 2','Thứ 3','Thứ 4','Thứ 5','Thứ 6','Thứ 7'][d.getUTCDay()];
+        return 'Ngày ' + ngay + ' (' + thu + ')';
+      },
+      label: function(it){ return '  ' + it.dataset.label + ': ' + fmt(it.parsed.y) + ' suất'; }
     };
 
-    CHARTS.chSite = new Chart(ctx, { type:'line',
-      data:{ labels: rows.map(function(r){return dm(r.ngayBaoCao);}), datasets:[
+    so.scales.y = {
+      position: 'left', beginAtZero: true,
+      ticks: { font: { size: 10 } }, grid: { color: '#F0F0F0' },
+      title: { display: true, text: multiKH ? 'Suất theo KH' : 'Tổng suất', font: { size: 10 }, color: '#9A9A9A' }
+    };
+    if (!multiKH) {
+      so.scales.y1 = {
+        position: 'right', beginAtZero: true,
+        ticks: { font: { size: 10 }, color: C.light },
+        grid: { drawOnChartArea: false },
+        title: { display: true, text: 'NV / Hủy', font: { size: 10 }, color: C.light }
+      };
+    }
+
+    var datasets = [];
+    if (multiKH) {
+      // Mỗi khách hàng 1 line (sản lượng theo ngày)
+      var COLORS = (typeof DONUT_PALETTE !== 'undefined' ? DONUT_PALETTE : PALETTE);
+      khList.forEach(function(kh, i){
+        var col = COLORS[i % COLORS.length];
+        var byDate = {};
+        rowsRaw.forEach(function(r){
+          if (r.tenKhachHang === kh) {
+            byDate[r.ngayBaoCao] = (byDate[r.ngayBaoCao] || 0) + (r.tongSuat || 0);
+          }
+        });
+        datasets.push({
+          label: kh,
+          borderColor: col,
+          backgroundColor: 'transparent',
+          borderWidth: 2.2, tension: 0.3, fill: false, yAxisID: 'y',
+          pointRadius: 2, pointHoverRadius: 5, pointBackgroundColor: col,
+          pointBorderColor: '#fff', pointBorderWidth: 2,
+          data: dateList.map(function(d){ return byDate[d] || 0; })
+        });
+      });
+      // Thêm line Tổng (nét đứt) để so sánh
+      var totalByDate = {};
+      rows.forEach(function(r){ totalByDate[r.ngayBaoCao] = r.tongSuat || 0; });
+      datasets.push({
+        label: 'Tổng site',
+        borderColor: '#666',
+        backgroundColor: 'transparent',
+        borderWidth: 2, tension: 0.3, fill: false, yAxisID: 'y',
+        borderDash: [6, 4],
+        pointRadius: 0, pointHoverRadius: 4, pointBackgroundColor: '#666',
+        data: dateList.map(function(d){ return totalByDate[d] || 0; })
+      });
+    } else {
+      datasets = [
         { label:'Tổng suất', borderColor:C.brand, backgroundColor:'rgba(122,31,43,.18)',
           borderWidth:2.5, tension:.32, fill:true, yAxisID:'y',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.brand,
@@ -1164,7 +1202,14 @@ function renderSite(){
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.gold,
           pointBorderColor:'#fff', pointBorderWidth:2,
           data: rows.map(function(r){return r.suatHuy;}) }
-      ]}, options:so });
+      ];
+    }
+
+    CHARTS.chSite = new Chart(ctx, {
+      type: 'line',
+      data: { labels: dateList.map(function(d){ return dm(d); }), datasets: datasets },
+      options: so
+    });
   }
 
   document.getElementById('selSite').addEventListener('change', function(){
@@ -4645,10 +4690,24 @@ function updateMsLabel(){
     n === 0 ? 'Tất cả site' : (n === 1 ? F.sites[0] : n+' site đã chọn');
 }
 
-// Dropdown người báo cáo. Chỉ liệt kê người thuộc site đang chọn để tránh
-// tình huống chọn ra người không có dòng nào -> dashboard trắng.
+// Multi-select Người báo cáo + Khách hàng (checklist giống Site)
+function updateNguoiLabel(){
+  var n = F.nguoi.length;
+  var el = document.getElementById('msNguoiLabel');
+  if (!el) return;
+  el.textContent = n === 0 ? 'Tất cả người báo cáo' : (n === 1 ? F.nguoi[0] : n + ' người đã chọn');
+}
+
+function updateKhachLabel(){
+  var n = F.khach.length;
+  var el = document.getElementById('msKhachLabel');
+  if (!el) return;
+  el.textContent = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? F.khach[0] : n + ' KH đã chọn');
+}
+
 function buildNguoiFilter(){
-  var el = document.getElementById('fNguoi');
+  var list = document.getElementById('msNguoiList');
+  if (!list) return;
   var ds = NGUOI;
   if (F.sites.length){
     var inSite = {};
@@ -4657,20 +4716,17 @@ function buildNguoiFilter(){
     });
     ds = NGUOI.filter(function(n){ return inSite[n]; });
   }
-  // Nếu người đang chọn không còn trong danh sách -> tự bỏ chọn
-  if (F.nguoi && ds.indexOf(F.nguoi) < 0) F.nguoi = '';
-
-  el.innerHTML = '<option value="">Tất cả người báo cáo</option>'+
-    ds.map(function(n){
-      return '<option value="'+esc(n)+'"'+(F.nguoi===n?' selected':'')+'>'+esc(n)+'</option>';
-    }).join('');
-  el.value = F.nguoi;
+  F.nguoi = (F.nguoi || []).filter(function(n){ return ds.indexOf(n) >= 0; });
+  list.innerHTML = ds.map(function(n){
+    return '<label><input type="checkbox" value="'+esc(n)+'"'+
+           (F.nguoi.indexOf(n)>=0?' checked':'')+'> '+esc(n)+'</label>';
+  }).join('');
+  updateNguoiLabel();
 }
 
-// Dropdown khách hàng — chỉ liệt kê KH thuộc site đang chọn (giống người báo cáo)
 function buildKhachFilter(){
-  var el = document.getElementById('fKhach');
-  if (!el) return;
+  var list = document.getElementById('msKhachList');
+  if (!list) return;
   var ds = KHACH;
   if (F.sites.length){
     var inSite = {};
@@ -4679,14 +4735,13 @@ function buildKhachFilter(){
     });
     ds = KHACH.filter(function(k){ return inSite[k]; });
   }
-  if (F.khach && ds.indexOf(F.khach) < 0) F.khach = '';
-  el.innerHTML = '<option value="">Tất cả khách hàng</option>'+
-    ds.map(function(k){
-      return '<option value="'+esc(k)+'"'+(F.khach===k?' selected':'')+'>'+esc(k)+'</option>';
-    }).join('');
-  el.value = F.khach;
+  F.khach = (F.khach || []).filter(function(k){ return ds.indexOf(k) >= 0; });
+  list.innerHTML = ds.map(function(k){
+    return '<label><input type="checkbox" value="'+esc(k)+'"'+
+           (F.khach.indexOf(k)>=0?' checked':'')+'> '+esc(k)+'</label>';
+  }).join('');
+  updateKhachLabel();
 }
-
 
 function setDefaultRange(){
   if (!DATES.length) return;
@@ -4706,13 +4761,55 @@ function bindFilters(){
   document.getElementById('fFrom').addEventListener('change', function(){ F.from=this.value; renderCurrent(); });
   document.getElementById('fTo').addEventListener('change',   function(){ F.to=this.value;   renderCurrent(); });
 
-  document.getElementById('fNguoi').addEventListener('change', function(){
-    F.nguoi = this.value; renderCurrent();
-  });
+  // Multi-select Người báo cáo
+  (function(){
+    var btn = document.getElementById('msNguoiBtn');
+    var pop = document.getElementById('msNguoiPop');
+    var wrap = document.getElementById('msNguoiWrap');
+    if (!btn || !pop) return;
+    btn.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      if (wrap && !wrap.contains(e.target)) pop.classList.remove('open');
+    });
+    pop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (F.nguoi.indexOf(v)<0) F.nguoi.push(v); }
+      else F.nguoi = F.nguoi.filter(function(x){ return x!==v; });
+      updateNguoiLabel(); renderCurrent();
+    });
+    var all = document.getElementById('msNguoiAll');
+    if (all) all.addEventListener('click', function(){
+      F.nguoi = [];
+      pop.querySelectorAll('input').forEach(function(c){ c.checked=false; });
+      updateNguoiLabel(); renderCurrent();
+    });
+  })();
 
-  document.getElementById('fKhach').addEventListener('change', function(){
-  F.khach = this.value; renderCurrent();
-});
+  // Multi-select Khách hàng
+  (function(){
+    var btn = document.getElementById('msKhachBtn');
+    var pop = document.getElementById('msKhachPop');
+    var wrap = document.getElementById('msKhachWrap');
+    if (!btn || !pop) return;
+    btn.addEventListener('click', function(e){ e.stopPropagation(); pop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      if (wrap && !wrap.contains(e.target)) pop.classList.remove('open');
+    });
+    pop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (F.khach.indexOf(v)<0) F.khach.push(v); }
+      else F.khach = F.khach.filter(function(x){ return x!==v; });
+      updateKhachLabel(); renderCurrent();
+    });
+    var all = document.getElementById('msKhachAll');
+    if (all) all.addEventListener('click', function(){
+      F.khach = [];
+      pop.querySelectorAll('input').forEach(function(c){ c.checked=false; });
+      updateKhachLabel(); renderCurrent();
+    });
+  })();
 
   var qEl = document.getElementById('fQ');
   qEl.addEventListener('input', function(){
@@ -4739,7 +4836,7 @@ function bindFilters(){
   });
 
   document.getElementById('btnReset').addEventListener('click', function(){
-    F.sites = []; F.nguoi = '';F.khach = ''; F.q = ''; document.getElementById('fQ').value = '';
+    F.sites = []; F.nguoi = []; F.khach = []; F.q = ''; document.getElementById('fQ').value = '';
     UI.incLoai=''; UI.incMucDo=''; UI.expanded='';
     setDefaultRange(); buildSiteFilter(); buildNguoiFilter();buildKhachFilter(); renderCurrent();
     toast('Đã đặt lại bộ lọc');
@@ -5793,4 +5890,3 @@ loadData();
 // })();
 // startPolling();
 // startHardRefresh();     // refresh cứng toàn dashboard mỗi 60 giây
-
