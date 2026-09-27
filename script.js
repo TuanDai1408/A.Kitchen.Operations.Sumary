@@ -2344,8 +2344,8 @@ function drawRevenueSacn(){
   // html += '<div class="qlk-note" style="margin-bottom:11px">Tab SACN: đã loại các site '+
   //   SACN_EXCLUDE_MASITE.join(', ')+' khỏi toàn bộ số liệu bên dưới.</div>';
 
-  /* KHỐI 1 — giữ nguyên như tab gốc */
-  html += '<div class="grid g4">';
+  /* KHỐI 1 — 10 KPI: 5 cột × 2 hàng */
+  html += '<div class="grid g5">';
   html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.grossRevenue),
     k.invoiceCount+' hóa đơn • '+fmt(k.qtyPHA || 0)+' suất (PHA)',
     d(k.grossRevenue, p.grossRevenue), true, C.brand);
@@ -2459,12 +2459,16 @@ function drawRevenueSacn(){
     (Math.round(dispKg*100)/100).toLocaleString('vi-VN') + ' Kg',
     (k.dispRows||0) + ' dòng Disposal',
     d(dispKg, dispKgPrev), false, '#C0342C');
-  // Giá trị + % DT
+  // Giá trị + % DT (highlight % chiếm doanh thu)
   html += '<div class="kpi" style="border-left-color:#7C3AED">'+
     '<div class="kpi-top"><div>'+
       '<div class="kpi-lb">Giá trị tiêu hủy NVL-BTP</div>'+
       '<div class="kpi-v">'+fmtMoney(dispVal)+'</div>'+
-      '<div class="kpi-sub">chiếm '+fmtPct(dispPct)+' doanh thu thuần</div>'+
+      '<div class="kpi-sub">chiếm doanh thu thuần</div>'+
+      '<div style="margin-top:5px;font-size:15px;font-weight:800;color:#7C3AED;line-height:1.25">'+
+        fmtPct(dispPct)+
+        ' <span style="font-size:11px;font-weight:400;color:#A8A8A8">doanh thu thuần</span>'+
+      '</div>'+
     '</div><div class="kpi-ic" style="background:#7C3AED14;color:#7C3AED">'+svg(IC.wallet,19)+'</div></div>'+
     (function(){
       var delta = d(dispVal, dispValPrev);
