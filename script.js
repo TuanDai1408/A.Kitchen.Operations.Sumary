@@ -78,7 +78,72 @@ var SACN_EXCLUDE_MASITE = ['K502','K003','K800']; // Mã site bị loại khỏi
 var REV_SACN = null;
 var REV_SACN_INIT = false;
 var RF_SACN = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
-var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month', barDim:'khachHang' };
+var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month', barDim:'khachHang', huyMode:'suat', huyDim:'site' };
+// huyMode: 'suat' | 'nvl'   huyDim: 'site' | 'day'
+
+/** Gom sheet Disposal of goods theo filter SACN (ngày + site) */
+function rev_aggDisposal(disposalRows, f, allowedSites) {
+  var out = {
+    qtyKg: 0, value: 0, rows: 0,
+    bySite: {}, byDate: {},
+    // prev filled by caller if needed
+  };
+  if (!disposalRows || !disposalRows.length) return out;
+  var from = (f && f.from) || '', to = (f && f.to) || '';
+  var sites = (f && f.sites && f.sites.length) ? f.sites : null;
+  var allow = allowedSites && allowedSites.length ? allowedSites : null;
+
+  function siteOk(name) {
+    if (!name) return false;
+    if (allow && allow.indexOf(name) < 0) {
+      // soft match
+      var norm = function(x){ return String(x||'').toLowerCase().replace(/\s+/g,' ').trim(); };
+      var t = norm(name);
+      for (var i=0;i<allow.length;i++) if (norm(allow[i]) === t) return true;
+      // partial: site name contains allow or vice versa
+      for (var j=0;j<allow.length;j++) {
+        var a = norm(allow[j]);
+        if (t.indexOf(a) >= 0 || a.indexOf(t) >= 0) return true;
+      }
+      return false;
+    }
+    if (sites) {
+      if (sites.indexOf(name) >= 0) return true;
+      var norm2 = function(x){ return String(x||'').toLowerCase().replace(/\s+/g,' ').trim(); };
+      var t2 = norm2(name);
+      for (var k=0;k<sites.length;k++) {
+        var s2 = norm2(sites[k]);
+        if (s2 === t2 || t2.indexOf(s2) >= 0 || s2.indexOf(t2) >= 0) return true;
+      }
+      return false;
+    }
+    return true;
+  }
+
+  disposalRows.forEach(function(r){
+    var ngay = r.ngay || '';
+    if (from && ngay < from) return;
+    if (to && ngay > to) return;
+    if (!siteOk(r.tenSite)) return;
+    var qty = Number(r.qtyKg) || 0;
+    var val = Number(r.value) || 0;
+    out.qtyKg += qty;
+    out.value += val;
+    out.rows++;
+    var sk = r.tenSite || '(Không tên)';
+    if (!out.bySite[sk]) out.bySite[sk] = { qtyKg:0, value:0, rows:0 };
+    out.bySite[sk].qtyKg += qty;
+    out.bySite[sk].value += val;
+    out.bySite[sk].rows++;
+    if (ngay) {
+      if (!out.byDate[ngay]) out.byDate[ngay] = { qtyKg:0, value:0, rows:0 };
+      out.byDate[ngay].qtyKg += qty;
+      out.byDate[ngay].value += val;
+      out.byDate[ngay].rows++;
+    }
+  });
+  return out;
+}
 
 function sacn_baseRows(){
   if (!REV_RAW || !REV_RAW.rows) return [];
@@ -1565,11 +1630,55 @@ function computeAndDrawRevenueSacn(){
 
   var siteDetail = rev_buildSiteDetail(dims, cur, f, opexItems, huy);
 
+
+  // ===== Tiêu hủy NVL-BTP từ sheet Disposal of goods =====
+  var disp = rev_aggDisposal(REV_RAW.disposalRows || [], f, sacnSiteNames);
+  kpi.dispQtyKg = disp.qtyKg;
+  kpi.dispValue = disp.value;
+  kpi.dispPctRev = (kpi.netRevenue > 0) ? (disp.value / kpi.netRevenue) * 100 : 0;
+  kpi.dispRows = disp.rows;
+
+  var dispPrev = { qtyKg:0, value:0, pctRev:0 };
+  if (pr) {
+    var dispP = rev_aggDisposal(REV_RAW.disposalRows || [], {
+      from: pr.from, to: pr.to, sites: f.sites
+    }, sacnSiteNames);
+    dispPrev.qtyKg = dispP.qtyKg;
+    dispPrev.value = dispP.value;
+    // dùng net revenue kỳ trước nếu có
+    var prevNet = (kpiPrev && kpiPrev.netRevenue) || 0;
+    dispPrev.pctRev = prevNet > 0 ? (dispP.value / prevNet) * 100 : 0;
+  }
+  kpiPrev.dispQtyKg = dispPrev.qtyKg;
+  kpiPrev.dispValue = dispPrev.value;
+  kpiPrev.dispPctRev = dispPrev.pctRev;
+
+  // Gắn tiêu hủy theo site (khớp mềm tên site)
+  bySite.forEach(function (s) {
+    var d0 = disp.bySite[s.key];
+    if (!d0) {
+      var nk = String(s.key||'').toLowerCase().replace(/\s+/g,' ').trim();
+      Object.keys(disp.bySite).forEach(function(k){
+        var kk = k.toLowerCase().replace(/\s+/g,' ').trim();
+        if (!d0 && (kk === nk || kk.indexOf(nk)>=0 || nk.indexOf(kk)>=0)) d0 = disp.bySite[k];
+      });
+    }
+    if (d0) {
+      s.dispQtyKg = d0.qtyKg;
+      s.dispValue = d0.value;
+      s.dispPctRev = s.netRevenue > 0 ? (d0.value / s.netRevenue) * 100 : 0;
+    } else {
+      s.dispQtyKg = 0; s.dispValue = 0; s.dispPctRev = 0;
+    }
+  });
+
+
   REV_SACN = {
     ok: true, dims: dims, kpi: kpi, kpiPrev: kpiPrev, byDate: byDate,
     periodCompare: periodCompare, bySite: bySite, byNhomSP: byNhom, byKenh: byKenh,
     byNVKD: byNVKD, byKhachHang: byKH.slice(0, 50), byLyDoTraHang: byLyDo,
     siteDetail: siteDetail, opexItems: opexItems, nguong: REV_RAW.nguong,
+    disposal: disp,
     updatedAt: REV_RAW.updatedAt, totalLines: base.length, filteredLines: cur.length, prevRange: pr
   };
 
@@ -2340,6 +2449,34 @@ function drawRevenueSacn(){
    
   html += kpiCard(IC.meal, 'Đơn giá TB / Suất (PHA)', fmtMoney(k.asp),
     fmt(k.qtyPHA)+' suất PHA', d(k.asp, p.asp), true, C.gold);
+
+  // KPI tiêu hủy NVL-BTP (sheet Disposal of goods)
+  var dispKg = k.dispQtyKg || 0, dispKgPrev = (p && p.dispQtyKg) || 0;
+  var dispVal = k.dispValue || 0, dispValPrev = (p && p.dispValue) || 0;
+  var dispPct = k.dispPctRev || 0, dispPctPrev = (p && p.dispPctRev) || 0;
+  // KG: thấp hơn kỳ trước là tốt
+  html += kpiCard(IC.trash, 'Tiêu hủy NVL-BTP (Kg)',
+    (Math.round(dispKg*100)/100).toLocaleString('vi-VN') + ' Kg',
+    (k.dispRows||0) + ' dòng Disposal',
+    d(dispKg, dispKgPrev), false, '#C0342C');
+  // Giá trị + % DT
+  html += '<div class="kpi" style="border-left-color:#7C3AED">'+
+    '<div class="kpi-top"><div>'+
+      '<div class="kpi-lb">Giá trị tiêu hủy NVL-BTP</div>'+
+      '<div class="kpi-v">'+fmtMoney(dispVal)+'</div>'+
+      '<div class="kpi-sub">chiếm '+fmtPct(dispPct)+' doanh thu thuần</div>'+
+    '</div><div class="kpi-ic" style="background:#7C3AED14;color:#7C3AED">'+svg(IC.wallet,19)+'</div></div>'+
+    (function(){
+      var delta = d(dispVal, dispValPrev);
+      if (delta === null || isNaN(delta) || delta === 0) return '';
+      var up = delta > 0;
+      var good = !up; // giảm giá trị hủy = tốt
+      return '<div class="kpi-d '+(good?'up':'down')+'">'+
+        svg(up?IC.up:IC.down,13)+Math.abs(delta)+
+        '% <span style="color:#B0B0B0;font-weight:400">so kỳ trước</span></div>';
+    })()+
+  '</div>';
+
   html += '</div>';
 
   /* OPEX */
@@ -2380,9 +2517,21 @@ function drawRevenueSacn(){
   html += '<div class="card">'+cardHead(IC.stack,'Doanh thu theo kênh bán hàng','')+
     '<div class="cbox"><canvas id="sChRevKenh"></canvas></div></div>';
 
-  html += '<div class="card">'+cardHead(IC.trash,'Tỷ lệ hủy hàng theo cửa hàng (ngưỡng '+
-      ng.huyPct.toFixed(2).replace('.',',')+'%)','')+
-    '<div class="cbox"><canvas id="sChRevHuy"></canvas></div></div>';
+  html += '<div class="card">'+cardHead(IC.trash,
+      (RUI_SACN.huyMode==='nvl'
+        ? 'Tỷ lệ hủy NVL-BTP'+(RUI_SACN.huyDim==='day'?' theo ngày':' theo cửa hàng')
+        : 'Tỷ lệ hủy hàng theo cửa hàng (ngưỡng '+ng.huyPct.toFixed(2).replace('.',',')+'%)'),
+      '<div class="tg" id="sTgHuyMode" style="margin-right:6px">'+
+        '<button data-v="suat" class="'+(RUI_SACN.huyMode!=='nvl'?'on':'')+'">Suất hủy</button>'+
+        '<button data-v="nvl" class="'+(RUI_SACN.huyMode==='nvl'?'on':'')+'">NVL-BTP</button></div>'+
+      '<div class="tg'+(RUI_SACN.huyMode==='nvl'?'':' hide')+'" id="sTgHuyDim">'+
+        '<button data-v="site" class="'+(RUI_SACN.huyDim!=='day'?'on':'')+'">Theo site</button>'+
+        '<button data-v="day" class="'+(RUI_SACN.huyDim==='day'?'on':'')+'">Theo ngày</button></div>')+
+    '<div class="cbox"><canvas id="sChRevHuy"></canvas></div>'+
+    (RUI_SACN.huyMode==='nvl'
+      ? '<div style="font-size:11px;color:#A8A8A8;margin-top:6px">Kg tiêu hủy · Giá trị · % trên doanh thu thuần (sheet Disposal of goods)</div>'
+      : '')+
+    '</div>';
 
   html += '<div class="card">'+cardHead(IC.line,'Food cost % theo nhóm sản phẩm','')+
     '<div class="cbox"><canvas id="sChRevFcNhom"></canvas></div></div>';
@@ -2855,37 +3004,144 @@ function drawRevHuySacn(){
   destroyChart('sChRevHuy');
   var ctx = ctxOf('sChRevHuy'); if (!ctx) return;
   var ng = REV_SACN.nguong;
-  var data = REV_SACN.bySite.slice()
-    .filter(function(x){ return x.huyReportPct !== null && x.huyReportPct !== undefined; })
-    .sort(function(a,b){ return b.huyQtyPct - a.huyQtyPct; }).slice(0, 12);
-  if (!data.length){
-    var el = document.getElementById('sChRevHuy');
-    if (el && el.parentNode) el.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu suất hủy cho các site SACN trong kỳ này</div>';
+  var mode = RUI_SACN.huyMode || 'suat';
+  var dim = RUI_SACN.huyDim || 'site';
+
+  // ===== Mode: suất hủy (Report) — giữ logic cũ =====
+  if (mode !== 'nvl') {
+    var data = REV_SACN.bySite.slice()
+      .filter(function(x){ return x.huyReportPct !== null && x.huyReportPct !== undefined; })
+      .sort(function(a,b){ return b.huyQtyPct - a.huyQtyPct; }).slice(0, 12);
+    if (!data.length){
+      var el = document.getElementById('sChRevHuy');
+      if (el && el.parentNode) el.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu suất hủy cho các site SACN trong kỳ này</div>';
+      return;
+    }
+    var o = cloneOpt();
+    o.plugins.legend = { display:false };
+    o.scales.y.ticks.callback = function(v){ return v+'%'; };
+    o.plugins.tooltip.callbacks = { label:function(c){
+      var x = data[c.dataIndex]; var over = x.huyQtyPct - ng.huyPct;
+      return ['Tỷ lệ suất hủy: '+fmtPct(x.huyReportPct),
+              fmt(x.huySuatHuy||0)+' / '+fmt(x.huyTongSuat||0)+' suất (Report)',
+              over > 0 ? '▲ Vượt '+fmtPct(over)+' so định mức' : '✓ Trong định mức'];
+    }};
+    var thrLine = { id:'sacnThrLine', afterDatasetsDraw:function(chart){
+      if (chart.canvas.id !== 'sChRevHuy') return;
+      var y = chart.scales.y, c = chart.ctx; var yPos = y.getPixelForValue(ng.huyPct); if (isNaN(yPos)) return;
+      c.save(); c.beginPath(); c.moveTo(chart.chartArea.left, yPos); c.lineTo(chart.chartArea.right, yPos);
+      c.lineWidth = 1.6; c.strokeStyle = '#C0342C'; c.setLineDash([6,4]); c.stroke(); c.setLineDash([]);
+      c.fillStyle = '#C0342C'; c.font = 'bold 10px Segoe UI'; c.textAlign = 'right';
+      c.fillText('Định mức '+ng.huyPct.toFixed(2).replace('.',',')+'%', chart.chartArea.right - 4, yPos - 5);
+      c.restore();
+    }};
+    CHARTS.sChRevHuy = new Chart(ctx, { type:'bar',
+      data:{ labels: data.map(function(x){ return x.key; }),
+        datasets:[{ data:data.map(function(x){ return r1(x.huyQtyPct); }), borderRadius:3, barPercentage:.68,
+          backgroundColor:data.map(function(x){ return x.huyQtyPct <= ng.huyPct ? '#16A34ACC' : '#C0342CCC'; }) }] },
+      options:o, plugins:[thrLine] });
     return;
   }
-  var o = cloneOpt();
-  o.plugins.legend = { display:false };
-  o.scales.y.ticks.callback = function(v){ return v+'%'; };
-  o.plugins.tooltip.callbacks = { label:function(c){
-    var x = data[c.dataIndex]; var over = x.huyQtyPct - ng.huyPct;
-    return ['Tỷ lệ suất hủy: '+fmtPct(x.huyReportPct),
-            fmt(x.huySuatHuy||0)+' / '+fmt(x.huyTongSuat||0)+' suất (Report)',
-            over > 0 ? '▲ Vượt '+fmtPct(over)+' so định mức' : '✓ Trong định mức'];
-  }};
-  var thrLine = { id:'sacnThrLine', afterDatasetsDraw:function(chart){
-    if (chart.canvas.id !== 'sChRevHuy') return;
-    var y = chart.scales.y, c = chart.ctx; var yPos = y.getPixelForValue(ng.huyPct); if (isNaN(yPos)) return;
-    c.save(); c.beginPath(); c.moveTo(chart.chartArea.left, yPos); c.lineTo(chart.chartArea.right, yPos);
-    c.lineWidth = 1.6; c.strokeStyle = '#C0342C'; c.setLineDash([6,4]); c.stroke(); c.setLineDash([]);
-    c.fillStyle = '#C0342C'; c.font = 'bold 10px Segoe UI'; c.textAlign = 'right';
-    c.fillText('Định mức '+ng.huyPct.toFixed(2).replace('.',',')+'%', chart.chartArea.right - 4, yPos - 5);
-    c.restore();
-  }};
-  CHARTS.sChRevHuy = new Chart(ctx, { type:'bar',
-    data:{ labels: data.map(function(x){ return x.key; }),
-      datasets:[{ data:data.map(function(x){ return r1(x.huyQtyPct); }), borderRadius:3, barPercentage:.68,
-        backgroundColor:data.map(function(x){ return x.huyQtyPct <= ng.huyPct ? '#16A34ACC' : '#C0342CCC'; }) }] },
-    options:o, plugins:[thrLine] });
+
+  // ===== Mode: NVL-BTP (Disposal of goods) =====
+  var disp = REV_SACN.disposal || { bySite:{}, byDate:{} };
+  var labels = [], qtyArr = [], valArr = [], pctArr = [];
+
+  if (dim === 'day') {
+    labels = Object.keys(disp.byDate || {}).sort();
+    // Doanh thu theo ngày để tính %
+    var revByDate = {};
+    (REV_SACN.byDate || []).forEach(function(x){ revByDate[x.key] = x.netRevenue || 0; });
+    labels.forEach(function(d){
+      var row = disp.byDate[d] || { qtyKg:0, value:0 };
+      qtyArr.push(r1(row.qtyKg));
+      valArr.push(Math.round(row.value));
+      var rev = revByDate[d] || 0;
+      pctArr.push(rev > 0 ? r1((row.value / rev) * 100) : 0);
+    });
+  } else {
+    // theo site: lấy từ bySite đã gắn trên REV_SACN.bySite + disposal.bySite
+    var sites = REV_SACN.bySite.slice().map(function(s){
+      return {
+        key: s.key,
+        qtyKg: s.dispQtyKg || 0,
+        value: s.dispValue || 0,
+        pct: s.dispPctRev || 0
+      };
+    }).filter(function(x){ return x.qtyKg > 0 || x.value > 0; })
+      .sort(function(a,b){ return b.value - a.value; }).slice(0, 12);
+    // bổ sung site chỉ có disposal không có doanh thu
+    Object.keys(disp.bySite || {}).forEach(function(k){
+      if (sites.some(function(x){ return x.key === k; })) return;
+      var d0 = disp.bySite[k];
+      if ((d0.qtyKg||0) > 0 || (d0.value||0) > 0)
+        sites.push({ key:k, qtyKg:d0.qtyKg, value:d0.value, pct:0 });
+    });
+    sites.sort(function(a,b){ return b.value - a.value; });
+    sites = sites.slice(0, 12);
+    labels = sites.map(function(x){ return x.key; });
+    qtyArr = sites.map(function(x){ return r1(x.qtyKg); });
+    valArr = sites.map(function(x){ return Math.round(x.value); });
+    pctArr = sites.map(function(x){ return r1(x.pct); });
+  }
+
+  if (!labels.length){
+    var el2 = document.getElementById('sChRevHuy');
+    if (el2 && el2.parentNode) el2.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu tiêu hủy NVL-BTP (sheet Disposal of goods) trong kỳ / filter hiện tại</div>';
+    return;
+  }
+
+  var o2 = cloneOpt();
+  o2.plugins.legend = { display:true, labels:{ font:{size:11}, boxWidth:12, usePointStyle:true } };
+  o2.scales.y = {
+    position:'left', beginAtZero:true,
+    ticks:{ font:{size:10}, callback:function(v){ return v; } },
+    grid:{ color:'#F0F0F0' },
+    title:{ display:true, text:'Kg tiêu hủy', font:{size:10}, color:'#9A9A9A' }
+  };
+  o2.scales.y1 = {
+    position:'right', beginAtZero:true,
+    ticks:{ font:{size:10}, callback:function(v){ return v+'%'; }, color:'#7C3AED' },
+    grid:{ drawOnChartArea:false },
+    title:{ display:true, text:'% DT thuần', font:{size:10}, color:'#7C3AED' }
+  };
+  o2.plugins.tooltip.callbacks = {
+    label: function(c){
+      var i = c.dataIndex;
+      if (c.dataset.label === 'Kg tiêu hủy')
+        return ' Kg: ' + qtyArr[i].toLocaleString('vi-VN') + ' · Giá trị: ' + fmtMoney(valArr[i]);
+      return ' % DT: ' + fmtPct(pctArr[i]) + ' · Giá trị: ' + fmtMoney(valArr[i]);
+    }
+  };
+
+  CHARTS.sChRevHuy = new Chart(ctx, {
+    type: dim === 'day' ? 'line' : 'bar',
+    data: {
+      labels: labels.map(function(l){ return dim==='day' ? dm(l) : l; }),
+      datasets: [
+        {
+          label: 'Kg tiêu hủy',
+          data: qtyArr,
+          borderColor: '#C0342C',
+          backgroundColor: dim==='day' ? 'rgba(192,52,44,.12)' : '#C0342CCC',
+          borderWidth: 2, tension: 0.3, fill: dim==='day',
+          yAxisID: 'y', borderRadius: 3, barPercentage: 0.65,
+          pointRadius: dim==='day' ? 3 : 0
+        },
+        {
+          label: '% trên DT thuần',
+          data: pctArr,
+          borderColor: '#7C3AED',
+          backgroundColor: dim==='day' ? 'rgba(124,58,237,.12)' : '#7C3AED99',
+          borderWidth: 2, tension: 0.3, fill: false,
+          yAxisID: 'y1', borderRadius: 3, barPercentage: 0.65,
+          borderDash: dim==='day' ? [5,4] : [],
+          pointRadius: dim==='day' ? 3 : 0
+        }
+      ]
+    },
+    options: o2
+  });
 }
 
 function drawRevFcNhomSacn(){
@@ -3053,6 +3309,23 @@ function renderRevDrillSacn(site){
 }
 
 function bindRevenueEventsSacn(){
+  var tgHuyMode = document.getElementById('sTgHuyMode');
+  if (tgHuyMode) tgHuyMode.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.huyMode = b.dataset.v;
+    tgHuyMode.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var dimEl = document.getElementById('sTgHuyDim');
+    if (dimEl) dimEl.classList.toggle('hide', RUI_SACN.huyMode !== 'nvl');
+    // redraw whole SACN card title + chart (title depends on mode)
+    drawRevenueSacn();
+  });
+  var tgHuyDim = document.getElementById('sTgHuyDim');
+  if (tgHuyDim) tgHuyDim.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.huyDim = b.dataset.v;
+    tgHuyDim.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    drawRevHuySacn();
+  });
   var tgT = document.getElementById('sTgTrend');
   if (tgT) tgT.addEventListener('click', function(e){
     var b = e.target.closest('button'); if (!b) return;
