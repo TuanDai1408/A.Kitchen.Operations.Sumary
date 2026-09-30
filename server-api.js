@@ -635,15 +635,10 @@ export async function getWarehouseDashboardData() {
     if (h.site && h.site_name) siteCodeToName[h.site] = h.site_name;
   });
 
-  const slocMeta = {
+  const slocDict = {
     "KL01": { name: "Kho nguyên vật liệu & Thực phẩm (KL01)" },
     "KL02": { name: "Kho vật tư tiêu hao & Hóa phẩm (KL02)" },
-    "KL03": { name: "Kho công cụ & Thiết bị bếp (KL03)" },
-    "1001": { name: "Kho NVL chính (1001)" },
-    "1002": { name: "Kho BTP (1002)" },
-    "1003": { name: "Kho gia vị & đồ khô (1003)" },
-    "1004": { name: "Kho bao bì & vật tư (1004)" },
-    "1005": { name: "Kho đông lạnh (1005)" }
+    "KL03": { name: "Kho công cụ dụng cụ & Thiết bị bếp (KL03)" }
   };
 
   const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set(), typeSet = new Set();
@@ -734,6 +729,11 @@ export async function getWarehouseDashboardData() {
   });
 
   const viSort = (a, b) => a.localeCompare(b, "vi");
+  const slocMeta = {};
+  slocSet.forEach(s => {
+    slocMeta[s] = slocDict[s] || { name: `Kho ${s}` };
+  });
+
   return {
     success: true,
     meta: {

@@ -283,7 +283,28 @@
 <div class="lb" id="lightbox"><button class="lb-x" id="lbX">&times;</button><img id="lbImg" src="" alt=""></div>
 <div class="toast" id="toast"></div>
 <div id="akTip"></div>
-</div><!-- /.main-wrap  <-- THÊM DÒNG NÀY -->
+
+<!-- Top Glowing Progress Bar -->
+<div id="akTopLoader" class="ak-top-loader"></div>
+
+<!-- Global Animated Loading Modal Overlay -->
+<div id="akGlobalLoader" class="ak-loader-overlay hide" aria-live="polite">
+  <div class="ak-loader-card">
+    <div class="ak-loader-spinner-box">
+      <div class="ak-spinner-outer"></div>
+      <div class="ak-spinner-inner"></div>
+      <img src="logo_akitchen_2-removebg-preview.png" alt="A.Kitchen" class="ak-spinner-logo">
+    </div>
+    <div class="ak-loader-text-group">
+      <div class="ak-loader-title" id="akLoaderTitle">Đang tải dữ liệu...</div>
+      <div class="ak-loader-subtitle" id="akLoaderSub">Đang kết nối hệ thống Supabase &amp; đồng bộ số liệu</div>
+    </div>
+    <div class="ak-loader-progress-track">
+      <div class="ak-loader-progress-bar"></div>
+    </div>
+  </div>
+</div>
+</div><!-- /.main-wrap -->
 <script src="script.js"></script>
 </body>
 </html>

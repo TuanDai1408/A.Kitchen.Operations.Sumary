@@ -57,15 +57,10 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
     if (h.site && h.site_name) siteCodeToName[h.site] = h.site_name;
   });
 
-  const slocMeta: Record<string, { name: string }> = {
+  const slocDict: Record<string, { name: string }> = {
     "KL01": { name: "Kho nguyên vật liệu & Thực phẩm (KL01)" },
     "KL02": { name: "Kho vật tư tiêu hao & Hóa phẩm (KL02)" },
-    "KL03": { name: "Kho công cụ & Thiết bị bếp (KL03)" },
-    "1001": { name: "Kho NVL chính (1001)" },
-    "1002": { name: "Kho BTP (1002)" },
-    "1003": { name: "Kho gia vị & đồ khô (1003)" },
-    "1004": { name: "Kho bao bì & vật tư (1004)" },
-    "1005": { name: "Kho đông lạnh (1005)" },
+    "KL03": { name: "Kho công cụ dụng cụ & Thiết bị bếp (KL03)" },
   };
 
   const slocSet = new Set<string>();
@@ -191,6 +186,11 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
 
   const types = Array.from(typeSet).sort(viSort);
   if (types.length === 0) types.push("NVL", "BTP", "Gia vị", "Vật tư tiêu hao");
+
+  const slocMeta: Record<string, { name: string }> = {};
+  slocSet.forEach((s) => {
+    slocMeta[s] = slocDict[s] || { name: `Kho ${s}` };
+  });
 
   return {
     success: true,

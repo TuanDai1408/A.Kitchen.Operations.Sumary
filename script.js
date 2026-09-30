@@ -9,7 +9,86 @@ const API_TOKEN = 'TRANTUANDAISIBAFOOD';
 // Professional donut chart palette - high contrast, accessible
 const DONUT_PALETTE = ['#2563EB', '#DC2626', '#16A34A', '#F59E0B', '#7C3AED', '#EC4899', '#0891B2', '#84CC16', '#F97316', '#6366F1'];
 
+/* =========================================================================
+   ANIMATED LOADING MANAGER (TOP BAR & GLOBAL OVERLAY)
+   ========================================================================= */
+let akLoadingCount = 0;
+let akTopProgressTimer = null;
+
+function akStartTopLoader() {
+  const bar = document.getElementById('akTopLoader');
+  if (!bar) return;
+  bar.classList.add('active');
+  bar.style.opacity = '1';
+  bar.style.width = '28%';
+  clearTimeout(akTopProgressTimer);
+  akTopProgressTimer = setTimeout(function() {
+    if (akLoadingCount > 0 && bar) bar.style.width = '72%';
+  }, 250);
+}
+
+function akFinishTopLoader() {
+  const bar = document.getElementById('akTopLoader');
+  if (!bar) return;
+  clearTimeout(akTopProgressTimer);
+  bar.style.width = '100%';
+  setTimeout(function() {
+    bar.style.opacity = '0';
+    setTimeout(function() {
+      bar.style.width = '0%';
+      bar.classList.remove('active');
+    }, 300);
+  }, 220);
+}
+
+function akShowLoading(title, desc) {
+  akLoadingCount++;
+  const el = document.getElementById('akGlobalLoader');
+  const tEl = document.getElementById('akLoaderTitle');
+  const dEl = document.getElementById('akLoaderSub');
+  if (tEl && title) tEl.textContent = title;
+  if (dEl && desc) dEl.textContent = desc;
+  if (el) el.classList.remove('hide');
+  akStartTopLoader();
+}
+
+function akHideLoading() {
+  akLoadingCount = Math.max(0, akLoadingCount - 1);
+  if (akLoadingCount === 0) {
+    const el = document.getElementById('akGlobalLoader');
+    if (el) el.classList.add('hide');
+    akFinishTopLoader();
+    // Gỡ class spinning khỏi tất cả các nút
+    document.querySelectorAll('.btn.is-loading, .btn.spinning, .is-spinning').forEach(function(btn) {
+      btn.classList.remove('is-loading', 'spinning', 'is-spinning');
+    });
+  }
+}
+
+function akSkeletonHTML(title) {
+  return '<div class="card" style="padding:24px;">' +
+    '<div style="display:flex;align-items:center;gap:14px;margin-bottom:20px;">' +
+      '<div class="skeleton-box" style="width:44px;height:44px;border-radius:12px;"></div>' +
+      '<div style="flex:1;">' +
+        '<div class="skeleton-box" style="width:200px;height:18px;margin-bottom:8px;"></div>' +
+        '<div class="skeleton-box" style="width:130px;height:12px;"></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="grid g4" style="gap:12px;margin-bottom:20px;">' +
+      '<div class="skeleton-box" style="height:90px;border-radius:10px;"></div>' +
+      '<div class="skeleton-box" style="height:90px;border-radius:10px;"></div>' +
+      '<div class="skeleton-box" style="height:90px;border-radius:10px;"></div>' +
+      '<div class="skeleton-box" style="height:90px;border-radius:10px;"></div>' +
+    '</div>' +
+    '<div class="skeleton-box" style="height:260px;border-radius:12px;"></div>' +
+  '</div>';
+}
+
 async function callAPI(action, extraParams) {
+  const isBackground = action === 'getDataVersion';
+  if (!isBackground) {
+    akStartTopLoader();
+  }
   try {
     let url = `${API_URL}?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
     if (extraParams) {
@@ -63,6 +142,10 @@ async function callAPI(action, extraParams) {
   } catch (err) {
     console.log('API call failed:', action, err);
     throw err;
+  } finally {
+    if (!isBackground) {
+      akFinishTopLoader();
+    }
   }
 }
 
@@ -1917,13 +2000,15 @@ function loadRevenue(opts) {
 
   REV_LOADING = true;
   var box = document.getElementById('tab-revenue');
-  if (!opts.silent && box) {
-    box.innerHTML = '<div class="card"><div class="empty">Đang tải dữ liệu doanh thu...</div></div>';
+  if (!opts.silent) {
+    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...', 'Đang tổng hợp dữ liệu hóa đơn và chi phí vận hành...');
+    if (box) box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
   }
 
   callAPI('getRevenueRawData')   // ← không gửi filters
     .then(function (res) {
       REV_LOADING = false;
+      if (!opts.silent) akHideLoading();
       if (res && res.updatedAt) {
         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
@@ -1950,17 +2035,10 @@ function loadRevenue(opts) {
       }
       computeAndDrawRevenue();
       computeAndDrawRevenueSacn();
-      // REV_RAW = res;
-      // if (!REV_INIT) {
-      //   // Gán dims vào object giả để buildRevFilters dùng như cũ
-      //   REV = { dims: res.dims, updatedAt: res.updatedAt };
-      //   buildRevFilters();
-      //   REV_INIT = true;
-      // }
-      // computeAndDrawRevenue();
     })
     .catch(function (err) {
       REV_LOADING = false;
+      if (!opts.silent) akHideLoading();
       if (box) box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
         esc(String(err && err.message ? err.message : err)) + '</div></div>';
     });
@@ -4419,23 +4497,25 @@ function kh_aggAll(sites, periods){
 function loadKeHoach(){
   if (KH_LOADING) return;
   KH_LOADING = true;
+  akShowLoading('Đang tải dữ liệu Kế hoạch...', 'Đang xử lý số liệu P&L và kết nối chỉ số thực tế...');
   var box = document.getElementById('tab-kehoach');
-  box.innerHTML = '<div class="card"><div class="empty">Đang tải dữ liệu kế hoạch...</div></div>';
+  if (box) box.innerHTML = akSkeletonHTML('Kế hoạch');
 
   callAPI('getKeHoachData', {filters: JSON.stringify({ gran: PF.gran, nPeriods: PF.nPeriods, sites: PF.site ? [PF.site] : [] })})
     .then(function(res){
       KH_LOADING = false;
+      akHideLoading();
       if (res.updatedAt) {
         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
-        }
+      }
       if (!res || !res.ok){
-        box.innerHTML = '<div class="card"><div class="empty">'+
+        if (box) box.innerHTML = '<div class="card"><div class="empty">'+
           esc((res && res.message) || 'Không đọc được dữ liệu kế hoạch')+'</div></div>';
         return;
       }
       if (res.empty){
-        box.innerHTML = '<div class="card"><div class="empty">'+esc(res.message)+'</div></div>';
+        if (box) box.innerHTML = '<div class="card"><div class="empty">'+esc(res.message)+'</div></div>';
         return;
       }
       try {
@@ -4444,14 +4524,15 @@ function loadKeHoach(){
         drawKehoach();
       } catch (e) {
         console.error('Lỗi render tab kế hoạch:', e);
-        box.innerHTML = '<div class="card"><div class="empty">'+
+        if (box) box.innerHTML = '<div class="card"><div class="empty">'+
           'Lỗi hiển thị dữ liệu kế hoạch: '+esc(String(e && e.message ? e.message : e))+
           '<br><span style="font-size:11px;color:#999">Mở Console (F12) để xem chi tiết.</span></div></div>';
       }
     })
     .catch(function(err){
       KH_LOADING = false;
-      box.innerHTML = '<div class="card"><div class="empty">'+
+      akHideLoading();
+      if (box) box.innerHTML = '<div class="card"><div class="empty">'+
         'Lỗi tải dữ liệu từ server: '+esc(String(err && err.message ? err.message : err))+'</div></div>';
     });
 }
@@ -5235,7 +5316,10 @@ function invalidateAllCaches(){
  */
 function refreshAllTabs(manual){
   invalidateAllCaches();
-  if (manual) setLive(true, 'Đang làm mới...');
+  if (manual) {
+    setLive(true, 'Đang làm mới...');
+    akShowLoading('Đang làm mới toàn bộ dữ liệu...', 'Đang đồng bộ số liệu mới nhất từ Supabase...');
+  }
 
   // Report luôn tải nhẹ (poll getDataVersion() mỗi 10s vốn đã dựa vào loadData())
   loadData(!!manual);
@@ -5248,7 +5332,7 @@ function refreshAllTabs(manual){
     try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
   }
   if (TAB === 'sacn') {
-  try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
+    try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
   }
   if (TAB === 'kehoach') {
     try { loadKeHoach(); } catch(e){}
@@ -5260,28 +5344,22 @@ function refreshAllTabs(manual){
     try { if (typeof DD !== 'undefined' && DD.reload) DD.reload(); } catch(e){}
   }
 }
-// function refreshAllTabs(manual){
-//   invalidateAllCaches();
-//   if (manual) setLive(true, 'Đang làm mới...');
-
-//   // 1) Vận hành (Report) — onData sẽ setLive / updAt
-//   loadData(!!manual);
-
-//   // 2) Doanh thu (Transactions) — chỉ nạp cache, không đụng tab đang xem
-//   try { loadRevenue({ silent: true }); } catch(e){ try { loadRevenue(); } catch(e2){} }
-
-//   // 3) Kế hoạch
-//   try { loadKeHoach(); } catch(e){}
-
-//   // 4) Kho + Dinh dưỡng (module)
-//   try { if (typeof QLK !== 'undefined' && QLK.reload) QLK.reload(); } catch(e){}
-//   try { if (typeof DD !== 'undefined' && DD.reload) DD.reload(); } catch(e){}
-// }
-
 
 function loadData(manual){
-  if (manual) { setLive(true, 'Đang làm mới...'); }
-  callAPI('getDashboardData').then(onData).catch(function(e){ setLive(false, 'Lỗi kết nối'); showError('Không tải được dữ liệu', e && e.message ? e.message : String(e)); });
+  if (manual || firstLoad) {
+    setLive(true, 'Đang tải dữ liệu...');
+    akShowLoading('Đang nạp dữ liệu Báo cáo vận hành...', 'Đang kết nối hệ thống Supabase & tính toán chỉ số sự cố...');
+  }
+  callAPI('getDashboardData')
+    .then(function(res){
+      if (manual || firstLoad) akHideLoading();
+      onData(res);
+    })
+    .catch(function(e){
+      if (manual || firstLoad) akHideLoading();
+      setLive(false, 'Lỗi kết nối');
+      showError('Không tải được dữ liệu', e && e.message ? e.message : String(e));
+    });
 }
 
 function onData(res){
@@ -5467,18 +5545,18 @@ var QLK = (function(){
 
   function render(){ injectCss(); if(D){ if(!built) buildSkeleton(); update(); return; } if(loading) return; load(); }
   function load(){ loading=true;
+    akShowLoading('Đang tải dữ liệu Quản lý kho...', 'Đang nạp tồn kho, đơn giá và thẻ kho...');
     var box=document.getElementById('tab-quanlykho');
-    box.innerHTML='<div class="card"><div class="empty">Đang tải dữ liệu kho...</div></div>';
+    if (box) box.innerHTML=akSkeletonHTML('Quản lý kho');
     var done=false;
     // Watchdog: nếu 45s không có phản hồi -> báo rõ thay vì kẹt "Đang tải"
     var wd=setTimeout(function(){ if(done) return; loading=false;
-      box.innerHTML='<div class="err"><h2>Máy chủ không phản hồi (quá 45 giây)</h2>'+
-        '<p>Thường do: (1) bản Deploy chưa cập nhật (chưa tạo <b>New version</b>) nên thiếu hàm '+
-        'getWarehouseDashboardData; hoặc (2) dữ liệu quá lớn. Chạy <b>QLK_test()</b> trong Apps Script '+
-        'editor để kiểm tra hàm chạy được không.</p></div>';
+      akHideLoading();
+      if (box) box.innerHTML='<div class="err"><h2>Máy chủ không phản hồi (quá 45 giây)</h2>'+
+        '<p>Thường do: (1) kết nối mạng gián đoạn; hoặc (2) dữ liệu đang được đồng bộ.</p></div>';
     }, 45000);
-    callAPI('getWarehouseDashboardData').then(function(res){ done=true; clearTimeout(wd); onData(res); })
-      .catch(function(e){ done=true; clearTimeout(wd); showError(e); });
+    callAPI('getWarehouseDashboardData').then(function(res){ done=true; clearTimeout(wd); akHideLoading(); onData(res); })
+      .catch(function(e){ done=true; clearTimeout(wd); akHideLoading(); showError(e); });
   }
   function onData(res){ loading=false;
     try {
@@ -5891,9 +5969,17 @@ var selDays=[],selCas=[],selMealIdx=0,ddCharts={};
 
 function render(){if(D){if(!built)build();renderAll();return;}if(loading)return;load();}
 function load(){loading=true;
-  document.getElementById('tab-dinhduong').innerHTML='<div class="card"><div class="empty">Đang tải dữ liệu dinh dưỡng...</div></div>';
-  callAPI('getNutritionDashboardData').then(onData).catch(function(e){loading=false;
-    document.getElementById('tab-dinhduong').innerHTML='<div class="err"><h2>Lỗi</h2><p>'+esc(e&&e.message?e.message:String(e))+'</p></div>';
+  akShowLoading('Đang tải dữ liệu Dinh dưỡng...', 'Đang nạp thực đơn tuần và bảng thành phần dinh dưỡng...');
+  var box = document.getElementById('tab-dinhduong');
+  if (box) box.innerHTML = akSkeletonHTML('Dinh dưỡng');
+  callAPI('getNutritionDashboardData').then(function(res){
+    loading=false;
+    akHideLoading();
+    onData(res);
+  }).catch(function(e){
+    loading=false;
+    akHideLoading();
+    if (box) box.innerHTML='<div class="err"><h2>Lỗi</h2><p>'+esc(e&&e.message?e.message:String(e))+'</p></div>';
   });
 }
 function onData(res){loading=false;
@@ -6218,8 +6304,20 @@ setLive = function(ok, txt){
 
 bindFilters();
 bindRevenueFilters();   // bộ lọc riêng cho tab Doanh thu & Food Cost
-bindRevenueFiltersSacn()
+bindRevenueFiltersSacn();
 bindKehoachFilters();   // bộ lọc riêng cho tab So sánh Kế hoạch
+
+// Hiệu ứng animation cho tất cả nút làm mới / tải lại khi click
+document.addEventListener('click', function(e) {
+  var btn = e.target.closest('#btnRefresh, #rBtnRefresh, #sBtnRefresh, #pfBtnRefresh, #qlkRefresh, #ddRefresh, [id*="efresh"], [id*="btnRe"], .btn-refresh');
+  if (btn) {
+    btn.classList.add('is-loading', 'spinning');
+    var svgEl = btn.querySelector('svg');
+    if (svgEl) svgEl.classList.add('is-spinning');
+    akStartTopLoader();
+  }
+});
+
 loadData();
 /* ----- Ghi log truy cập kèm thông tin trình duyệt ----- */
 // (function logVisitClient(){
