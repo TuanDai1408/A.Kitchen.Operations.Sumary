@@ -72,7 +72,7 @@ export default async function handler(req, res) {
       default:
         return res.status(404).json({ status: "error", message: `Unknown action: ${action}` });
     }
-    return res.json({ status: "ok", data });
+    return res.status(200).json({ status: "ok", data });
   } catch (err) {
     console.error("Vercel API Error:", err);
     return res.status(500).json({ status: "error", message: err.message });

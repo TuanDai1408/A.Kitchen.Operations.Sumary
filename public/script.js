@@ -5599,7 +5599,7 @@ var QLK = (function(){
     var tx=D.transactions.filter(function(t){
       if(f.from && t.date && t.date<f.from) return false;
       if(f.to && t.date && t.date>f.to) return false;
-      if(f.site && (t.site_name||'')!==f.site) return false;
+      if(f.site && (t.site_name||'')!==f.site && (t.site||'')!==f.site) return false;
       if(f.slocs.length && f.slocs.indexOf(t.sloc)<0) return false;
       if(f.cats.length && f.cats.indexOf(t.category)<0) return false;
       if(f.type && (t.type||'')!==f.type) return false;
@@ -5609,7 +5609,7 @@ var QLK = (function(){
     var artSet=null;
     if(f.slocs.length || f.type){ artSet={}; tx.forEach(function(t){ artSet[t.article]=1; }); }
     var it=D.items.filter(function(x){
-      if(f.site && (x.site_name||'')!==f.site) return false;
+      if(f.site && (x.site_name||'')!==f.site && (x.site||'')!==f.site) return false;
       if(f.cats.length && f.cats.indexOf(x.category)<0) return false;
       if(artSet && !artSet[x.code]) return false;
       return true; });
@@ -6203,7 +6203,7 @@ initTooltip();
 
   // Sync logo từ getLogoUrl vào sidebar
   // Logo loaded from local file
-  document.getElementById('sbLogoImg').src = 'logo_akitchen_2.jpg';
+  document.getElementById('sbLogoImg').src = 'logo_akitchen_2-removebg-preview.png';
 })();
 
 // Sync live status vào sidebar footer

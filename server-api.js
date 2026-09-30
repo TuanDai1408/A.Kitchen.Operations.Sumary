@@ -13,6 +13,26 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
 
+/**
+ * Lấy toàn bộ bản ghi vượt giới hạn mặc định 1000 dòng của Supabase PostgREST
+ */
+async function fetchAllRows(table, select = "*", orderCol = null) {
+  let all = [];
+  let from = 0;
+  const step = 1000;
+  while (true) {
+    let q = supabase.from(table).select(select).range(from, from + step - 1);
+    if (orderCol) q = q.order(orderCol, { ascending: true });
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < step) break;
+    from += step;
+  }
+  return all;
+}
+
 const DEFAULT_NGUONG = {
   thatThoatPct: 2,
   vangPct: 15,
@@ -298,13 +318,12 @@ export async function getDataVersion() {
 }
 
 export async function getDashboardData() {
-  const [versionRes, reportRes] = await Promise.all([
+  const [versionRes, rawRows] = await Promise.all([
     supabase.from("data_version").select("version, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("report").select("*").order("ngay_bao_cao", { ascending: true })
+    fetchAllRows("report", "*", "ngay_bao_cao")
   ]);
-  if (reportRes.error) throw new Error(reportRes.error.message);
 
-  const rows = (reportRes.data || []).map(r => mapReportRow(r, DEFAULT_NGUONG));
+  const rows = rawRows.map(r => mapReportRow(r, DEFAULT_NGUONG));
   const siteSet = new Set(), nguoiSet = new Set(), khachSet = new Set(), dateSet = new Set();
   rows.forEach(r => {
     if (r.tenSite) siteSet.add(r.tenSite);
@@ -328,15 +347,14 @@ export async function getDashboardData() {
 }
 
 export async function getRevenueRawData() {
-  const [txRes, opexRes, reportRes, disposalRes] = await Promise.all([
-    supabase.from("transactions").select("*").order("billing_date", { ascending: true }),
+  const [rawTx, opexRes, reportRes, disposalRes] = await Promise.all([
+    fetchAllRows("transactions", "*", "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
     supabase.from("disposal_of_goods").select("*").order("ngay_lap", { ascending: true })
   ]);
-  if (txRes.error) throw new Error(txRes.error.message);
 
-  const rows = (txRes.data || []).map(mapTransactionRow);
+  const rows = rawTx.map(mapTransactionRow);
   const siteSet = new Set(), kenhSet = new Set(), nhomSet = new Set(), nvkdSet = new Set(), khSet = new Set(), dateSet = new Set();
   rows.forEach(r => {
     if (r.site) siteSet.add(r.site);
@@ -413,21 +431,19 @@ export async function getKeHoachData(filtersParam) {
     filters = filtersParam;
   }
 
-  const [plRes, duAnRes, thamSoRes, opexRes, repRes, txRes] = await Promise.all([
-    supabase.from("kehoach_pl_thang").select("*").order("ky", { ascending: true }),
+  // Sử dụng fetchAllRows để lấy TOÀN BỘ dữ liệu (tránh bị cắt ở 1000 dòng)
+  const [plRows, duAnRes, thamSoRes, opexRes, repRows, txRows] = await Promise.all([
+    fetchAllRows("kehoach_pl_thang", "*", "ky"),
     supabase.from("kehoach_duan").select("*"),
     supabase.from("kehoach_thamso").select("*"),
     supabase.from("opex_input").select("*"),
-    supabase.from("report").select("ten_site, ngay_bao_cao, tong_suat, suat_huy"),
-    supabase.from("transactions").select("ten_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von")
+    fetchAllRows("report", "ten_site, ngay_bao_cao, tong_suat, suat_huy"),
+    fetchAllRows("transactions", "ten_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von")
   ]);
 
-  const plRows = plRes.data || [];
   const duAnRows = duAnRes.data || [];
   const thamSoRows = thamSoRes.data || [];
   const opexRows = opexRes.data || [];
-  const repRows = repRes.data || [];
-  const txRows = txRes.data || [];
 
   const duAn = {};
   duAnRows.forEach(d => {
@@ -467,6 +483,16 @@ export async function getKeHoachData(filtersParam) {
     plPivot[k][p.hang_muc] = Number(p.gia_tri || 0);
   });
 
+  // Thu thập thêm các kỳ phát sinh thực tế từ transactions và report
+  [...txRows, ...repRows].forEach(r => {
+    const d = r.billing_date || r.ngay_bao_cao;
+    if (!d) return;
+    const ky = String(d).substring(0, 7);
+    if (ky && !periodMap.has(ky)) {
+      periodMap.set(ky, `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`);
+    }
+  });
+
   const SITE_TONG = "Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)";
   const siteSet = new Set();
   plRows.forEach(p => { if (p.site) siteSet.add(p.site); });
@@ -477,6 +503,7 @@ export async function getKeHoachData(filtersParam) {
   const viSort = (a, b) => a.localeCompare(b, "vi");
   const sites = Array.from(siteSet).sort(viSort);
 
+  // Tính Actuals gom theo site và ky (YYYY-MM)
   const txActual = {};
   txRows.forEach(t => {
     const ym = String(t.billing_date || "").substring(0, 7);
@@ -507,9 +534,10 @@ export async function getKeHoachData(filtersParam) {
     opexActual[k] = (opexActual[k] || 0) + Number(o.so_tien || o.amount || 0);
   });
 
+  // Sắp xếp các kỳ theo thứ tự thời gian tăng dần và lấy từ kỳ đầu tiên phát sinh (không cắt đuôi)
   const sortedPeriodKeys = Array.from(periodMap.keys()).sort();
   const limitN = filters.nPeriods && filters.nPeriods > 0 ? filters.nPeriods : 24;
-  const activePeriods = sortedPeriodKeys.slice(-limitN);
+  const activePeriods = sortedPeriodKeys.slice(0, limitN);
 
   const periods = activePeriods.map(perKey => {
     const label = periodMap.get(perKey) || perKey;
@@ -585,15 +613,15 @@ export async function getKeHoachData(filtersParam) {
 }
 
 export async function getWarehouseDashboardData() {
-  const [headerRes, txRes, priceRes] = await Promise.all([
+  // Lấy TOÀN BỘ 5,758 dòng giá & phân loại để không bị bỏ sót mã nào
+  const [headerRes, txRes, rawPrice] = await Promise.all([
     supabase.from("stock_header").select("*"),
     supabase.from("stock_transactions").select("*").order("pstng_date", { ascending: true }),
-    supabase.from("stock_price_category").select("article, price, mdse_catgry_desc, base_uom")
+    fetchAllRows("stock_price_category", "article, price, mdse_catgry_desc, base_uom")
   ]);
 
   const rawHeaders = headerRes.data || [];
   const rawTx = txRes.data || [];
-  const rawPrice = priceRes.data || [];
 
   const priceMap = {}, catMap = {};
   rawPrice.forEach(p => {
@@ -601,21 +629,33 @@ export async function getWarehouseDashboardData() {
     if (p.mdse_catgry_desc) catMap[p.article] = p.mdse_catgry_desc;
   });
 
+  // Tạo map chuyển đổi mã site (ví dụ K500) sang tên site người dùng đọc được
+  const siteCodeToName = {};
+  rawHeaders.forEach(h => {
+    if (h.site && h.site_name) siteCodeToName[h.site] = h.site_name;
+  });
+
   const slocMeta = {
-    "1001": { name: "Kho nguyên vật liệu chính" },
-    "1002": { name: "Kho bán thành phẩm" },
-    "1003": { name: "Kho gia vị & đồ khô" },
-    "1004": { name: "Kho bao bì & vật tư" },
-    "1005": { name: "Kho đông lạnh" }
+    "KL01": { name: "Kho nguyên vật liệu & Thực phẩm (KL01)" },
+    "KL02": { name: "Kho vật tư tiêu hao & Hóa phẩm (KL02)" },
+    "KL03": { name: "Kho công cụ & Thiết bị bếp (KL03)" },
+    "1001": { name: "Kho NVL chính (1001)" },
+    "1002": { name: "Kho BTP (1002)" },
+    "1003": { name: "Kho gia vị & đồ khô (1003)" },
+    "1004": { name: "Kho bao bì & vật tư (1004)" },
+    "1005": { name: "Kho đông lạnh (1005)" }
   };
 
-  const slocSet = new Set(), catSet = new Set(), siteSet = new Set(), typeSet = new Set();
+  const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set(), typeSet = new Set();
+
   const transactions = rawTx.map(t => {
-    const sloc = String(t.sloc || "1001");
+    const sloc = String(t.sloc || "KL01");
     slocSet.add(sloc);
     const category = catMap[t.article] || t.loai_hang || "Chưa phân loại";
     catSet.add(category);
-    if (t.site) siteSet.add(t.site);
+    const siteName = siteCodeToName[t.site] || t.site_name || t.site || "";
+    if (siteName) siteNameSet.add(siteName);
+
     const type = t.type || "NVL";
     typeSet.add(type);
     const qty = Number(t.quantity || 0);
@@ -634,7 +674,8 @@ export async function getWarehouseDashboardData() {
       date: formatDate(t.pstng_date),
       mvt, mvt_label: mvtLabel,
       qty, value,
-      site_name: t.site || ""
+      site_name: siteName,
+      site: t.site || ""
     };
   });
 
@@ -651,7 +692,9 @@ export async function getWarehouseDashboardData() {
   const items = rawHeaders.map(h => {
     const category = catMap[h.article] || "Chưa phân loại";
     catSet.add(category);
-    if (h.site_name) siteSet.add(h.site_name);
+    const siteName = h.site_name || siteCodeToName[h.site] || h.site || "";
+    if (siteName) siteNameSet.add(siteName);
+
     const stockBegin = Number(h.stock_begin_qty || 0);
     const receipts = Number(h.total_receipts_qty || 0);
     const issues = Number(h.total_issues_qty || 0);
@@ -685,7 +728,8 @@ export async function getWarehouseDashboardData() {
       days_of_stock: daysOfStock,
       status, has_mismatch: hasMismatch,
       reconciliation_diff: diff,
-      site_name: h.site_name || h.site || ""
+      site_name: siteName,
+      site: h.site || ""
     };
   });
 
@@ -693,8 +737,8 @@ export async function getWarehouseDashboardData() {
   return {
     success: true,
     meta: {
-      site: rawHeaders[0]?.site || "KHO_TONG",
-      site_name: rawHeaders[0]?.site_name || "Kho Tổng Hệ Thống",
+      site: rawHeaders[0]?.site || "K500",
+      site_name: rawHeaders[0]?.site_name || "MB A Kitchen Hòa Bình",
       period_from: minDate || formatDate(new Date()),
       period_to: maxDate || formatDate(new Date()),
       days_in_period: daysInPeriod,
@@ -702,7 +746,7 @@ export async function getWarehouseDashboardData() {
     },
     by_sloc: Array.from(slocSet).sort().map(s => ({ sloc: s, name: slocMeta[s]?.name || `Kho ${s}` })),
     by_category: Array.from(catSet).sort(viSort).map(c => ({ category: c })),
-    sites: Array.from(siteSet).sort(viSort).map(s => ({ name: s })),
+    sites: Array.from(siteNameSet).sort(viSort).map(s => ({ name: s })),
     types: Array.from(typeSet).sort(viSort),
     items,
     transactions,

@@ -6,8 +6,25 @@
 import { supabase } from "../lib/db.ts";
 import { formatDate } from "../lib/transform.ts";
 
+async function fetchAllRows(table: string, select = "*", orderCol: string | null = null): Promise<any[]> {
+  let all: any[] = [];
+  let from = 0;
+  const step = 1000;
+  while (true) {
+    let q = supabase.from(table).select(select).range(from, from + step - 1);
+    if (orderCol) q = q.order(orderCol, { ascending: true });
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < step) break;
+    from += step;
+  }
+  return all;
+}
+
 export async function handleGetWarehouseDashboardData(): Promise<any> {
-  const [headerRes, txRes, priceRes] = await Promise.all([
+  const [headerRes, txRes, rawPrice] = await Promise.all([
     supabase
       .from("stock_header")
       .select("*"),
@@ -17,9 +34,7 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
       .select("*")
       .order("pstng_date", { ascending: true }),
 
-    supabase
-      .from("stock_price_category")
-      .select("article, price, mdse_catgry_desc, base_uom"),
+    fetchAllRows("stock_price_category", "article, price, mdse_catgry_desc, base_uom"),
   ]);
 
   if (headerRes.error) {
@@ -28,7 +43,6 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
 
   const rawHeaders = headerRes.data || [];
   const rawTx = txRes.data || [];
-  const rawPrice = priceRes.data || [];
 
   // Tạo map tra cứu giá & nhóm hàng từ stock_price_category
   const priceMap: Record<string, number> = {};
@@ -38,26 +52,35 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
     if (p.mdse_catgry_desc) catMap[p.article] = p.mdse_catgry_desc;
   });
 
+  const siteCodeToName: Record<string, string> = {};
+  rawHeaders.forEach((h: any) => {
+    if (h.site && h.site_name) siteCodeToName[h.site] = h.site_name;
+  });
+
   const slocMeta: Record<string, { name: string }> = {
-    "1001": { name: "Kho nguyên vật liệu chính" },
-    "1002": { name: "Kho bán thành phẩm" },
-    "1003": { name: "Kho gia vị & đồ khô" },
-    "1004": { name: "Kho bao bì & vật tư" },
-    "1005": { name: "Kho đông lạnh" },
+    "KL01": { name: "Kho nguyên vật liệu & Thực phẩm (KL01)" },
+    "KL02": { name: "Kho vật tư tiêu hao & Hóa phẩm (KL02)" },
+    "KL03": { name: "Kho công cụ & Thiết bị bếp (KL03)" },
+    "1001": { name: "Kho NVL chính (1001)" },
+    "1002": { name: "Kho BTP (1002)" },
+    "1003": { name: "Kho gia vị & đồ khô (1003)" },
+    "1004": { name: "Kho bao bì & vật tư (1004)" },
+    "1005": { name: "Kho đông lạnh (1005)" },
   };
 
   const slocSet = new Set<string>();
   const catSet = new Set<string>();
-  const siteSet = new Set<string>();
+  const siteNameSet = new Set<string>();
   const typeSet = new Set<string>();
 
   // Map transactions
   const transactions = rawTx.map((t: any) => {
-    const sloc = String(t.sloc || "1001");
+    const sloc = String(t.sloc || "KL01");
     slocSet.add(sloc);
     const category = catMap[t.article] || t.loai_hang || "Chưa phân loại";
     catSet.add(category);
-    if (t.site) siteSet.add(t.site);
+    const siteName = siteCodeToName[t.site] || t.site_name || t.site || "";
+    if (siteName) siteNameSet.add(siteName);
     const type = t.type || "NVL";
     typeSet.add(type);
 
@@ -82,7 +105,8 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
       mvt_label: mvtLabel,
       qty,
       value,
-      site_name: t.site || "",
+      site_name: siteName,
+      site: t.site || "",
     };
   });
 
@@ -102,7 +126,8 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
   const items = rawHeaders.map((h: any) => {
     const category = catMap[h.article] || "Chưa phân loại";
     catSet.add(category);
-    if (h.site_name) siteSet.add(h.site_name);
+    const siteName = h.site_name || siteCodeToName[h.site] || h.site || "";
+    if (siteName) siteNameSet.add(siteName);
 
     const stockBegin = Number(h.stock_begin_qty || 0);
     const receipts = Number(h.total_receipts_qty || 0);
@@ -144,7 +169,8 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
       status,
       has_mismatch: hasMismatch,
       reconciliation_diff: diff,
-      site_name: h.site_name || h.site || "",
+      site_name: siteName,
+      site: h.site || "",
     };
   });
 
@@ -159,7 +185,7 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
     category: c,
   }));
 
-  const sites = Array.from(siteSet).sort(viSort).map((s) => ({
+  const sites = Array.from(siteNameSet).sort(viSort).map((s) => ({
     name: s,
   }));
 
@@ -169,8 +195,8 @@ export async function handleGetWarehouseDashboardData(): Promise<any> {
   return {
     success: true,
     meta: {
-      site: rawHeaders[0]?.site || "KHO_TONG",
-      site_name: rawHeaders[0]?.site_name || "Kho Tổng Hệ Thống",
+      site: rawHeaders[0]?.site || "K500",
+      site_name: rawHeaders[0]?.site_name || "MB A Kitchen Hòa Bình",
       period_from: minDate || formatDate(new Date()),
       period_to: maxDate || formatDate(new Date()),
       days_in_period: daysInPeriod,

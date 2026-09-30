@@ -5,7 +5,7 @@
   "scripts": {
     "dev": "node server.js",
     "start": "node server.js",
-    "build": "mkdir -p public && cp -rf index.html script.js style.css auth-guard.js *.png public/ 2>/dev/null || true"
+    "build": "mkdir -p public && cp -rf index.html script.js style.css auth-guard.js *.png *.jpg public/ 2>/dev/null || true"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.117.2",

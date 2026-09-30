@@ -8,6 +8,23 @@ import { DEFAULT_NGUONG } from "../lib/nguong.ts";
 
 const SITE_TONG = "Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)";
 
+async function fetchAllRows(table: string, select = "*", orderCol: string | null = null): Promise<any[]> {
+  let all: any[] = [];
+  let from = 0;
+  const step = 1000;
+  while (true) {
+    let q = supabase.from(table).select(select).range(from, from + step - 1);
+    if (orderCol) q = q.order(orderCol, { ascending: true });
+    const { data, error } = await q;
+    if (error) throw error;
+    if (!data || data.length === 0) break;
+    all.push(...data);
+    if (data.length < step) break;
+    from += step;
+  }
+  return all;
+}
+
 export async function handleGetKeHoachData(filtersParam?: any): Promise<any> {
   let filters: { gran?: string; nPeriods?: number; sites?: string[] } = {};
   if (typeof filtersParam === "string") {
@@ -20,44 +37,19 @@ export async function handleGetKeHoachData(filtersParam?: any): Promise<any> {
     filters = filtersParam;
   }
 
-  // 1. Query thông tin kế hoạch và thực tế
-  const [plRes, duAnRes, thamSoRes, opexRes, repRes, txRes] = await Promise.all([
-    supabase
-      .from("kehoach_pl_thang")
-      .select("*")
-      .order("ky", { ascending: true }),
-
-    supabase
-      .from("kehoach_duan")
-      .select("*"),
-
-    supabase
-      .from("kehoach_thamso")
-      .select("*"),
-
-    supabase
-      .from("opex_input")
-      .select("*"),
-
-    supabase
-      .from("report")
-      .select("ten_site, ngay_bao_cao, tong_suat, suat_huy"),
-
-    supabase
-      .from("transactions")
-      .select("ten_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von"),
+  // 1. Query thông tin kế hoạch và thực tế không bị giới hạn 1000 dòng
+  const [plRows, duAnRes, thamSoRes, opexRes, repRows, txRows] = await Promise.all([
+    fetchAllRows("kehoach_pl_thang", "*", "ky"),
+    supabase.from("kehoach_duan").select("*"),
+    supabase.from("kehoach_thamso").select("*"),
+    supabase.from("opex_input").select("*"),
+    fetchAllRows("report", "ten_site, ngay_bao_cao, tong_suat, suat_huy"),
+    fetchAllRows("transactions", "ten_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von"),
   ]);
 
-  if (plRes.error) {
-    throw new Error(`Lỗi truy vấn kehoach_pl_thang: ${plRes.error.message}`);
-  }
-
-  const plRows = plRes.data || [];
   const duAnRows = duAnRes.data || [];
   const thamSoRows = thamSoRes.data || [];
   const opexRows = opexRes.data || [];
-  const repRows = repRes.data || [];
-  const txRows = txRes.data || [];
 
   // Gom duAn theo site
   const duAn: Record<string, any> = {};
@@ -102,6 +94,16 @@ export async function handleGetKeHoachData(filtersParam?: any): Promise<any> {
     plPivot[k][p.hang_muc] = Number(p.gia_tri || 0);
   });
 
+  // Thu thập thêm các kỳ phát sinh thực tế từ transactions và report
+  [...txRows, ...repRows].forEach((r: any) => {
+    const d = r.billing_date || r.ngay_bao_cao;
+    if (!d) return;
+    const ky = String(d).substring(0, 7);
+    if (ky && !periodMap.has(ky)) {
+      periodMap.set(ky, `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`);
+    }
+  });
+
   // Thu thập danh sách tất cả các site
   const siteSet = new Set<string>();
   plRows.forEach((p: any) => { if (p.site) siteSet.add(p.site); });
@@ -144,10 +146,10 @@ export async function handleGetKeHoachData(filtersParam?: any): Promise<any> {
     opexActual[k] = (opexActual[k] || 0) + Number(o.so_tien || o.amount || 0);
   });
 
-  // Sắp xếp các kỳ
+  // Sắp xếp các kỳ từ kỳ đầu tiên phát sinh tăng dần
   const sortedPeriodKeys = Array.from(periodMap.keys()).sort();
   const limitN = filters.nPeriods && filters.nPeriods > 0 ? filters.nPeriods : 24;
-  const activePeriods = sortedPeriodKeys.slice(-limitN);
+  const activePeriods = sortedPeriodKeys.slice(0, limitN);
 
   const periods = activePeriods.map((perKey) => {
     const label = periodMap.get(perKey) || perKey;
