@@ -287,10 +287,17 @@
 <!-- Top Glowing Progress Bar -->
 <div id="akTopLoader" class="ak-top-loader"></div>
 
-<!-- Floating Status Pill (Đơn giản, tinh tế, không khoá màn hình) -->
-<div id="akStatusPill" class="ak-status-pill hide" aria-live="polite">
-  <span id="akPillSpinner" class="ak-pill-spinner"></span>
-  <span id="akPillText">Đang tải dữ liệu...</span>
+<!-- Center Popup Loading (Popup ở giữa màn hình) -->
+<div id="akCenterLoading" class="ak-loading-backdrop hide" aria-live="polite">
+  <div class="ak-loading-popup">
+    <div class="ak-popup-spinner-wrap">
+      <div class="ak-popup-spinner" id="akPopupSpinner"></div>
+    </div>
+    <div class="ak-popup-text-wrap">
+      <div class="ak-popup-title" id="akPopupTitle">Đang tải dữ liệu...</div>
+      <div class="ak-popup-sub" id="akPopupSub">Vui lòng đợi trong giây lát</div>
+    </div>
+  </div>
 </div>
 </div><!-- /.main-wrap -->
 <script src="script.js"></script>

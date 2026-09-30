@@ -36,41 +36,31 @@ function akFinishTopLoader() {
   }, 180);
 }
 
-function akShowLoading(msg) {
+function akShowLoading(title, sub) {
   akLoadingActive = true;
   clearTimeout(akLoadingTimeout);
   akStartTopLoader();
-  const pill = document.getElementById('akStatusPill');
-  const text = document.getElementById('akPillText');
-  const spin = document.getElementById('akPillSpinner');
-  if (text) text.textContent = msg || 'Đang tải dữ liệu...';
-  if (spin) spin.className = 'ak-pill-spinner';
-  if (pill) {
-    pill.classList.remove('hide', 'success');
+  const box = document.getElementById('akCenterLoading');
+  const tEl = document.getElementById('akPopupTitle');
+  const sEl = document.getElementById('akPopupSub');
+  if (tEl) tEl.textContent = title || 'Đang tải dữ liệu...';
+  if (sEl) sEl.textContent = sub || 'Vui lòng đợi trong giây lát';
+  if (box) {
+    box.classList.remove('hide');
   }
-  // Tự động tắt sau tối đa 4 giây để tuyệt đối không bao giờ bị treo
+  // Tự động tắt sau tối đa 3.5 giây để tuyệt đối không bao giờ bị treo
   akLoadingTimeout = setTimeout(function() {
     akHideLoading();
-  }, 4000);
+  }, 3500);
 }
 
-function akHideLoading(successMsg) {
+function akHideLoading() {
   akLoadingActive = false;
   clearTimeout(akLoadingTimeout);
   akFinishTopLoader();
-  const pill = document.getElementById('akStatusPill');
-  const text = document.getElementById('akPillText');
-  const spin = document.getElementById('akPillSpinner');
-  if (pill && !pill.classList.contains('hide')) {
-    pill.classList.add('success');
-    if (text) text.textContent = successMsg || 'Đã cập nhật dữ liệu';
-    if (spin) spin.className = 'ak-pill-check';
-    setTimeout(function() {
-      if (!akLoadingActive && pill) {
-        pill.classList.add('hide');
-        pill.classList.remove('success');
-      }
-    }, 1200);
+  const box = document.getElementById('akCenterLoading');
+  if (box) {
+    box.classList.add('hide');
   }
   // Gỡ class spinning khỏi tất cả các nút
   document.querySelectorAll('.btn.is-loading, .btn.spinning, .is-spinning').forEach(function(btn) {

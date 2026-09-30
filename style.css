@@ -665,7 +665,7 @@
 }
 
 /* =========================================================================
-   ANIMATED LOADING SYSTEM (MINIMALIST & FAST)
+   CENTER POPUP LOADING (ĐƠN GIẢN, TINH TẾ Ở GIỮA MÀN HÌNH)
    ========================================================================= */
 
 /* Top Loading Progress Line (YouTube/GitHub style) */
@@ -686,63 +686,84 @@
   opacity: 1;
 }
 
-/* Floating Status Pill (Nhỏ gọn, tinh tế, không che màn hình) */
-.ak-status-pill {
+/* Center Loading Backdrop & Popup */
+.ak-loading-backdrop {
   position: fixed;
-  top: 14px;
-  right: 20px;
+  inset: 0;
   z-index: 999990;
   display: flex;
   align-items: center;
-  gap: 8px;
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
-  border: 1px solid #E2E8F0;
-  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.08);
-  padding: 6px 14px;
-  border-radius: 999px;
-  font-size: 12.5px;
-  font-weight: 600;
-  color: #1E293B;
-  transition: opacity 0.25s cubic-bezier(0.16, 1, 0.3, 1), transform 0.25s ease;
-  transform: translateY(0);
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.28);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  opacity: 1;
+  visibility: visible;
+  transition: opacity 0.2s cubic-bezier(0.16, 1, 0.3, 1), visibility 0.2s;
+}
+.ak-loading-backdrop.hide {
+  opacity: 0;
+  visibility: hidden;
   pointer-events: none;
 }
-.ak-status-pill.hide {
-  opacity: 0;
-  transform: translateY(-8px);
+
+.ak-loading-popup {
+  background: #ffffff;
+  border-radius: 18px;
+  padding: 24px 34px;
+  min-width: 250px;
+  max-width: 360px;
+  box-shadow: 0 20px 40px -12px rgba(0, 0, 0, 0.2), 0 0 0 1px rgba(0, 0, 0, 0.06);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 14px;
+  transform: scale(1) translateY(0);
+  animation: akPopupPop 0.24s cubic-bezier(0.16, 1, 0.3, 1);
 }
-.ak-status-pill.success {
-  border-color: #BBF7D0;
-  background: #F0FDF4;
-  color: #166534;
+@keyframes akPopupPop {
+  from { opacity: 0; transform: scale(0.92) translateY(8px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
 }
 
-/* Mini spinner inside status pill */
-.ak-pill-spinner {
-  width: 14px;
-  height: 14px;
-  border: 2px solid #E2E8F0;
-  border-top-color: #F5811F;
-  border-radius: 50%;
-  animation: akPillSpin 0.75s linear infinite;
-  flex-shrink: 0;
+.ak-popup-spinner-wrap {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
-@keyframes akPillSpin {
+.ak-popup-spinner {
+  width: 38px;
+  height: 38px;
+  border: 3.5px solid #F1F5F9;
+  border-top-color: #F5811F;
+  border-right-color: #107C41;
+  border-radius: 50%;
+  animation: akSpin 0.75s linear infinite;
+  box-sizing: border-box;
+}
+@keyframes akSpin {
   to { transform: rotate(360deg); }
 }
 
-.ak-pill-check {
-  width: 14px;
-  height: 14px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: #16A34A;
-  font-weight: 800;
-  font-size: 13px;
-  flex-shrink: 0;
+.ak-popup-text-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.ak-popup-title {
+  font-size: 15px;
+  font-weight: 700;
+  color: #1E293B;
+  letter-spacing: -0.2px;
+}
+.ak-popup-sub {
+  font-size: 12px;
+  color: #64748B;
+  line-height: 1.4;
 }
 
 /* Button Spinning state */
