@@ -2,9 +2,8 @@
    API CONFIGURATION
    Thay thế URL và TOKEN bằng giá trị thật từ Apps Script Web App
    ========================================================================= */
-//const API_URL = 'https://script.google.com/macros/s/AKfycbx6v9BuTauEhRuA3HGWtZhbfxdC3zX3kCSHyU1ACaTO-Lf7es8LR1zPiqHj7a_-1OGg2g/exec';
-//const API_URL = 'https://script.google.com/macros/s/AKfycbyzOmnfiG6Tt0AoEkJo5qq3Hg7UYrpVeEZnt5m7kE4aKiWdFE1yHOXN-eRWelnxjEtsUw/exec';
-const API_URL = 'https://script.google.com/macros/s/AKfycbxXcbL4E-Cd61jvIQSK05zX4aq3-SCwKWm3o-De7hX5SkvDDA6PfYMu9O3gGONWJ_tiNg/exec';
+// Supabase Edge Function API endpoint
+const API_URL = 'https://alqcojnxshfylheovdgw.supabase.co/functions/v1/api';
 const API_TOKEN = 'TRANTUANDAISIBAFOOD';
 
 // Professional donut chart palette - high contrast, accessible
@@ -20,9 +19,46 @@ async function callAPI(action, extraParams) {
         }
       }
     }
-    const response = await fetch(url);
+    let response;
+    try {
+      response = await fetch(url);
+    } catch (netErr) {
+      // Nếu không gọi được URL remote (ví dụ CORS hoặc mạng), fallback sang /api nội bộ
+      if (url.startsWith('https://')) {
+        let localUrl = `/api?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
+        if (extraParams) {
+          for (const [key, value] of Object.entries(extraParams)) {
+            if (value !== null && value !== undefined) {
+              localUrl += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
+            }
+          }
+        }
+        response = await fetch(localUrl);
+      } else {
+        throw netErr;
+      }
+    }
+
+    // Nếu Edge Function trả 404 (chưa deploy lên Supabase), tự động fallback sang endpoint server
+    if (response.status === 404 && url.startsWith('https://')) {
+      let localUrl = `/api?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
+      if (extraParams) {
+        for (const [key, value] of Object.entries(extraParams)) {
+          if (value !== null && value !== undefined) {
+            localUrl += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
+          }
+        }
+      }
+      response = await fetch(localUrl);
+    }
+
     const json = await response.json();
-    if (json.status === 'error') throw new Error(json.message || 'API error');
+    if (!response.ok || (json && json.status === 'error') || (json && json.code === 'NOT_FOUND')) {
+      throw new Error((json && json.message) || `Lỗi API (${response.status})`);
+    }
+    if (!json || json.data === undefined) {
+      throw new Error((json && json.message) || 'Dữ liệu API trả về không hợp lệ');
+    }
     return json.data;
   } catch (err) {
     console.log('API call failed:', action, err);
@@ -32,13 +68,40 @@ async function callAPI(action, extraParams) {
 
 async function callPostAPI(action, payload) {
   try {
-    const response = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: JSON.stringify({ action: action, token: API_TOKEN, payload: payload })
-    });
+    let response;
+    try {
+      response = await fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, token: API_TOKEN, payload: payload })
+      });
+    } catch (netErr) {
+      if (API_URL.startsWith('https://')) {
+        response = await fetch('/api', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: action, token: API_TOKEN, payload: payload })
+        });
+      } else {
+        throw netErr;
+      }
+    }
+
+    if (response.status === 404 && API_URL.startsWith('https://')) {
+      response = await fetch('/api', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: action, token: API_TOKEN, payload: payload })
+      });
+    }
+
     const json = await response.json();
-    if (json.status === 'error') throw new Error(json.message || 'API error');
+    if (!response.ok || (json && json.status === 'error') || (json && json.code === 'NOT_FOUND')) {
+      throw new Error((json && json.message) || `Lỗi POST API (${response.status})`);
+    }
+    if (!json || json.data === undefined) {
+      throw new Error((json && json.message) || 'Dữ liệu API trả về không hợp lệ');
+    }
     return json.data;
   } catch (err) {
     console.log('POST API call failed:', action, err);
@@ -1446,7 +1509,16 @@ function bindIncidentEvents(){
     callPostAPI('exportIncidents', {rows: currentIncidents(), tenFile: 'AK_SuCo_VanHanh'})
       .then(function(res){
         btn.disabled = false; btn.innerHTML = '↓ Excel';
-        if (res && res.ok){ window.open(res.downloadUrl, '_blank'); toast('Đã tạo '+res.name); }
+        if (res && res.ok){
+          var dlAnchor = document.createElement('a');
+          dlAnchor.href = res.downloadUrl;
+          dlAnchor.target = '_blank';
+          dlAnchor.rel = 'noopener noreferrer';
+          document.body.appendChild(dlAnchor);
+          dlAnchor.click();
+          document.body.removeChild(dlAnchor);
+          toast('Đã tạo '+res.name);
+        }
       })
       .catch(function(e){
         btn.disabled = false; btn.innerHTML = '↓ Excel';
