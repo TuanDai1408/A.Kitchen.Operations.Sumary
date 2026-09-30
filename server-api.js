@@ -15,14 +15,17 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
 
 /**
  * Lấy toàn bộ bản ghi vượt giới hạn mặc định 1000 dòng của Supabase PostgREST
+ * Hỗ trợ lọc theo khoảng ngày trực tiếp trên database để tối ưu hiệu năng
  */
-async function fetchAllRows(table, select = "*", orderCol = null) {
+async function fetchAllRows(table, select = "*", orderCol = null, fromDate = null, toDate = null, dateCol = null) {
   let all = [];
   let from = 0;
   const step = 1000;
   while (true) {
     let q = supabase.from(table).select(select).range(from, from + step - 1);
     if (orderCol) q = q.order(orderCol, { ascending: true });
+    if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
+    if (toDate && dateCol) q = q.lte(dateCol, toDate);
     const { data, error } = await q;
     if (error) throw error;
     if (!data || data.length === 0) break;
@@ -346,9 +349,41 @@ export async function getDashboardData() {
   };
 }
 
-export async function getRevenueRawData() {
+export async function getRevenueRawData(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  // 1. Xác định ngày lớn nhất có dữ liệu trong transactions
+  const { data: latestDateRow } = await supabase
+    .from("transactions")
+    .select("billing_date")
+    .order("billing_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const maxDateStr = latestDateRow?.billing_date || "2026-09-25";
+
+  // Mặc định: 2 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  const maxD = new Date(maxDateStr);
+  const twoMonthsAgo = new Date(maxD);
+  twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
+  const defaultFrom = twoMonthsAgo.toISOString().slice(0, 10);
+
+  let reqFrom = filters.from || "";
+  let reqTo = filters.to || "";
+
+  // Nếu người dùng không chỉ định khoảng ngày hoặc không yêu cầu lấy toàn bộ lịch sử (all):
+  if (!reqFrom && !filters.all) {
+    reqFrom = defaultFrom;
+    reqTo = maxDateStr;
+  }
+
   const [rawTx, opexRes, reportRes, disposalRes] = await Promise.all([
-    fetchAllRows("transactions", "*", "billing_date"),
+    fetchAllRows("transactions", "*", "billing_date", reqFrom || null, reqTo || null, "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
     supabase.from("disposal_of_goods").select("*").order("ngay_lap", { ascending: true })
@@ -372,7 +407,12 @@ export async function getRevenueRawData() {
     nhomSP: Array.from(nhomSet).sort(viSort),
     nvkd: Array.from(nvkdSet).sort(viSort),
     khachHang: Array.from(khSet).sort(viSort),
-    dates: Array.from(dateSet).sort()
+    dates: Array.from(dateSet).sort(),
+    maxBillingDate: maxDateStr,
+    defaultFrom: defaultFrom,
+    loadedFrom: reqFrom || "2026-06-30",
+    loadedTo: reqTo || maxDateStr,
+    isPartialHistory: Boolean(reqFrom && reqFrom > "2026-06-30")
   };
 
   const opexItems = (opexRes.data || []).map(o => ({

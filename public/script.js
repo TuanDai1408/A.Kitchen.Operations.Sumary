@@ -2,67 +2,80 @@
    API CONFIGURATION
    Thay thế URL và TOKEN bằng giá trị thật từ Apps Script Web App
    ========================================================================= */
-// Supabase Edge Function API endpoint
-const API_URL = 'https://alqcojnxshfylheovdgw.supabase.co/functions/v1/api';
+// API endpoint nội bộ kết nối trực tiếp Supabase qua SDK đầy đủ
+const API_URL = '/api';
 const API_TOKEN = 'TRANTUANDAISIBAFOOD';
 
 // Professional donut chart palette - high contrast, accessible
 const DONUT_PALETTE = ['#2563EB', '#DC2626', '#16A34A', '#F59E0B', '#7C3AED', '#EC4899', '#0891B2', '#84CC16', '#F97316', '#6366F1'];
 
 /* =========================================================================
-   ANIMATED LOADING MANAGER (TOP BAR & GLOBAL OVERLAY)
+   ANIMATED LOADING MANAGER (MINIMALIST STATUS PILL & TOP BAR)
    ========================================================================= */
-let akLoadingCount = 0;
-let akTopProgressTimer = null;
+let akLoadingActive = false;
+let akLoadingTimeout = null;
 
 function akStartTopLoader() {
   const bar = document.getElementById('akTopLoader');
   if (!bar) return;
   bar.classList.add('active');
   bar.style.opacity = '1';
-  bar.style.width = '28%';
-  clearTimeout(akTopProgressTimer);
-  akTopProgressTimer = setTimeout(function() {
-    if (akLoadingCount > 0 && bar) bar.style.width = '72%';
-  }, 250);
+  bar.style.width = '35%';
 }
 
 function akFinishTopLoader() {
   const bar = document.getElementById('akTopLoader');
   if (!bar) return;
-  clearTimeout(akTopProgressTimer);
   bar.style.width = '100%';
   setTimeout(function() {
     bar.style.opacity = '0';
     setTimeout(function() {
       bar.style.width = '0%';
       bar.classList.remove('active');
-    }, 300);
-  }, 220);
+    }, 250);
+  }, 180);
 }
 
-function akShowLoading(title, desc) {
-  akLoadingCount++;
-  const el = document.getElementById('akGlobalLoader');
-  const tEl = document.getElementById('akLoaderTitle');
-  const dEl = document.getElementById('akLoaderSub');
-  if (tEl && title) tEl.textContent = title;
-  if (dEl && desc) dEl.textContent = desc;
-  if (el) el.classList.remove('hide');
+function akShowLoading(msg) {
+  akLoadingActive = true;
+  clearTimeout(akLoadingTimeout);
   akStartTopLoader();
+  const pill = document.getElementById('akStatusPill');
+  const text = document.getElementById('akPillText');
+  const spin = document.getElementById('akPillSpinner');
+  if (text) text.textContent = msg || 'Đang tải dữ liệu...';
+  if (spin) spin.className = 'ak-pill-spinner';
+  if (pill) {
+    pill.classList.remove('hide', 'success');
+  }
+  // Tự động tắt sau tối đa 4 giây để tuyệt đối không bao giờ bị treo
+  akLoadingTimeout = setTimeout(function() {
+    akHideLoading();
+  }, 4000);
 }
 
-function akHideLoading() {
-  akLoadingCount = Math.max(0, akLoadingCount - 1);
-  if (akLoadingCount === 0) {
-    const el = document.getElementById('akGlobalLoader');
-    if (el) el.classList.add('hide');
-    akFinishTopLoader();
-    // Gỡ class spinning khỏi tất cả các nút
-    document.querySelectorAll('.btn.is-loading, .btn.spinning, .is-spinning').forEach(function(btn) {
-      btn.classList.remove('is-loading', 'spinning', 'is-spinning');
-    });
+function akHideLoading(successMsg) {
+  akLoadingActive = false;
+  clearTimeout(akLoadingTimeout);
+  akFinishTopLoader();
+  const pill = document.getElementById('akStatusPill');
+  const text = document.getElementById('akPillText');
+  const spin = document.getElementById('akPillSpinner');
+  if (pill && !pill.classList.contains('hide')) {
+    pill.classList.add('success');
+    if (text) text.textContent = successMsg || 'Đã cập nhật dữ liệu';
+    if (spin) spin.className = 'ak-pill-check';
+    setTimeout(function() {
+      if (!akLoadingActive && pill) {
+        pill.classList.add('hide');
+        pill.classList.remove('success');
+      }
+    }, 1200);
   }
+  // Gỡ class spinning khỏi tất cả các nút
+  document.querySelectorAll('.btn.is-loading, .btn.spinning, .is-spinning').forEach(function(btn) {
+    btn.classList.remove('is-loading', 'spinning', 'is-spinning');
+  });
 }
 
 function akSkeletonHTML(title) {
@@ -102,24 +115,6 @@ async function callAPI(action, extraParams) {
     try {
       response = await fetch(url);
     } catch (netErr) {
-      // Nếu không gọi được URL remote (ví dụ CORS hoặc mạng), fallback sang /api nội bộ
-      if (url.startsWith('https://')) {
-        let localUrl = `/api?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
-        if (extraParams) {
-          for (const [key, value] of Object.entries(extraParams)) {
-            if (value !== null && value !== undefined) {
-              localUrl += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
-            }
-          }
-        }
-        response = await fetch(localUrl);
-      } else {
-        throw netErr;
-      }
-    }
-
-    // Nếu Edge Function trả 404 (chưa deploy lên Supabase), tự động fallback sang endpoint server
-    if (response.status === 404 && url.startsWith('https://')) {
       let localUrl = `/api?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
       if (extraParams) {
         for (const [key, value] of Object.entries(extraParams)) {
@@ -2001,25 +1996,32 @@ function loadRevenue(opts) {
   REV_LOADING = true;
   var box = document.getElementById('tab-revenue');
   if (!opts.silent) {
-    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...', 'Đang tổng hợp dữ liệu hóa đơn và chi phí vận hành...');
-    if (box) box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
+    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...');
+    if (box && !REV_RAW) box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
   }
 
-  callAPI('getRevenueRawData')   // ← không gửi filters
+  var params = {};
+  var fFrom = (opts && opts.from) || RF.from || '';
+  var fTo = (opts && opts.to) || RF.to || '';
+  if (fFrom || fTo) {
+    params.filters = JSON.stringify({ from: fFrom, to: fTo });
+  }
+
+  callAPI('getRevenueRawData', params)
     .then(function (res) {
       REV_LOADING = false;
-      if (!opts.silent) akHideLoading();
+      akHideLoading('Đã cập nhật doanh thu');
       if (res && res.updatedAt) {
         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
       }
       if (!res || !res.ok) {
-        if (box) box.innerHTML = '<div class="card"><div class="empty">' +
+        if (box && !REV_RAW) box.innerHTML = '<div class="card"><div class="empty">' +
           esc((res && res.message) || 'Không đọc được dữ liệu doanh thu') + '</div></div>';
         return;
       }
       if (res.empty) {
-        if (box) box.innerHTML = '<div class="card"><div class="empty">' + esc(res.message) + '</div></div>';
+        if (box && !REV_RAW) box.innerHTML = '<div class="card"><div class="empty">' + esc(res.message) + '</div></div>';
         return;
       }
        
@@ -2038,8 +2040,8 @@ function loadRevenue(opts) {
     })
     .catch(function (err) {
       REV_LOADING = false;
-      if (!opts.silent) akHideLoading();
-      if (box) box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
+      akHideLoading('Lỗi tải dữ liệu');
+      if (box && !REV_RAW) box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
         esc(String(err && err.message ? err.message : err)) + '</div></div>';
     });
 }
@@ -2123,19 +2125,19 @@ function buildRevSacnFilters(){
     dates: Object.keys(dateSet).sort()
   };
 
+  var maxSacnDate = (REV.dims && REV.dims.maxBillingDate) || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
+  var defaultSacnFrom = (REV.dims && REV.dims.defaultFrom) || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 60)] : '2026-07-25');
+
   if (!RF_SACN.from && d.dates.length){
-    var last = d.dates[d.dates.length-1];
-    var i = Math.max(0, d.dates.length - 30);
-    RF_SACN.to = last; RF_SACN.from = d.dates[i];
+    RF_SACN.to = maxSacnDate; RF_SACN.from = defaultSacnFrom;
   }
   document.getElementById('sFrom').value = RF_SACN.from;
   document.getElementById('sTo').value = RF_SACN.to;
-  if (d.dates.length){
-    ['sFrom','sTo'].forEach(function(id){
-      var el = document.getElementById(id);
-      el.min = d.dates[0]; el.max = d.dates[d.dates.length-1];
-    });
-  }
+  ['sFrom','sTo'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.min = '2026-06-01'; el.max = maxSacnDate;
+  });
 
   document.getElementById('sMsList').innerHTML = d.sites.map(function(s){
     return '<label><input type="checkbox" value="'+esc(s)+'"'+
@@ -2168,20 +2170,20 @@ function buildRevFilters(){
   d.sites = d.sites || []; d.kenh = d.kenh || []; d.nhomSP = d.nhomSP || [];
   d.nvkd = d.nvkd || []; d.khachHang = d.khachHang || []; d.dates = d.dates || [];
 
-  // Mặc định: 30 ngày gần nhất có dữ liệu
+  var maxDate = d.maxBillingDate || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
+  var defaultFrom = d.defaultFrom || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 60)] : '2026-07-25');
+
+  // Mặc định: 2 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
   if (!RF.from && d.dates.length){
-    var last = d.dates[d.dates.length-1];
-    var i = Math.max(0, d.dates.length - 30);
-    RF.to = last; RF.from = d.dates[i];
+    RF.to = maxDate; RF.from = defaultFrom;
   }
   document.getElementById('rFrom').value = RF.from;
   document.getElementById('rTo').value = RF.to;
-  if (d.dates.length){
-    ['rFrom','rTo'].forEach(function(id){
-      var el = document.getElementById(id);
-      el.min = d.dates[0]; el.max = d.dates[d.dates.length-1];
-    });
-  }
+  ['rFrom','rTo'].forEach(function(id){
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.min = '2026-06-01'; el.max = maxDate;
+  });
 
   document.getElementById('rMsList').innerHTML = d.sites.map(function(s){
     return '<label><input type="checkbox" value="'+esc(s)+'"'+
@@ -4207,8 +4209,22 @@ function bindRevenueEvents(){
 function bindRevenueFiltersSacn(){
   var reload = function(){ RUI_SACN.drillSite = ''; computeAndDrawRevenueSacn(); };
 
-  document.getElementById('sFrom').addEventListener('change', function(){ RF_SACN.from = this.value; reload(); });
-  document.getElementById('sTo').addEventListener('change',   function(){ RF_SACN.to   = this.value; reload(); });
+  document.getElementById('sFrom').addEventListener('change', function(){
+    RF_SACN.from = this.value;
+    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedFrom && RF_SACN.from < REV_RAW.dims.loadedFrom) {
+      loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
+    } else {
+      reload();
+    }
+  });
+  document.getElementById('sTo').addEventListener('change', function(){
+    RF_SACN.to = this.value;
+    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedTo && RF_SACN.to > REV_RAW.dims.loadedTo) {
+      loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
+    } else {
+      reload();
+    }
+  });
   document.getElementById('sKenh').addEventListener('change', function(){ RF_SACN.kenh = this.value; reload(); });
   document.getElementById('sNhom').addEventListener('change', function(){ RF_SACN.nhomSP = this.value; reload(); });
   document.getElementById('sNVKD').addEventListener('change', function(){ RF_SACN.nvkd = this.value; reload(); });
@@ -4244,8 +4260,22 @@ function bindRevenueFiltersSacn(){
 function bindRevenueFilters(){
   var reload = function(){ RUI.drillSite = ''; computeAndDrawRevenue(); };
 
-  document.getElementById('rFrom').addEventListener('change', function(){ RF.from = this.value; reload(); });
-  document.getElementById('rTo').addEventListener('change',   function(){ RF.to   = this.value; reload(); });
+  document.getElementById('rFrom').addEventListener('change', function(){
+    RF.from = this.value;
+    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedFrom && RF.from < REV_RAW.dims.loadedFrom) {
+      loadRevenue({ force: true, from: RF.from, to: RF.to });
+    } else {
+      reload();
+    }
+  });
+  document.getElementById('rTo').addEventListener('change', function(){
+    RF.to = this.value;
+    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedTo && RF.to > REV_RAW.dims.loadedTo) {
+      loadRevenue({ force: true, from: RF.from, to: RF.to });
+    } else {
+      reload();
+    }
+  });
   document.getElementById('rKenh').addEventListener('change', function(){ RF.kenh = this.value; reload(); });
   document.getElementById('rNhom').addEventListener('change', function(){ RF.nhomSP = this.value; reload(); });
   document.getElementById('rNVKD').addEventListener('change', function(){ RF.nvkd = this.value; reload(); });

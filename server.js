@@ -45,7 +45,7 @@ async function handleApiRequest(req, res) {
         break;
       case 'getRevenueRawData':
       case 'getRevenueFoodCostData':
-        data = await api.getRevenueRawData();
+        data = await api.getRevenueRawData(req.query.filters || payload?.filters);
         break;
       case 'getKeHoachData':
         data = await api.getKeHoachData(req.query.filters || payload?.filters);
