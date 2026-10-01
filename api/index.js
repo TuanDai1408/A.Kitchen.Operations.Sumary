@@ -49,7 +49,7 @@ export default async function handler(req, res) {
         data = await api.getKeHoachData(req.query.filters || payload?.filters);
         break;
       case "getWarehouseDashboardData":
-        data = await api.getWarehouseDashboardData();
+        data = await api.getWarehouseDashboardData(req.query.filters || payload?.filters);
         break;
       case "getNutritionDashboardData":
         data = await api.getNutritionDashboardData();

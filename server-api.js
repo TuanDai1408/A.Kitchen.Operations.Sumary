@@ -652,21 +652,53 @@ export async function getKeHoachData(filtersParam) {
   };
 }
 
-export async function getWarehouseDashboardData() {
-  // Lấy TOÀN BỘ 5,758 dòng giá & phân loại để không bị bỏ sót mã nào
-  const [headerRes, txRes, rawPrice] = await Promise.all([
-    supabase.from("stock_header").select("*"),
-    supabase.from("stock_transactions").select("*").order("pstng_date", { ascending: true }),
+export async function getWarehouseDashboardData(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  // 1. Xác định ngày mới nhất trong stock_transactions
+  const { data: latestDateRow } = await supabase
+    .from("stock_transactions")
+    .select("pstng_date")
+    .order("pstng_date", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const maxDateStr = latestDateRow?.pstng_date || "2026-09-30";
+
+  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  const maxD = new Date(maxDateStr);
+  const oneMonthAgo = new Date(maxD);
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const defaultFrom = oneMonthAgo.toISOString().slice(0, 10);
+
+  let reqFrom = filters.from || "";
+  let reqTo = filters.to || "";
+
+  // Nếu người dùng không chỉ định khoảng ngày hoặc không yêu cầu all:
+  if (!reqFrom && !filters.all) {
+    reqFrom = defaultFrom;
+    reqTo = maxDateStr;
+  }
+
+  // Lấy dữ liệu kho qua fetchAllRows (lọc theo khoảng ngày phát sinh để tối ưu tốc độ)
+  const [rawHeaders, rawTx, rawPrice] = await Promise.all([
+    fetchAllRows("stock_header", "*"),
+    fetchAllRows("stock_transactions", "*", "pstng_date", reqFrom || null, reqTo || null, "pstng_date"),
     fetchAllRows("stock_price_category", "article, price, mdse_catgry_desc, base_uom")
   ]);
 
-  const rawHeaders = headerRes.data || [];
-  const rawTx = txRes.data || [];
-
-  const priceMap = {}, catMap = {};
+  const normArt = (a) => String(a || "").trim().replace(/\.0+$/, "");
+  const priceMap = {}, catMap = {}, uomMap = {};
   rawPrice.forEach(p => {
-    priceMap[p.article] = Number(p.price || 0);
-    if (p.mdse_catgry_desc) catMap[p.article] = p.mdse_catgry_desc;
+    const key = normArt(p.article);
+    priceMap[key] = Number(p.price || 0);
+    if (p.mdse_catgry_desc) catMap[key] = p.mdse_catgry_desc;
+    if (p.base_uom) uomMap[key] = p.base_uom;
   });
 
   // Tạo map chuyển đổi mã site (ví dụ K500) sang tên site người dùng đọc được
@@ -681,36 +713,60 @@ export async function getWarehouseDashboardData() {
     "KL03": { name: "Kho công cụ dụng cụ & Thiết bị bếp (KL03)" }
   };
 
-  const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set(), typeSet = new Set();
+  const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set();
+  const typeSet = new Set(["Thành phẩm", "Bán thành phẩm - NVL", "Khác / Chưa phân loại"]);
+
+  const MVT_NAME_MAP = {
+    "101": "101 - Nhập mua hàng",
+    "102": "102 - Hủy nhập mua",
+    "261": "261 - Xuất sản xuất / Bếp",
+    "262": "262 - Hủy xuất sản xuất",
+    "241": "241 - Xuất dự án / TSCĐ",
+    "242": "242 - Hủy xuất dự án",
+    "351": "351 - Xuất điều chuyển kho",
+    "309": "309 - Chuyển đổi mã NVL",
+    "551": "551 - Xuất hủy hao hụt",
+    "601": "601 - Xuất bán hàng",
+    "Z20": "Z20 - Xuất nội bộ",
+    "Z09": "Z09 - Điều chỉnh kho",
+    "Z15": "Z15 - Nhập nội bộ",
+    "Y09": "Y09 - Nghiệp vụ khác"
+  };
 
   const transactions = rawTx.map(t => {
     const sloc = String(t.sloc || "KL01");
     slocSet.add(sloc);
-    const category = catMap[t.article] || t.loai_hang || "Chưa phân loại";
+    const artKey = normArt(t.article);
+    const category = catMap[artKey] || (t.loai_hang ? `Nhóm ${t.loai_hang}` : "Chưa phân loại");
     catSet.add(category);
     const siteName = siteCodeToName[t.site] || t.site_name || t.site || "";
     if (siteName) siteNameSet.add(siteName);
 
-    const type = t.type || "NVL";
+    // Lấy chính xác loại vật tư từ cột type trong bảng stock_transactions
+    const type = (t.type && String(t.type).trim()) ? String(t.type).trim() : "Khác / Chưa phân loại";
     typeSet.add(type);
+
     const qty = Number(t.quantity || 0);
-    const price = priceMap[t.article] || 0;
+    const price = priceMap[artKey] || 0;
     const value = Math.round(qty * price);
-    const mvt = String(t.mvt || "101");
-    let mvtLabel = "Giao dịch kho";
-    if (mvt === "101" || qty > 0) mvtLabel = "Nhập mua kho (101)";
-    else if (mvt === "261" || qty < 0) mvtLabel = "Xuất sản xuất (261)";
-    else if (mvt === "551") mvtLabel = "Xuất hủy hao hụt (551)";
+
+    // Chuẩn hóa mã chứng từ mvt và gom nhóm chính xác
+    const cleanMvt = String(t.mvt || "101").trim().replace(/\.0+$/, "").toUpperCase();
+    const mvtLabel = MVT_NAME_MAP[cleanMvt] || `MVT ${cleanMvt}`;
 
     return {
       article: t.article,
       name: t.description || t.article,
       category, type, sloc,
       date: formatDate(t.pstng_date),
-      mvt, mvt_label: mvtLabel,
+      mvt: cleanMvt,
+      mvt_label: mvtLabel,
       qty, value,
       site_name: siteName,
-      site: t.site || ""
+      site: t.site || "",
+      art_doc: t.art_doc || "",
+      item: t.item || "",
+      uom: t.bun || uomMap[artKey] || "Kg"
     };
   });
 
@@ -725,7 +781,8 @@ export async function getWarehouseDashboardData() {
   const daysInPeriod = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
   const items = rawHeaders.map(h => {
-    const category = catMap[h.article] || "Chưa phân loại";
+    const artKey = normArt(h.article);
+    const category = catMap[artKey] || "Chưa phân loại";
     catSet.add(category);
     const siteName = h.site_name || siteCodeToName[h.site] || h.site || "";
     if (siteName) siteNameSet.add(siteName);
@@ -735,8 +792,10 @@ export async function getWarehouseDashboardData() {
     const issues = Number(h.total_issues_qty || 0);
     const issuesAbs = Math.abs(issues);
     const stockEnd = Number(h.stock_end_qty || 0);
-    const price = priceMap[h.article] || 0;
+    const price = priceMap[artKey] || 0;
     const stockEndValue = Math.round(stockEnd * price);
+    const receiptsValue = Math.round(receipts * price);
+    const issuesValue = Math.round(issuesAbs * price);
     const consumptionPerDay = issuesAbs > 0 ? issuesAbs / daysInPeriod : 0;
     let daysOfStock = null;
     if (consumptionPerDay > 0) daysOfStock = Math.round((stockEnd / consumptionPerDay) * 10) / 10;
@@ -754,15 +813,19 @@ export async function getWarehouseDashboardData() {
       code: h.article,
       name: h.description || h.article,
       category,
-      uom: h.uom || "Kg",
+      uom: h.uom || uomMap[artKey] || "Kg",
       stock_begin: stockBegin,
       receipts, issues, issues_abs: issuesAbs,
       stock_end: stockEnd,
-      price, stock_end_value: stockEndValue,
+      price,
+      stock_end_value: stockEndValue,
+      receipts_value: receiptsValue,
+      issues_value: issuesValue,
       consumption_per_day: consumptionPerDay,
       days_of_stock: daysOfStock,
       status, has_mismatch: hasMismatch,
       reconciliation_diff: diff,
+      computed_end_from_trans: calculatedEnd,
       site_name: siteName,
       site: h.site || ""
     };
@@ -779,8 +842,12 @@ export async function getWarehouseDashboardData() {
     meta: {
       site: rawHeaders[0]?.site || "K500",
       site_name: rawHeaders[0]?.site_name || "MB A Kitchen Hòa Bình",
-      period_from: minDate || formatDate(new Date()),
-      period_to: maxDate || formatDate(new Date()),
+      period_from: reqFrom || minDate || defaultFrom,
+      period_to: reqTo || maxDate || maxDateStr,
+      max_date: maxDateStr,
+      default_from: defaultFrom,
+      loaded_from: reqFrom || defaultFrom,
+      loaded_to: reqTo || maxDateStr,
       days_in_period: daysInPeriod,
       generated_at: new Date().toISOString()
     },
