@@ -46,14 +46,19 @@ export async function handleGetRevenueRawData(): Promise<any> {
   const nvkdSet = new Set<string>();
   const khSet = new Set<string>();
   const dateSet = new Set<string>();
+  const vungSet = new Set<string>();
+  const loaiSet = new Set<string>();
 
   rows.forEach((r: any) => {
     if (r.site) siteSet.add(r.site);
-    if (r.kenhBanHang) kenhSet.add(r.kenhBanHang);
+    const kName = r.tenKenhBanHang || r.ten_kenh_ban_hang || r.kenhBanHang;
+    if (kName) kenhSet.add(kName);
     if (r.nhomSP) nhomSet.add(r.nhomSP);
     if (r.nvKinhDoanh) nvkdSet.add(r.nvKinhDoanh);
     if (r.tenKH) khSet.add(r.tenKH);
     if (r.ngay) dateSet.add(r.ngay);
+    if (r.vungMien) vungSet.add(r.vungMien);
+    if (r.loaiCuaHang) loaiSet.add(r.loaiCuaHang);
   });
 
   const viSort = (a: string, b: string) => a.localeCompare(b, "vi");
@@ -65,6 +70,8 @@ export async function handleGetRevenueRawData(): Promise<any> {
     nvkd: Array.from(nvkdSet).sort(viSort),
     khachHang: Array.from(khSet).sort(viSort),
     dates: Array.from(dateSet).sort(),
+    vungMien: Array.from(vungSet).sort(viSort),
+    loaiCuaHang: Array.from(loaiSet).sort(viSort),
   };
 
   // Chuẩn hóa opexItems từ opex_input (site, ky, so_tien, cap_nhat_luc)

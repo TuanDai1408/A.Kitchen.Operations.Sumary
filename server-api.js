@@ -283,7 +283,7 @@ function computeIsReturn(r) {
   return false;
 }
 
-function mapTransactionRow(r) {
+export function mapTransactionRow(r) {
   const soLuong = Number(r.so_luong || 0);
   const thanhTienTruocThue = Number(r.thanh_tien_truoc_thue || 0);
   const chietKhau = Number(r.ck_truoc_thue || r.chiet_khau || 0);
@@ -292,24 +292,51 @@ function mapTransactionRow(r) {
     : (thanhTienTruocThue - chietKhau);
   const giaVon = Number(r.gia_von || 0);
 
+  const vungMien = (r.vung_mien !== null && r.vung_mien !== undefined) ? String(r.vung_mien).trim() : "";
+  const loaiCuaHang = (r.loai_cua_hang !== null && r.loai_cua_hang !== undefined) ? String(r.loai_cua_hang).trim() : "";
+  const tenKenhBanHang = (r.ten_kenh_ban_hang !== null && r.ten_kenh_ban_hang !== undefined && String(r.ten_kenh_ban_hang).trim())
+    ? String(r.ten_kenh_ban_hang).trim()
+    : (r.kenh_ban_hang ? String(r.kenh_ban_hang).trim() : "");
+
   return {
     site: r.ten_cua_hang || "",
+    ten_cua_hang: r.ten_cua_hang || "",
     maSite: r.ma_cua_hang || "",
+    ma_cua_hang: r.ma_cua_hang || "",
     tenKH: r.ten_kh || r.ten_khach_hang || "",
+    ten_khach_hang: r.ten_kh || r.ten_khach_hang || "",
     ngay: formatDate(r.billing_date),
     soLuong,
+    so_luong: soLuong,
     dvt: r.dvt || "",
     thanhTien,
+    thanh_tien: thanhTien,
     giaVon,
+    gia_von: giaVon,
     nhomSP: r.nhom_sp || "",
+    nhom_sp: r.nhom_sp || "",
     nganhHang: r.nganh_hang || "",
+    nganh_hang: r.nganh_hang || "",
     kenhBanHang: r.kenh_ban_hang || "",
+    kenh_ban_hang: r.kenh_ban_hang || "",
+    tenKenhBanHang,
+    ten_kenh_ban_hang: tenKenhBanHang,
     nvKinhDoanh: r.nv_kinh_doanh || "",
+    nv_kinh_doanh: r.nv_kinh_doanh || "",
     tenSP: r.ten_sp || "",
+    ten_sp: r.ten_sp || "",
     soHoaDon: r.so_hoa_don || "",
+    so_hoa_don: r.so_hoa_don || "",
     soBillingGoc: r.so_billing_goc || "",
+    so_billing_goc: r.so_billing_goc || "",
     lyDoTraHang: r.ly_do_tra_hang || "",
+    ly_do_tra_hang: r.ly_do_tra_hang || "",
     isReturn: computeIsReturn(r),
+    is_return: computeIsReturn(r),
+    vungMien,
+    vung_mien: vungMien,
+    loaiCuaHang,
+    loai_cua_hang: loaiCuaHang,
   };
 }
 
@@ -391,13 +418,17 @@ export async function getRevenueRawData(filtersParam) {
 
   const rows = rawTx.map(mapTransactionRow);
   const siteSet = new Set(), kenhSet = new Set(), nhomSet = new Set(), nvkdSet = new Set(), khSet = new Set(), dateSet = new Set();
+  const vungSet = new Set(), loaiSet = new Set();
   rows.forEach(r => {
     if (r.site) siteSet.add(r.site);
-    if (r.kenhBanHang) kenhSet.add(r.kenhBanHang);
+    const kName = r.tenKenhBanHang || r.ten_kenh_ban_hang || r.kenhBanHang;
+    if (kName) kenhSet.add(kName);
     if (r.nhomSP) nhomSet.add(r.nhomSP);
     if (r.nvKinhDoanh) nvkdSet.add(r.nvKinhDoanh);
     if (r.tenKH) khSet.add(r.tenKH);
     if (r.ngay) dateSet.add(r.ngay);
+    if (r.vungMien) vungSet.add(r.vungMien);
+    if (r.loaiCuaHang) loaiSet.add(r.loaiCuaHang);
   });
   const viSort = (a, b) => a.localeCompare(b, "vi");
 
@@ -408,6 +439,8 @@ export async function getRevenueRawData(filtersParam) {
     nvkd: Array.from(nvkdSet).sort(viSort),
     khachHang: Array.from(khSet).sort(viSort),
     dates: Array.from(dateSet).sort(),
+    vungMien: Array.from(vungSet).sort(viSort),
+    loaiCuaHang: Array.from(loaiSet).sort(viSort),
     maxBillingDate: maxDateStr,
     defaultFrom: defaultFrom,
     loadedFrom: reqFrom || "2026-06-30",

@@ -395,30 +395,57 @@ export function computeIsReturn(r: any): boolean {
 export function mapTransactionRow(r: any) {
   const soLuong = Number(r.so_luong || 0);
   const thanhTienTruocThue = Number(r.thanh_tien_truoc_thue || 0);
-  const chietKhau = Number(r.chiet_khau || 0);
+  const chietKhau = Number(r.ck_truoc_thue || r.chiet_khau || 0);
   // Net revenue = thanh_tien_truoc_thue - chiet_khau
   const thanhTien = Number(r.thanh_tien) !== 0 && !isNaN(Number(r.thanh_tien))
     ? Number(r.thanh_tien)
     : (thanhTienTruocThue - chietKhau);
   const giaVon = Number(r.gia_von || 0);
 
+  const vungMien = (r.vung_mien !== null && r.vung_mien !== undefined) ? String(r.vung_mien).trim() : "";
+  const loaiCuaHang = (r.loai_cua_hang !== null && r.loai_cua_hang !== undefined) ? String(r.loai_cua_hang).trim() : "";
+  const tenKenhBanHang = (r.ten_kenh_ban_hang !== null && r.ten_kenh_ban_hang !== undefined)
+    ? String(r.ten_kenh_ban_hang).trim()
+    : (r.kenh_ban_hang ? String(r.kenh_ban_hang).trim() : "");
+
   return {
     site: r.ten_cua_hang || "",
+    ten_cua_hang: r.ten_cua_hang || "",
     maSite: r.ma_cua_hang || "",
+    ma_cua_hang: r.ma_cua_hang || "",
     tenKH: r.ten_khach_hang || r.ten_kh || "",
+    ten_khach_hang: r.ten_khach_hang || r.ten_kh || "",
     ngay: formatDate(r.billing_date),
     soLuong,
+    so_luong: soLuong,
     dvt: r.dvt || "",
     thanhTien,
+    thanh_tien: thanhTien,
     giaVon,
+    gia_von: giaVon,
     nhomSP: r.nhom_sp || "",
+    nhom_sp: r.nhom_sp || "",
     nganhHang: r.nganh_hang || "",
+    nganh_hang: r.nganh_hang || "",
     kenhBanHang: r.kenh_ban_hang || "",
+    kenh_ban_hang: r.kenh_ban_hang || "",
+    tenKenhBanHang,
+    ten_kenh_ban_hang: tenKenhBanHang,
     nvKinhDoanh: r.nv_kinh_doanh || "",
+    nv_kinh_doanh: r.nv_kinh_doanh || "",
     tenSP: r.ten_sp || r.ten_san_pham || "",
+    ten_sp: r.ten_sp || r.ten_san_pham || "",
     soHoaDon: r.so_hoa_don || "",
+    so_hoa_don: r.so_hoa_don || "",
     soBillingGoc: r.so_billing_goc || "",
+    so_billing_goc: r.so_billing_goc || "",
     lyDoTraHang: r.ly_do_tra_hang || "",
+    ly_do_tra_hang: r.ly_do_tra_hang || "",
     isReturn: computeIsReturn(r),
+    is_return: computeIsReturn(r),
+    vungMien,
+    vung_mien: vungMien,
+    loaiCuaHang,
+    loai_cua_hang: loaiCuaHang,
   };
 }

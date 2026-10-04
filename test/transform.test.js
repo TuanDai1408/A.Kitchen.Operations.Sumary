@@ -199,3 +199,70 @@ test("computeChiTietVanDe computes correct levels and points", () => {
   assert.strictEqual(c3.diemVanDe, 7);
   assert.strictEqual(c3.mucDoVanDe, 3);
 });
+
+test("mapTransactionRow maps vung_mien, loai_cua_hang, and ten_kenh_ban_hang without hardcoding", async () => {
+  const { mapTransactionRow } = await import("../server-api.js");
+
+  // Case 1: Row with DB columns vung_mien, loai_cua_hang, ten_kenh_ban_hang
+  const row1 = {
+    ma_cua_hang: "K501",
+    ten_cua_hang: "A.Kitchen K501",
+    vung_mien: "Miền Bắc",
+    loai_cua_hang: "Trường học",
+    kenh_ban_hang: "B2B",
+    ten_kenh_ban_hang: "Khách hàng Doanh nghiệp B2B",
+    billing_date: "2026-09-15",
+    so_luong: 120,
+    thanh_tien_truoc_thue: 3600000,
+    chiet_khau: 0,
+    gia_von: 2100000,
+    dvt: "PHA"
+  };
+
+  const mapped1 = mapTransactionRow(row1);
+  assert.strictEqual(mapped1.vungMien, "Miền Bắc");
+  assert.strictEqual(mapped1.vung_mien, "Miền Bắc");
+  assert.strictEqual(mapped1.loaiCuaHang, "Trường học");
+  assert.strictEqual(mapped1.loai_cua_hang, "Trường học");
+  assert.strictEqual(mapped1.tenKenhBanHang, "Khách hàng Doanh nghiệp B2B");
+  assert.strictEqual(mapped1.ten_kenh_ban_hang, "Khách hàng Doanh nghiệp B2B");
+  assert.strictEqual(mapped1.site, "A.Kitchen K501");
+  assert.strictEqual(mapped1.maSite, "K501");
+  assert.strictEqual(mapped1.soLuong, 120);
+
+  // Case 2: Row with null / empty vung_mien and loai_cua_hang - returns empty string without inventing values
+  const row2 = {
+    ma_cua_hang: "K999",
+    ten_cua_hang: "A.Kitchen Mới",
+    vung_mien: null,
+    loai_cua_hang: undefined,
+    kenh_ban_hang: "KenhLe",
+    billing_date: "2026-09-16",
+    so_luong: 10,
+    thanh_tien_truoc_thue: 500000,
+    gia_von: 250000
+  };
+
+  const mapped2 = mapTransactionRow(row2);
+  assert.strictEqual(mapped2.vungMien, "");
+  assert.strictEqual(mapped2.vung_mien, "");
+  assert.strictEqual(mapped2.loaiCuaHang, "");
+  assert.strictEqual(mapped2.loai_cua_hang, "");
+  assert.strictEqual(mapped2.tenKenhBanHang, "KenhLe"); // fallback to kenh_ban_hang
+  assert.strictEqual(mapped2.ten_kenh_ban_hang, "KenhLe");
+
+  // Case 3: Verify dynamic data - new values from DB are passed directly without hardcoded lookup
+  const row3 = {
+    ma_cua_hang: "K001",
+    ten_cua_hang: "A.Kitchen K001",
+    vung_mien: "Vùng Tây Nguyên",
+    loai_cua_hang: "Bệnh viện",
+    ten_kenh_ban_hang: "Kênh Y Tế",
+    billing_date: "2026-09-17"
+  };
+  const mapped3 = mapTransactionRow(row3);
+  assert.strictEqual(mapped3.vungMien, "Vùng Tây Nguyên");
+  assert.strictEqual(mapped3.loaiCuaHang, "Bệnh viện");
+  assert.strictEqual(mapped3.tenKenhBanHang, "Kênh Y Tế");
+});
+
