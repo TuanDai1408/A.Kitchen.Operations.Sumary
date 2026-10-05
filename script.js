@@ -559,12 +559,21 @@ function agg(rows){
   // var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
   //           coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{} };
   rows.forEach(function(r){
-    a.tongSuat+=r.tongSuat; a.sang+=r.suatSang; a.trua+=r.suatTrua; a.chieu+=r.suatChieu;
-    a.nv+=r.suatNhanVien; a.huy+=r.suatHuy;
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    a.tongSuat += rTong;
+    a.sang += (r.suatSang || 0);
+    a.trua += (r.suatTrua || 0);
+    a.chieu += (r.suatChieu || 0);
+    a.nv += (r.suatNhanVien || 0);
+    a.huy += (r.suatHuy || 0);
     if (r.giaoTre) a.soGiaoTre++;
-    a.thatThoat+=r.soThatThoat; a.coMat+=r.nsCoMat; a.vang+=r.nsVang;
-    a.kn+=r.soKhieuNai; a.khen+=r.soKhenNgoi; a.dem++;
-    if (r.coChiPhiNgoai) a.siteCP[r.tenSite]=1;
+    a.thatThoat += (r.soThatThoat || 0);
+    a.coMat += (r.nsCoMat || 0);
+    a.vang += (r.nsVang || 0);
+    a.kn += (r.soKhieuNai || 0);
+    a.khen += (r.soKhenNgoi || 0);
+    a.dem++;
+    if (r.coChiPhiNgoai) a.siteCP[r.tenSite] = 1;
     a.suatLuuMau   += (r.suatLuuMau || 0);
     a.suatGiaoVien += (r.suatGiaoVien || 0);
   });
@@ -839,20 +848,6 @@ function fmtPvtMonthShort(m) {
 }
 
 function computePivotAnalysisData(reportRows, siteList) {
-  // Đồng bộ site theo bộ lọc chung của tab (F.sites)
-  var sl = [];
-  if (F.sites && F.sites.length) {
-    sl = F.sites.slice();
-  } else if (siteList && siteList.length) {
-    sl = siteList.slice();
-  } else {
-    sl = SITES.slice();
-  }
-  if (!sl.length) {
-    var rawSites = uniqSorted((reportRows || []).map(function(r){ return r.tenSite; }).filter(Boolean));
-    sl = rawSites.length ? rawSites : ['Tất cả Site'];
-  }
-
   // Lọc dữ liệu giao dịch bán hàng (REV_RAW) theo đúng bộ lọc chung của tab (F: ngày, site, khách hàng)
   var filteredRevRows = [];
   if (REV_RAW && REV_RAW.rows) {
@@ -871,6 +866,32 @@ function computePivotAnalysisData(reportRows, siteList) {
       }
       return true;
     });
+  }
+
+  // Danh sách site hợp nhất từ cả Báo cáo vận hành và Giao dịch doanh thu
+  var sl = [];
+  if (F.sites && F.sites.length) {
+    sl = F.sites.slice();
+  } else {
+    var sSet = {};
+    (reportRows || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
+    (filteredRevRows || []).forEach(function(r){
+      var s = r.site || r.ten_cua_hang;
+      if (s) sSet[s] = true;
+    });
+    if (!Object.keys(sSet).length) {
+      (RAW || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
+      if (REV_RAW && REV_RAW.rows) {
+        REV_RAW.rows.forEach(function(r){
+          var s = r.site || r.ten_cua_hang;
+          if (s) sSet[s] = true;
+        });
+      }
+    }
+    sl = Object.keys(sSet).sort(function(a, b){ return a.localeCompare(b, 'vi'); });
+  }
+  if (!sl.length) {
+    sl = ['Tất cả Site'];
   }
 
   // Trích xuất các tháng nằm trong phạm vi bộ lọc đang chọn
@@ -922,7 +943,7 @@ function computePivotAnalysisData(reportRows, siteList) {
     }
   });
 
-  // Map report rows
+  // Map report rows (tính tổng suất = r.tongSuat + r.suatLuuMau + r.suatGiaoVien)
   var repMap = {};
   (reportRows || []).forEach(function(r){
     var m = r.ngayBaoCao ? r.ngayBaoCao.substring(0, 7) : '';
@@ -930,15 +951,18 @@ function computePivotAnalysisData(reportRows, siteList) {
     var s = r.tenSite || '';
     var key = s + '|' + m;
     if (!repMap[key]) {
-      repMap[key] = { tongSuat: 0, suatHuy: 0, suatSang: 0, suatTrua: 0, suatChieu: 0, suatNV: 0 };
+      repMap[key] = { tongSuat: 0, suatHuy: 0, suatSang: 0, suatTrua: 0, suatChieu: 0, suatNV: 0, suatLuuMau: 0, suatGiaoVien: 0 };
     }
     var rm = repMap[key];
-    rm.tongSuat += (r.tongSuat || 0);
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    rm.tongSuat += rTong;
     rm.suatHuy += (r.suatHuy || 0);
     rm.suatSang += (r.suatSang || 0);
     rm.suatTrua += (r.suatTrua || 0);
     rm.suatChieu += (r.suatChieu || 0);
     rm.suatNV += (r.suatNhanVien || 0);
+    rm.suatLuuMau += (r.suatLuuMau || 0);
+    rm.suatGiaoVien += (r.suatGiaoVien || 0);
   });
 
   var transKeys = Object.keys(transMap);
@@ -2796,6 +2820,8 @@ function loadRevenue(opts) {
   var fTo = (opts && opts.to) || RF.to || '';
   if (fFrom || fTo) {
     params.filters = JSON.stringify({ from: fFrom, to: fTo });
+  } else {
+    params.filters = JSON.stringify({ all: true });
   }
 
   callAPI('getRevenueRawData', params)
@@ -2828,9 +2854,7 @@ function loadRevenue(opts) {
       }
       computeAndDrawRevenue();
       computeAndDrawRevenueSacn();
-      if (TAB === 'overview') {
-        renderPivotOnly();
-      }
+      renderPivotOnly();
     })
     .catch(function (err) {
       REV_LOADING = false;
@@ -6898,6 +6922,9 @@ function onData(res){
   }
   // Tab doanh thu đọc sheet Transactions riêng -> không redraw theo version của Report
   renderCurrent();
+  if (!REV_RAW && !REV_LOADING) {
+    loadRevenue({ silent: true });
+  }
 }
 
 function showError(title, detail){
