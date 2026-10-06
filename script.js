@@ -1682,7 +1682,7 @@ function drawLine(rows, sl){
             pointBackgroundColor:C.brand, pointBorderColor:'#fff', pointBorderWidth:2,
             data: dates.map(function(dt){
               return rows.filter(function(r){return r.ngayBaoCao===dt;})
-                         .reduce(function(s,r){return s+r.tongSuat;},0); }) }];
+                         .reduce(function(s,r){return s + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0); }) }];
   } else {
     ds = sl.map(function(s,i){
       var col = PALETTE[i%PALETTE.length];
@@ -1691,7 +1691,7 @@ function drawLine(rows, sl){
                pointBackgroundColor:col, pointBorderColor:'#fff', pointBorderWidth:2,
                data: dates.map(function(dt){
                  return rows.filter(function(r){return r.ngayBaoCao===dt && r.tenSite===s;})
-                            .reduce(function(sum,r){return sum+r.tongSuat;},0); }) };
+                            .reduce(function(sum,r){return sum + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0); }) };
     });
   }
 
@@ -1719,13 +1719,28 @@ function drawLine(rows, sl){
 function drawStruct(rows, sl){
   destroyChart('chStruct');
   var ctx = ctxOf('chStruct'); if (!ctx) return;
+
+  // Tính tổng suất cho từng site và sắp xếp từ cao đến thấp
+  var siteTotals = {};
+  sl.forEach(function(s){
+    var sr = rows.filter(function(r){ return r.tenSite === s; });
+    var t = sr.reduce(function(sum, r){
+      return sum + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    }, 0);
+    siteTotals[s] = t;
+  });
+
+  var sortedSl = sl.slice().sort(function(a, b){
+    return (siteTotals[b] || 0) - (siteTotals[a] || 0);
+  });
+
   var keys = [['Sáng','suatSang'],['Trưa','suatTrua'],['Chiều','suatChieu'],
-              ['Nhân viên','suatNhanVien'],['Hủy','suatHuy']];
+              ['Nhân viên','suatNhanVien'],['Hủy','suatHuy'],['Lưu mẫu','suatLuuMau'],['Giáo viên','suatGiaoVien']];
   var ds = keys.map(function(k,i){
     return { label:k[0], backgroundColor:PALETTE[i%PALETTE.length], stack:'a', borderRadius:2,
-             data: sl.map(function(s){
+             data: sortedSl.map(function(s){
                return rows.filter(function(r){return r.tenSite===s;})
-                          .reduce(function(sum,r){return sum+r[k[1]];},0); }) };
+                          .reduce(function(sum,r){return sum+(r[k[1]]||0);},0); }) };
   });
   var o = cloneOpt();
   o.scales.x.stacked = true; o.scales.y.stacked = true;
@@ -1747,7 +1762,7 @@ function drawStruct(rows, sl){
   o.plugins.tooltip.footerColor = '#C9A227';
   o.plugins.tooltip.footerFont = { size:11.5, weight:'700' };
   o.plugins.tooltip.footerMarginTop = 7;
-  CHARTS.chStruct = new Chart(ctx, { type:'bar', data:{ labels:sl, datasets:ds }, options:o });
+  CHARTS.chStruct = new Chart(ctx, { type:'bar', data:{ labels:sortedSl, datasets:ds }, options:o });
 }
 
 function drawRank(rows, sl){
@@ -1757,7 +1772,7 @@ function drawRank(rows, sl){
     var sr = rows.filter(function(r){return r.tenSite===s;});
     var soTre = sr.filter(function(r){return r.giaoTre;}).length;
     var ttSuat = sr.reduce(function(a,r){return a+r.soThatThoat;},0);
-    var tongSuat = sr.reduce(function(a,r){return a+r.tongSuat;},0);
+    var tongSuat = sr.reduce(function(a,r){return a + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0);
     return { site:s, tre:r1(pct(soTre, sr.length)), thatthoat:r1(pct(ttSuat, tongSuat)),
              soTre:soTre, soNgay:sr.length, tt:ttSuat, tong:tongSuat };  // số liệu thô cho tooltip
   }).sort(function(a,b){ return b[UI.rankMetric]-a[UI.rankMetric]; });
@@ -1963,13 +1978,14 @@ function renderSite(){
   // Dùng % (không dùng số tuyệt đối) để ngày sản lượng thấp không bị đánh giá nhẹ đi.
   var maxTtPct = 0;
   rows.forEach(function(r){
-    var p = pct(r.soThatThoat, r.tongSuat);
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    var p = pct(r.soThatThoat, rTong);
     if (p > maxTtPct) maxTtPct = p;
   });
   var maxSang  = Math.max.apply(null, rows.map(function(r){ return r.suatSang;  }).concat(0));
   var maxTrua  = Math.max.apply(null, rows.map(function(r){ return r.suatTrua;  }).concat(0));
   var maxChieu = Math.max.apply(null, rows.map(function(r){ return r.suatChieu; }).concat(0));
-  var maxTong  = Math.max.apply(null, rows.map(function(r){ return r.tongSuat;  }).concat(0));
+  var maxTong  = Math.max.apply(null, rows.map(function(r){ return (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0); }).concat(0));
 
   html += '<div class="card" style="margin-top:13px">'+cardHead(IC.table,'Chi tiết báo cáo từng ngày',
     '<span style="font-size:11px;color:#B0B0B0">thanh màu = % thất thoát trên tổng suất • bấm vào dòng để mở rộng</span>')+
@@ -2030,6 +2046,7 @@ function renderSite(){
 
   rows.slice().reverse().forEach(function(r){
     var op = UI.expanded === r.id;
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
     html += '<tr class="hov row-x" data-id="'+esc(r.id)+'">'+
       '<td style="color:#C0C0C0; text-align:center; width:30px;">'+(op?'▾':'▸')+'</td>'+
       '<td style="font-weight:600;white-space:nowrap">'+esc(r.ngayBaoCao)+'</td>'+
@@ -2041,7 +2058,7 @@ function renderSite(){
       '<td class="num">'+fmt(r.suatLuuMau||0)+'</td>'+
       '<td class="num">'+fmt(r.suatGiaoVien||0)+'</td>'+
       '<td style="max-width:160px;color:#666">'+esc(r.tenKhachHang||'—')+'</td>'+
-      '<td class="num bold-brand">'+dataBarNum(r.tongSuat, maxTong, C.brand)+'</td>'+
+      '<td class="num bold-brand">'+dataBarNum(rTong, maxTong, C.brand)+'</td>'+
       '<td class="ctr">'+(r.giaoTre
         ? '<span class="tag" style="background:#EA580C18;color:#EA580C">Trễ'+(r.phutTre?' '+r.phutTre+"'":'')+'</span>'
         : '<span class="tag" style="background:#16A34A18;color:#16A34A">Đúng giờ</span>')+'</td>'+
@@ -2155,7 +2172,8 @@ function renderSite(){
         var byDate = {};
         rowsRaw.forEach(function(r){
           if (r.tenKhachHang === kh) {
-            byDate[r.ngayBaoCao] = (byDate[r.ngayBaoCao] || 0) + (r.tongSuat || 0);
+            var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+            byDate[r.ngayBaoCao] = (byDate[r.ngayBaoCao] || 0) + rTong;
           }
         });
         datasets.push({
@@ -2170,7 +2188,9 @@ function renderSite(){
       });
       // Thêm line Tổng (nét đứt) để so sánh
       var totalByDate = {};
-      rows.forEach(function(r){ totalByDate[r.ngayBaoCao] = r.tongSuat || 0; });
+      rows.forEach(function(r){
+        totalByDate[r.ngayBaoCao] = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+      });
       datasets.push({
         label: 'Tổng site',
         borderColor: '#666',
@@ -2186,17 +2206,17 @@ function renderSite(){
           borderWidth:2.5, tension:.32, fill:true, yAxisID:'y',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.brand,
           pointBorderColor:'#fff', pointBorderWidth:2,
-          data: rows.map(function(r){return r.tongSuat;}) },
+          data: rows.map(function(r){return (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);}) },
         { label:'Suất NV', borderColor:C.light, backgroundColor:'rgba(155,53,67,.12)',
           borderWidth:2, tension:.3, fill:true, yAxisID:'y1',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.light,
           pointBorderColor:'#fff', pointBorderWidth:2, borderDash:[5, 4],
-          data: rows.map(function(r){return r.suatNhanVien;}) },
+          data: rows.map(function(r){return r.suatNhanVien || 0;}) },
         { label:'Suất hủy', borderColor:C.gold, backgroundColor:'rgba(201,162,39,.16)',
           borderWidth:2, tension:.3, fill:true, yAxisID:'y1',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.gold,
           pointBorderColor:'#fff', pointBorderWidth:2,
-          data: rows.map(function(r){return r.suatHuy;}) }
+          data: rows.map(function(r){return r.suatHuy || 0;}) }
       ];
     }
 
@@ -2236,13 +2256,14 @@ function renderSite(){
 function dataBarTT(r, maxPct){
   if (!r.soThatThoat) return '<span style="color:#C8C8C8">—</span>';
 
-  var p = pct(r.soThatThoat, r.tongSuat);
+  var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+  var p = pct(r.soThatThoat, rTong);
   var vuot = p > NGUONG.thatThoatPct;
   var col = vuot ? C.brand : C.gold;
   // Tối thiểu 6% để giá trị nhỏ vẫn nhìn thấy được thanh
   var w = maxPct > 0 ? Math.max(6, (p / maxPct) * 100) : 6;
 
-  var tip = 'Thất thoát: '+fmt(r.soThatThoat)+' / '+fmt(r.tongSuat)+' suất\n'+
+  var tip = 'Thất thoát: '+fmt(r.soThatThoat)+' / '+fmt(rTong)+' suất\n'+
             'Tỷ lệ: '+r1(p)+'%  (ngưỡng '+NGUONG.thatThoatPct+'%)'+
             (r.nguyenNhanThatThoat ? '\nNguyên nhân: '+r.nguyenNhanThatThoat : '');
 

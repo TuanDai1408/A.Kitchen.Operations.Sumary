@@ -931,17 +931,16 @@
   border-bottom: 2px solid #CBD5E1;
   border-right: 1px solid #E2E8F0;
   white-space: nowrap;
-  position: sticky;
-  top: 0;
-  z-index: 10;
 }
 .pvt-table th.site-col {
+  position: sticky;
   left: 0;
-  z-index: 20;
+  z-index: 3;
   background: #F1F5F9;
   min-width: 220px;
   max-width: 280px;
   border-right: 2px solid #CBD5E1;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.03);
 }
 .pvt-table th.th-total {
   background: #EFF6FF;
@@ -959,12 +958,13 @@
 .pvt-table td.site-col {
   position: sticky;
   left: 0;
-  z-index: 5;
+  z-index: 2;
   background: #FFF;
   font-weight: 700;
   color: #0F172A;
-  border-right: 2px solid #E2E8F0;
+  border-right: 2px solid #CBD5E1;
   white-space: nowrap;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.03);
 }
 .pvt-table tr:hover td {
   background-color: #F8FAFC;
@@ -982,6 +982,8 @@
 }
 .pvt-table tr.total-row td.site-col {
   background: #E2E8F0;
+  z-index: 2;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.03);
 }
 .pvt-table td.td-total {
   background: #F8FAFC;
