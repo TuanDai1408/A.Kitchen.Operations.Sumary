@@ -2838,11 +2838,11 @@ function loadRevenue(opts) {
   }
 
   var params = {};
-  var fFrom = (opts && opts.from) || RF.from || '';
-  var fTo = (opts && opts.to) || RF.to || '';
+  var fFrom = (opts && opts.from) || RF.from || (typeof F !== 'undefined' && F ? F.from : '') || '';
+  var fTo = (opts && opts.to) || RF.to || (typeof F !== 'undefined' && F ? F.to : '') || '';
   if (fFrom || fTo) {
     params.filters = JSON.stringify({ from: fFrom, to: fTo });
-  } else {
+  } else if (opts && opts.all) {
     params.filters = JSON.stringify({ all: true });
   }
 
@@ -2974,7 +2974,7 @@ function buildRevSacnFilters(){
   };
 
   var maxSacnDate = (REV.dims && REV.dims.maxBillingDate) || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
-  var defaultSacnFrom = (REV.dims && REV.dims.defaultFrom) || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 60)] : '2026-07-25');
+  var defaultSacnFrom = (REV.dims && REV.dims.defaultFrom) || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 30)] : '2026-08-25');
 
   if (!RF_SACN.from && d.dates.length){
     RF_SACN.to = maxSacnDate; RF_SACN.from = defaultSacnFrom;
@@ -3074,9 +3074,9 @@ function buildRevFilters(){
   var khOptions = Object.keys(khSet).length ? Object.keys(khSet).sort(viSort) : d.khachHang;
 
   var maxDate = d.maxBillingDate || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
-  var defaultFrom = d.defaultFrom || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 60)] : '2026-07-25');
+  var defaultFrom = d.defaultFrom || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 30)] : '2026-08-25');
 
-  // Mặc định: 2 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
   if (!RF.from && d.dates.length){
     RF.to = maxDate; RF.from = defaultFrom;
   }
@@ -5493,7 +5493,7 @@ function bindRevenueFiltersSacn(){
 
   document.getElementById('sFrom').addEventListener('change', function(){
     RF_SACN.from = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedFrom && RF_SACN.from < REV_RAW.dims.loadedFrom) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedFrom && RF_SACN.from < REV_RAW.dims.loadedFrom)) {
       loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
     } else {
       reload();
@@ -5501,7 +5501,7 @@ function bindRevenueFiltersSacn(){
   });
   document.getElementById('sTo').addEventListener('change', function(){
     RF_SACN.to = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedTo && RF_SACN.to > REV_RAW.dims.loadedTo) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedTo && RF_SACN.to > REV_RAW.dims.loadedTo)) {
       loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
     } else {
       reload();
@@ -5630,7 +5630,7 @@ function bindRevenueFilters(){
 
   document.getElementById('rFrom').addEventListener('change', function(){
     RF.from = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedFrom && RF.from < REV_RAW.dims.loadedFrom) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedFrom && RF.from < REV_RAW.dims.loadedFrom)) {
       loadRevenue({ force: true, from: RF.from, to: RF.to });
     } else {
       reload();
@@ -5638,7 +5638,7 @@ function bindRevenueFilters(){
   });
   document.getElementById('rTo').addEventListener('change', function(){
     RF.to = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedTo && RF.to > REV_RAW.dims.loadedTo) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedTo && RF.to > REV_RAW.dims.loadedTo)) {
       loadRevenue({ force: true, from: RF.from, to: RF.to });
     } else {
       reload();
@@ -6654,9 +6654,14 @@ function buildKhachFilter(){
 function setDefaultRange(){
   if (!DATES.length) return;
   var last = DATES[DATES.length-1];
-  // Mặc định: từ ngày CŨ NHẤT đến ngày MỚI NHẤT có dữ liệu trong sheet Report
+  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  var lastD = new Date(last);
+  var oneMonthAgo = new Date(lastD);
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  var defFrom = oneMonthAgo.toISOString().slice(0, 10);
+  if (defFrom < DATES[0]) defFrom = DATES[0];
   F.to = last;
-  F.from = DATES[0];
+  F.from = defFrom;
   document.getElementById('fFrom').value = F.from;
   document.getElementById('fTo').value = F.to;
   document.getElementById('fFrom').min = DATES[0];
@@ -6700,14 +6705,24 @@ function syncMonthSelectWithDates(){
 }
 
 function bindFilters(){
+  var checkReloadRevenueIfWider = function(){
+    if (REV_RAW && REV_RAW.dims) {
+      if ((F.from && F.from < REV_RAW.dims.loadedFrom) || (F.to && F.to > REV_RAW.dims.loadedTo)) {
+        loadRevenue({ silent: true, force: true, from: F.from, to: F.to });
+      }
+    }
+  };
+
   document.getElementById('fFrom').addEventListener('change', function(){
     F.from = this.value;
     syncMonthSelectWithDates();
+    checkReloadRevenueIfWider();
     renderCurrent();
   });
   document.getElementById('fTo').addEventListener('change', function(){
     F.to = this.value;
     syncMonthSelectWithDates();
+    checkReloadRevenueIfWider();
     renderCurrent();
   });
 
@@ -6726,6 +6741,7 @@ function bindFilters(){
         document.getElementById('fFrom').value = F.from;
         document.getElementById('fTo').value = F.to;
       }
+      checkReloadRevenueIfWider();
       renderCurrent();
     });
   }

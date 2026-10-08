@@ -394,11 +394,11 @@ export async function getRevenueRawData(filtersParam) {
 
   const maxDateStr = latestDateRow?.billing_date || "2026-09-25";
 
-  // Mặc định: 2 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
   const maxD = new Date(maxDateStr);
-  const twoMonthsAgo = new Date(maxD);
-  twoMonthsAgo.setMonth(twoMonthsAgo.getMonth() - 2);
-  const defaultFrom = twoMonthsAgo.toISOString().slice(0, 10);
+  const oneMonthAgo = new Date(maxD);
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const defaultFrom = oneMonthAgo.toISOString().slice(0, 10);
 
   let reqFrom = filters.from || "";
   let reqTo = filters.to || "";
@@ -406,7 +406,7 @@ export async function getRevenueRawData(filtersParam) {
   // Nếu người dùng không chỉ định khoảng ngày hoặc không yêu cầu lấy toàn bộ lịch sử (all):
   if (!reqFrom && !filters.all) {
     reqFrom = defaultFrom;
-    reqTo = maxDateStr;
+    reqTo = reqTo || maxDateStr;
   }
 
   const [rawTx, opexRes, reportRes, disposalRes] = await Promise.all([
@@ -419,6 +419,9 @@ export async function getRevenueRawData(filtersParam) {
   const rows = rawTx.map(mapTransactionRow);
   const siteSet = new Set(), kenhSet = new Set(), nhomSet = new Set(), nvkdSet = new Set(), khSet = new Set(), dateSet = new Set();
   const vungSet = new Set(), loaiSet = new Set();
+  (reportRes.data || []).forEach(r => {
+    if (r.ten_site) siteSet.add(r.ten_site);
+  });
   rows.forEach(r => {
     if (r.site) siteSet.add(r.site);
     const kName = r.tenKenhBanHang || r.ten_kenh_ban_hang || r.kenhBanHang;
