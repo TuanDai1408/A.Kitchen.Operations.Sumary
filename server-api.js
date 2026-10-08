@@ -18,20 +18,41 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
  * Hỗ trợ lọc theo khoảng ngày trực tiếp trên database để tối ưu hiệu năng
  */
 async function fetchAllRows(table, select = "*", orderCol = null, fromDate = null, toDate = null, dateCol = null) {
-  let all = [];
-  let from = 0;
+  let countQ = supabase.from(table).select("*", { count: "exact", head: true });
+  if (fromDate && dateCol) countQ = countQ.gte(dateCol, fromDate);
+  if (toDate && dateCol) countQ = countQ.lte(dateCol, toDate);
+  const { count, error } = await countQ;
+  if (error) throw error;
+  if (!count) return [];
+
   const step = 1000;
-  while (true) {
-    let q = supabase.from(table).select(select).range(from, from + step - 1);
+  if (count <= step) {
+    let q = supabase.from(table).select(select).range(0, count - 1);
     if (orderCol) q = q.order(orderCol, { ascending: true });
     if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
     if (toDate && dateCol) q = q.lte(dateCol, toDate);
-    const { data, error } = await q;
-    if (error) throw error;
-    if (!data || data.length === 0) break;
-    all.push(...data);
-    if (data.length < step) break;
-    from += step;
+    const { data, error: qErr } = await q;
+    if (qErr) throw qErr;
+    return data || [];
+  }
+
+  // Parallel pagination for large datasets
+  const pages = Math.ceil(count / step);
+  const promises = [];
+  for (let i = 0; i < pages; i++) {
+    const from = i * step;
+    const to = Math.min(from + step - 1, count - 1);
+    let q = supabase.from(table).select(select).range(from, to);
+    if (orderCol) q = q.order(orderCol, { ascending: true });
+    if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
+    if (toDate && dateCol) q = q.lte(dateCol, toDate);
+    promises.push(q);
+  }
+  const results = await Promise.all(promises);
+  let all = [];
+  for (const r of results) {
+    if (r.error) throw r.error;
+    if (r.data) all.push(...r.data);
   }
   return all;
 }

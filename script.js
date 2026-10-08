@@ -2823,7 +2823,23 @@ function computeAndDrawRevenue() {
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
 function loadRevenue(opts) {
   opts = opts || {};
+  var box = document.getElementById('tab-revenue');
+  var sacnBox = document.getElementById('tab-sacn');
+
+  // Đảm bảo hiển thị skeleton và animation chờ khi người dùng chủ động xem tab
+  if (!opts.silent) {
+    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...');
+    if (box && !REV_RAW && !box.querySelector('.sk-wrap')) {
+      box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
+    }
+    if (sacnBox && !REV_RAW && !sacnBox.querySelector('.sk-wrap')) {
+      sacnBox.innerHTML = akSkeletonHTML('Doanh thu & Food Cost (SACN)');
+    }
+  }
+
+  // Nếu đang có request chạy ngầm và người dùng chủ động vào tab -> skeleton đã được hiển thị ở trên, chờ kết quả trả về
   if (REV_LOADING) return;
+
   // Đã có raw và không force → chỉ vẽ lại theo filter hiện tại
   if (REV_RAW && !opts.force) {
     computeAndDrawRevenue();
@@ -2831,11 +2847,6 @@ function loadRevenue(opts) {
   }
 
   REV_LOADING = true;
-  var box = document.getElementById('tab-revenue');
-  if (!opts.silent) {
-    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...');
-    if (box && !REV_RAW) box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
-  }
 
   var params = {};
   var fFrom = (opts && opts.from) || RF.from || (typeof F !== 'undefined' && F ? F.from : '') || '';
@@ -2935,11 +2946,25 @@ function loadRevenue(opts) {
 //   drawRevenue();
 // }
 function renderRevenue(){
-  if (!REV_RAW){ loadRevenue(); return; }
+  if (!REV_RAW){
+    var box = document.getElementById('tab-revenue');
+    if (box && !box.querySelector('.sk-wrap')) {
+      box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
+    }
+    loadRevenue();
+    return;
+  }
   computeAndDrawRevenue();
 }
 function renderSacn(){
-  if (!REV_RAW){ loadRevenue(); return; }
+  if (!REV_RAW){
+    var sacnBox = document.getElementById('tab-sacn');
+    if (sacnBox && !sacnBox.querySelector('.sk-wrap')) {
+      sacnBox.innerHTML = akSkeletonHTML('Doanh thu & Food Cost (SACN)');
+    }
+    loadRevenue();
+    return;
+  }
   if (!REV_SACN_INIT){ buildRevSacnFilters(); REV_SACN_INIT = true; }
   computeAndDrawRevenueSacn();
 }
