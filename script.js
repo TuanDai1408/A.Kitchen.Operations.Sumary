@@ -931,8 +931,9 @@ function computePivotAnalysisData(reportRows, siteList) {
     }
     var tm = transMap[key];
     if (r.isReturn) {
-      tm.retVal += (r.thanhTien || 0);
-      tm.retQty += (r.soLuong || 0);
+      tm.retVal += Math.abs(r.thanhTien || 0);
+      tm.retQty += Math.abs(r.soLuong || 0);
+      tm.foodCost += (r.giaVon || 0);
     } else {
       tm.gross += (r.thanhTien || 0);
       tm.disc += (r.ckTruocThue || 0);
@@ -3212,16 +3213,17 @@ function rev_agg() {
 }
 function rev_push(a, r) {
   if (r.isReturn) {
-    a.returnValue += r.thanhTien;
-    a.returnQty += r.soLuong;
+    a.returnValue += Math.abs(r.thanhTien || 0);
+    a.returnQty += Math.abs(r.soLuong || 0);
+    a.foodCost += (r.giaVon || 0);
   } else {
-    a.grossRevenue += r.thanhTien;
+    a.grossRevenue += (r.thanhTien || 0);
     a.discount += (r.ckTruocThue || 0);
-    a.salesQty += r.soLuong;
-    a.foodCost += r.giaVon;
+    a.salesQty += (r.soLuong || 0);
+    a.foodCost += (r.giaVon || 0);
     if (r.soHoaDon) a.invoices[r.soHoaDon] = 1;
     var u = String(r.dvt || '').trim().toUpperCase();
-    var lineNet = r.thanhTien - (r.ckTruocThue || 0);
+    var lineNet = (r.thanhTien || 0) - (r.ckTruocThue || 0);
     if (u === 'PHA') { a.qtyPHA += r.soLuong; a.netPHA += lineNet; }
     else if (u === 'KG') { a.qtyKG += r.soLuong; a.netKG += lineNet; }
     else if (u === 'CHY') { a.qtyCHY += r.soLuong; a.netCHY += lineNet; }
@@ -3435,7 +3437,7 @@ function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
       returns: rs.filter(function (r) { return r.isReturn; }).map(function (r) {
         return {
           ngay: r.ngay, soHoaDon: r.soHoaDon, tenKH: r.tenKH, tenSP: r.tenSP,
-          soLuong: r.soLuong, thanhTien: r.thanhTien,
+          soLuong: Math.abs(r.soLuong || 0), thanhTien: Math.abs(r.thanhTien || 0),
           lyDo: r.lyDoTraHang || '(Không ghi lý do)', soBillingGoc: r.soBillingGoc
         };
       }).slice(0, 200)
@@ -3460,9 +3462,9 @@ function drawRevenueSacn(){
 
   /* KHỐI 1 — 10 KPI: 5 cột × 2 hàng */
   html += '<div class="grid g5">';
-  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.grossRevenue),
+  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.netRevenue),
     k.invoiceCount+' hóa đơn • '+fmt(k.qtyPHA || 0)+' suất (PHA)',
-    d(k.grossRevenue, p.grossRevenue), true, C.brand);
+    d(k.netRevenue, p.netRevenue), true, C.brand);
 
   html += '<div class="kpi" style="border-left-color:'+C.gold+'">'+
     '<div class="kpi-top"><div>'+
@@ -3748,9 +3750,9 @@ function drawRevenue(){
   /* ===== KHỐI 1: KPI TỔNG QUAN (mục 5.1) ===== */
   html += '<div class="grid g6">';
 
-  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.grossRevenue),
+  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.netRevenue),
     k.invoiceCount+' hóa đơn • '+fmt(k.qtyPHA || 0)+' suất (PHA)',
-    d(k.grossRevenue, p.grossRevenue), true, C.brand);
+    d(k.netRevenue, p.netRevenue), true, C.brand);
 
   // Food cost % - kèm gauge so dải mục tiêu 30-40%
   html += '<div class="kpi" style="border-left-color:'+C.gold+'">'+
