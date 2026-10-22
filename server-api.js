@@ -967,3 +967,142 @@ export async function getNutritionDashboardData() {
     nutriDb
   };
 }
+
+export async function getRevenueEstData(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  const [rawTx, plRows, keHoach] = await Promise.all([
+    fetchAllRows("transactions_est", "*", "billing_date"),
+    fetchAllRows("kehoach_pl_thang", "*", "ky"),
+    getKeHoachData(filtersParam)
+  ]);
+
+  const rows = (rawTx || []).map(r => {
+    const soLuong = Number(r.so_luong || 0);
+    const thanhTienTruocThue = Number(r.thanh_tien_truoc_thue || 0);
+    const chietKhau = Number(r.ck_truoc_thue || r.chiet_khau || 0);
+    const netRevenue = thanhTienTruocThue - chietKhau;
+    const foodCost = Number(r.gia_von || 0);
+    const vungMien = (r.vung_mien !== null && r.vung_mien !== undefined) ? String(r.vung_mien).trim() : "";
+    const loaiCuaHang = (r.loai_cua_hang !== null && r.loai_cua_hang !== undefined) ? String(r.loai_cua_hang).trim() : "";
+    const tenKenhBanHang = (r.ten_kenh_ban_hang !== null && r.ten_kenh_ban_hang !== undefined && String(r.ten_kenh_ban_hang).trim())
+      ? String(r.ten_kenh_ban_hang).trim()
+      : (r.kenh_ban_hang ? String(r.kenh_ban_hang).trim() : "");
+    const ngay = formatDate(r.billing_date);
+    const ky = r.ky_uoc_tinh || (ngay ? ngay.substring(0, 7) : "");
+
+    return {
+      id: r.id,
+      maSite: r.ma_cua_hang || "",
+      ma_cua_hang: r.ma_cua_hang || "",
+      site: r.ten_cua_hang || "",
+      ten_cua_hang: r.ten_cua_hang || "",
+      tenKH: r.ten_kh || r.ten_khach_hang || "",
+      ten_kh: r.ten_kh || r.ten_khach_hang || "",
+      ngay,
+      billing_date: ngay,
+      ky,
+      soLuong,
+      so_luong: soLuong,
+      dvt: r.dvt || "",
+      netRevenue,
+      thanhTien: netRevenue,
+      thanh_tien: netRevenue,
+      foodCost,
+      giaVon: foodCost,
+      gia_von: foodCost,
+      nhomSP: r.nhom_sp || "",
+      nhom_sp: r.nhom_sp || "",
+      nganhHang: r.nganh_hang || "",
+      nganh_hang: r.nganh_hang || "",
+      kenhBanHang: r.kenh_ban_hang || "",
+      kenh_ban_hang: r.kenh_ban_hang || "",
+      tenKenhBanHang,
+      ten_kenh_ban_hang: tenKenhBanHang,
+      vungMien,
+      vung_mien: vungMien,
+      loaiCuaHang,
+      loai_cua_hang: loaiCuaHang,
+      soHoaDon: r.so_hoa_don || "",
+      isReturn: computeIsReturn(r),
+      is_return: computeIsReturn(r),
+      reference: r.reference || "",
+      ghiChu: r.ghi_chu || ""
+    };
+  });
+
+  const siteSet = new Set();
+  const dateSet = new Set();
+  const vungSet = new Set();
+  const loaiSet = new Set();
+  const kySet = new Set();
+  const kenhSet = new Set();
+  const nhomSet = new Set();
+
+  rows.forEach(r => {
+    if (r.site) siteSet.add(r.site);
+    if (r.ngay) dateSet.add(r.ngay);
+    if (r.vungMien) vungSet.add(r.vungMien);
+    if (r.loaiCuaHang) loaiSet.add(r.loaiCuaHang);
+    if (r.ky) kySet.add(r.ky);
+    if (r.tenKenhBanHang) kenhSet.add(r.tenKenhBanHang);
+    if (r.nhomSP) nhomSet.add(r.nhomSP);
+  });
+
+  const viSort = (a, b) => a.localeCompare(b, "vi");
+
+  const planMap = {};
+  const personnelBySiteKy = [];
+  (plRows || []).forEach(p => {
+    const s = String(p.site || "").trim();
+    const k = String(p.ky || "").trim();
+    if (!s || !k) return;
+    kySet.add(k);
+    const key = `${s}|${k}`;
+    if (!planMap[key]) {
+      planMap[key] = { site: s, ky: k, doanhThu: 0, foodCost: 0, laiGop: 0, chiPhiNhanSu: 0 };
+    }
+    const val = Number(p.gia_tri || 0);
+    if (p.hang_muc === "DoanhThu") planMap[key].doanhThu = val;
+    else if (p.hang_muc === "FoodCost") planMap[key].foodCost = val;
+    else if (p.hang_muc === "LaiGop") planMap[key].laiGop = val;
+    else if (p.hang_muc === "ChiPhiNhanSu") {
+      planMap[key].chiPhiNhanSu = val;
+      personnelBySiteKy.push({ site: s, ky: k, amount: val });
+    }
+  });
+
+  const planBySiteKy = Object.values(planMap);
+
+  const dims = {
+    sites: Array.from(siteSet).sort(viSort),
+    dates: Array.from(dateSet).sort(),
+    vungMien: Array.from(vungSet).sort(viSort),
+    loaiCuaHang: Array.from(loaiSet).sort(viSort),
+    kyOptions: Array.from(kySet).sort(),
+    kenh: Array.from(kenhSet).sort(viSort),
+    nhomSP: Array.from(nhomSet).sort(viSort)
+  };
+
+  return {
+    ok: true,
+    updatedAt: new Date().toISOString(),
+    dims,
+    rows,
+    planBySiteKy,
+    personnelBySiteKy,
+    keHoach,
+    nguong: {
+      foodCostMax: 62,
+      foodCostMin: DEFAULT_NGUONG.foodCostMin || 30,
+      am2Min: 12,
+      planPctMin: 95,
+      huyPct: DEFAULT_NGUONG.huyPct || 1.5
+    }
+  };
+}

@@ -45,6 +45,9 @@ export default async function handler(req, res) {
       case "getRevenueFoodCostData":
         data = await api.getRevenueRawData(req.query.filters || payload?.filters);
         break;
+      case "getRevenueEstData":
+        data = await api.getRevenueEstData(req.query.filters || payload?.filters);
+        break;
       case "getKeHoachData":
         data = await api.getKeHoachData(req.query.filters || payload?.filters);
         break;

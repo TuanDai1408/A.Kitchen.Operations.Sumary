@@ -30,6 +30,7 @@
       <!-- <button data-tab="incident">Sự cố &amp; Adhoc</button> --> <!-- Đã ẩn tab Sự cố & Adhoc -->
       <button data-tab="revenue">Doanh thu &amp; Food Cost (ALL)</button>
       <button data-tab="sacn">Doanh thu &amp; Food Cost (SACN)</button>
+      <button data-tab="revenue-est">Doanh thu ước tính</button>
       <button data-tab="kehoach">So sánh Kế hoạch</button>
       <button data-tab="quanlykho">Quản lý kho</button>
        <button data-tab="dinhduong">Thông tin dinh dưỡng</button>
@@ -75,6 +76,13 @@
       <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
       <span class="sb-item-label">Doanh thu & Food Cost (SACN)</span>
       </div>
+    </div>
+    <div class="sb-divider"></div>
+    <div class="sb-group"><div class="sb-group-label">Ước tính & Kế hoạch</div>
+      <div class="sb-item" data-tab="revenue-est" data-tip="Doanh thu ước tính">
+      <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><path d="M18 14l4 4-4 4"/></svg>
+      <span class="sb-item-label">Doanh thu ước tính</span>
+      </div>
       <div class="sb-item" data-tab="kehoach" data-tip="So sánh Kế hoạch"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span class="sb-item-label">So sánh Kế hoạch</span></div>
     </div>
     <div class="sb-divider"></div>
@@ -94,6 +102,12 @@
   <div class="fbar-in">
     <div class="fld"><label>Từ ngày</label><input type="date" id="fFrom"></div>
     <div class="fld"><label>Đến ngày</label><input type="date" id="fTo"></div>
+    <div class="fld">
+      <label>Kỳ / Tháng</label>
+      <select id="fMonth" style="min-width:145px">
+        <option value="">Tất cả các tháng</option>
+      </select>
+    </div>
     <div class="fld ms" id="msWrap">
       <label>Site</label>
       <button class="sel" id="msBtn"><span id="msLabel">Tất cả site</span><span style="color:#AAA">▾</span></button>
@@ -164,58 +178,184 @@
   </div>
 </div> -->
 <div class="fbar hide" id="fbarRev">
-  <div class="fbar-in">
-    <div class="fld"><label>Từ ngày</label><input type="date" id="rFrom"></div>
-    <div class="fld"><label>Đến ngày</label><input type="date" id="rTo"></div>
-    <div class="fld ms" id="rMsWrap">
-      <label>Cửa hàng / Site</label>
-      <button class="sel" id="rMsBtn"><span id="rMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
-      <div class="ms-pop" id="rMsPop">
-        <button class="ms-all" id="rMsAll">✓ Chọn tất cả</button>
-        <div id="rMsList"></div>
+  <div class="fbar-in fbar-2rows">
+    <div class="fbar-row">
+      <div class="fld"><label>Từ ngày</label><input type="date" id="rFrom"></div>
+      <div class="fld"><label>Đến ngày</label><input type="date" id="rTo"></div>
+      <div class="fld ms" id="rMsWrap">
+        <label>Cửa hàng</label>
+        <button class="sel" id="rMsBtn"><span id="rMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="rMsPop">
+          <button class="ms-all" id="rMsAll">✓ Chọn tất cả</button>
+          <div id="rMsList"></div>
+        </div>
+      </div>
+      <div class="fld ms" id="rVungWrap">
+        <label>Vùng miền</label>
+        <button class="sel" id="rVungBtn"><span id="rVungLabel">Tất cả vùng miền</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="rVungPop">
+          <button class="ms-all" id="rVungAll">✓ Chọn tất cả</button>
+          <div id="rVungList"></div>
+        </div>
+      </div>
+      <div class="fld ms" id="rLoaiWrap">
+        <label>Loại cửa hàng</label>
+        <button class="sel" id="rLoaiBtn"><span id="rLoaiLabel">Tất cả loại cửa hàng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="rLoaiPop">
+          <button class="ms-all" id="rLoaiAll">✓ Chọn tất cả</button>
+          <div id="rLoaiList"></div>
+        </div>
       </div>
     </div>
-    <div class="fld">
-      <label>Kênh BH</label>
-      <select id="rKenh"><option value="">Tất cả kênh</option></select>
-    </div>
-    <div class="fld">
-      <label>Nhóm SP</label>
-      <select id="rNhom"><option value="">Tất cả nhóm</option></select>
-    </div>
-    <div class="fld">
-      <label>NVKD</label>
-      <select id="rNVKD"><option value="">Tất cả NVKD</option></select>
-    </div>
-    <div class="fld">
-      <label>Khách hàng</label>
-      <select id="rKH"><option value="">Tất cả KH</option></select>
-    </div>
-    <div class="fld-btns">
-      <button class="btn btn-out" id="rBtnReset">↺ Đặt lại</button>
-      <button class="btn btn-fill" id="rBtnRefresh">⟳ Tải dữ liệu</button>
+    <div class="fbar-row">
+      <div class="fld">
+        <label>Kênh bán hàng</label>
+        <select id="rKenh"><option value="">Tất cả kênh bán hàng</option></select>
+      </div>
+      <div class="fld">
+        <label>Nhóm sản phẩm</label>
+        <select id="rNhom"><option value="">Tất cả nhóm sản phẩm</option></select>
+      </div>
+      <div class="fld">
+        <label>Nhân viên xuất hóa đơn</label>
+        <select id="rNVKD"><option value="">Tất cả nhân viên xuất hóa đơn</option></select>
+      </div>
+      <div class="fld ms" id="rKhWrap">
+        <label>Khách hàng</label>
+        <button class="sel" id="rKhBtn"><span id="rKhLabel">Tất cả khách hàng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="rKhPop">
+          <button class="ms-all" id="rKhAll">✓ Chọn tất cả</button>
+          <div id="rKhList"></div>
+        </div>
+      </div>
+      <div class="fld-btns">
+        <button class="btn btn-out" id="rBtnReset">↺ Đặt lại</button>
+        <button class="btn btn-fill" id="rBtnRefresh">⟳ Tải lại</button>
+      </div>
     </div>
   </div>
 </div>
 <div class="fbar hide" id="fbarSacn">
-  <div class="fbar-in">
-    <div class="fld"><label>Từ ngày</label><input type="date" id="sFrom"></div>
-    <div class="fld"><label>Đến ngày</label><input type="date" id="sTo"></div>
-    <div class="fld ms" id="sMsWrap">
-      <label>Cửa hàng / Site</label>
-      <button class="sel" id="sMsBtn"><span id="sMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
-      <div class="ms-pop" id="sMsPop">
-        <button class="ms-all" id="sMsAll">✓ Chọn tất cả</button>
-        <div id="sMsList"></div>
+  <div class="fbar-in fbar-2rows">
+    <div class="fbar-row">
+      <div class="fld"><label>Từ ngày</label><input type="date" id="sFrom"></div>
+      <div class="fld"><label>Đến ngày</label><input type="date" id="sTo"></div>
+      <div class="fld ms" id="sMsWrap">
+        <label>Cửa hàng</label>
+        <button class="sel" id="sMsBtn"><span id="sMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="sMsPop">
+          <button class="ms-all" id="sMsAll">✓ Chọn tất cả</button>
+          <div id="sMsList"></div>
+        </div>
+      </div>
+      <div class="fld ms" id="sVungWrap">
+        <label>Vùng miền</label>
+        <button class="sel" id="sVungBtn"><span id="sVungLabel">Tất cả vùng miền</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="sVungPop">
+          <button class="ms-all" id="sVungAll">✓ Chọn tất cả</button>
+          <div id="sVungList"></div>
+        </div>
+      </div>
+      <div class="fld ms" id="sLoaiWrap">
+        <label>Loại cửa hàng</label>
+        <button class="sel" id="sLoaiBtn"><span id="sLoaiLabel">Tất cả loại cửa hàng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="sLoaiPop">
+          <button class="ms-all" id="sLoaiAll">✓ Chọn tất cả</button>
+          <div id="sLoaiList"></div>
+        </div>
       </div>
     </div>
-    <div class="fld"><label>Kênh BH</label><select id="sKenh"><option value="">Tất cả kênh</option></select></div>
-    <div class="fld"><label>Nhóm SP</label><select id="sNhom"><option value="">Tất cả nhóm</option></select></div>
-    <div class="fld"><label>NVKD</label><select id="sNVKD"><option value="">Tất cả NVKD</option></select></div>
-    <div class="fld"><label>Khách hàng</label><select id="sKH"><option value="">Tất cả KH</option></select></div>
-    <div class="fld-btns">
-      <button class="btn btn-out" id="sBtnReset">↺ Đặt lại</button>
-      <button class="btn btn-fill" id="sBtnRefresh">⟳ Tải dữ liệu</button>
+    <div class="fbar-row">
+      <div class="fld">
+        <label>Kênh bán hàng</label>
+        <select id="sKenh"><option value="">Tất cả kênh bán hàng</option></select>
+      </div>
+      <div class="fld">
+        <label>Nhóm sản phẩm</label>
+        <select id="sNhom"><option value="">Tất cả nhóm sản phẩm</option></select>
+      </div>
+      <div class="fld">
+        <label>Nhân viên xuất hóa đơn</label>
+        <select id="sNVKD"><option value="">Tất cả nhân viên xuất hóa đơn</option></select>
+      </div>
+      <div class="fld ms" id="sKhWrap">
+        <label>Khách hàng</label>
+        <button class="sel" id="sKhBtn"><span id="sKhLabel">Tất cả khách hàng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="sKhPop">
+          <button class="ms-all" id="sKhAll">✓ Chọn tất cả</button>
+          <div id="sKhList"></div>
+        </div>
+      </div>
+      <div class="fld-btns">
+        <button class="btn btn-out" id="sBtnReset">↺ Đặt lại</button>
+        <button class="btn btn-fill" id="sBtnRefresh">⟳ Tải lại</button>
+      </div>
+    </div>
+  </div>
+</div>
+  
+<!-- ================= FILTER BAR RIÊNG CHO TAB DOANH THU ƯỚC TÍNH ================= -->
+<div class="fbar hide" id="fbarEst">
+  <div class="fbar-in fbar-2rows">
+    <!-- Hàng 1: Kỳ phân tích (Tuần/Tháng/Quý/Năm) | Chọn thời gian (checkbox multi-select) | Site | Vùng miền -->
+    <div class="fbar-est-grid">
+      <div class="fld">
+        <label>Kỳ phân tích</label>
+        <div class="tg" id="estGran">
+          <button data-v="week">Tuần</button>
+          <button data-v="month" class="on">Tháng</button>
+          <button data-v="quarter">Quý</button>
+          <button data-v="year">Năm</button>
+        </div>
+      </div>
+      <div class="fld ms" id="estPeriodWrap">
+        <label id="estPeriodLabel">Chọn tháng</label>
+        <button class="sel" id="estPeriodBtn" type="button"><span id="estPeriodBtnText">Tất cả các tháng</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="estPeriodPop">
+          <button class="ms-all" id="estPeriodAll" type="button">✓ Chọn tất cả</button>
+          <div id="estPeriodList"></div>
+        </div>
+      </div>
+      <div class="fld ms" id="estMsWrap">
+        <label>Site</label>
+        <button class="sel" id="estMsBtn" type="button"><span id="estMsLabel">Tất cả site</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="estMsPop">
+          <button class="ms-all" id="estMsAll" type="button">✓ Chọn tất cả</button>
+          <div id="estMsList"></div>
+        </div>
+      </div>
+      <div class="fld ms" id="estVungWrap">
+        <label>Vùng miền</label>
+        <button class="sel" id="estVungBtn" type="button"><span id="estVungLabel">Tất cả vùng miền</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="estVungPop">
+          <button class="ms-all" id="estVungAll" type="button">✓ Chọn tất cả</button>
+          <div id="estVungList"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Hàng 2: Loại cửa hàng | Kênh bán hàng | Nhóm sản phẩm | Nút hành động -->
+    <div class="fbar-est-grid">
+      <div class="fld ms" id="estLoaiWrap">
+        <label>Loại cửa hàng</label>
+        <button class="sel" id="estLoaiBtn" type="button"><span id="estLoaiLabel">Tất cả loại CH</span><span style="color:#AAA">▾</span></button>
+        <div class="ms-pop" id="estLoaiPop">
+          <button class="ms-all" id="estLoaiAll" type="button">✓ Chọn tất cả</button>
+          <div id="estLoaiList"></div>
+        </div>
+      </div>
+      <div class="fld">
+        <label>Kênh bán hàng</label>
+        <select id="estKenh"><option value="">Tất cả kênh bán hàng</option></select>
+      </div>
+      <div class="fld">
+        <label>Nhóm sản phẩm</label>
+        <select id="estNhom"><option value="">Tất cả nhóm sản phẩm</option></select>
+      </div>
+      <div class="fld-btns">
+        <button class="btn btn-out" id="estBtnReset" type="button">↺ Đặt lại</button>
+        <button class="btn btn-fill" id="estBtnRefresh" type="button">⟳ Tải lại</button>
+        <button class="btn btn-out" id="estBtnXlsx" type="button">↓ Tải CSV</button>
+      </div>
     </div>
   </div>
 </div>
@@ -272,6 +412,7 @@
   <div id="tab-incident" class="hide"></div>
   <div id="tab-revenue" class="hide"></div>
   <div id="tab-sacn" class="hide"></div>
+  <div id="tab-revenue-est" class="hide"></div>
   <div id="tab-kehoach" class="hide"></div>
   <div id="tab-quanlykho" class="hide"></div>
   <div id="tab-dinhduong" class="hide"></div>

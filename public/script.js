@@ -198,18 +198,17 @@ var UI = { lineMode:'total', rankMetric:'thatthoat', incLoai:'', incMucDo:'', ex
 var REV = null;                 // payload từ getRevenueFoodCostData()
 var REV_LOADING = false;
 var REV_INIT = false;           // đã nạp dropdown filter lần đầu chưa
-var RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
+var RF = { from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
 var REV_RAW = null;   // payload từ getRevenueRawData (rows + dims + opex + huy)
-//var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month' };
-var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month', barDim:'khachHang' };
+var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', mixChartMode:'fcNhom', geoMode:'loai' };
 // barDim: 'khachHang' (default) | 'site'
 
 /* ---- STATE RIÊNG CHO TAB DOANH THU & FOOD COST (SACN) ---- */
 var SACN_EXCLUDE_MASITE = ['K502','K003','K800']; // Mã site bị loại khỏi tab SACN
 var REV_SACN = null;
 var REV_SACN_INIT = false;
-var RF_SACN = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
-var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'month', barDim:'khachHang', huyMode:'suat', huyDim:'site' };
+var RF_SACN = { from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
+var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', huyMode:'nvl', huyDim:'day', mixChartMode:'fcNhom', geoMode:'loai' };
 // huyMode: 'suat' | 'nvl'   huyDim: 'site' | 'day'
 
 /** Gom sheet Disposal of goods theo filter SACN (ngày + site) */
@@ -330,13 +329,15 @@ var IC = {
   image:'M3 3h18v18H3zM8.5 10a1.5 1.5 0 100-3 1.5 1.5 0 000 3zM21 15l-5-5L5 21',
   up:'M22 7l-8.5 8.5-4-4L2 19M16 7h6v6',
   down:'M22 17l-8.5-8.5-4 4L2 5M16 17h6v-6',
+  trend:'M23 6l-9.5 9.5-5-5L1 18M17 6h6v6',
   msg:'M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z M12 7v4M12 14h.01'
 };
 function svg(p, sz, col){
+  if (!p) return '';
   sz = sz || 16;
   return '<svg viewBox="0 0 24 24" width="'+sz+'" height="'+sz+'" fill="none" stroke="'+(col||'currentColor')+
     '" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">'+
-    p.split('M').filter(function(s){return s;}).map(function(s){return '<path d="M'+s+'"/>';}).join('')+'</svg>';
+    String(p).split('M').filter(function(s){return s;}).map(function(s){return '<path d="M'+s+'"/>';}).join('')+'</svg>';
 }
 
 /* ---------- FORMAT ---------- */
@@ -558,12 +559,21 @@ function agg(rows){
   // var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
   //           coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{} };
   rows.forEach(function(r){
-    a.tongSuat+=r.tongSuat; a.sang+=r.suatSang; a.trua+=r.suatTrua; a.chieu+=r.suatChieu;
-    a.nv+=r.suatNhanVien; a.huy+=r.suatHuy;
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    a.tongSuat += rTong;
+    a.sang += (r.suatSang || 0);
+    a.trua += (r.suatTrua || 0);
+    a.chieu += (r.suatChieu || 0);
+    a.nv += (r.suatNhanVien || 0);
+    a.huy += (r.suatHuy || 0);
     if (r.giaoTre) a.soGiaoTre++;
-    a.thatThoat+=r.soThatThoat; a.coMat+=r.nsCoMat; a.vang+=r.nsVang;
-    a.kn+=r.soKhieuNai; a.khen+=r.soKhenNgoi; a.dem++;
-    if (r.coChiPhiNgoai) a.siteCP[r.tenSite]=1;
+    a.thatThoat += (r.soThatThoat || 0);
+    a.coMat += (r.nsCoMat || 0);
+    a.vang += (r.nsVang || 0);
+    a.kn += (r.soKhieuNai || 0);
+    a.khen += (r.soKhenNgoi || 0);
+    a.dem++;
+    if (r.coChiPhiNgoai) a.siteCP[r.tenSite] = 1;
     a.suatLuuMau   += (r.suatLuuMau || 0);
     a.suatGiaoVien += (r.suatGiaoVien || 0);
   });
@@ -741,6 +751,9 @@ function renderOverview(){
 
   html += '</div>';
 
+  // ---- Bảng Pivot Thống kê Vận hành & Tài chính (Site × Tháng) ----
+  html += pivotAnalysisHtml(rows, sl);
+
   // ---- Heatmap + Alert ----
   html += '<div class="card" style="margin-top:13px">'+cardHead(IC.grid,'Bảng trạng thái vận hành (Site × Ngày)','')+
     '<div class="lg">'+
@@ -764,6 +777,793 @@ function renderOverview(){
   drawRank(rows, sl);
   drawKN(rows);
   bindOverviewEvents(rows, sl);
+  bindPivotEvents(rows, sl);
+  if (!REV_RAW && !REV_LOADING) {
+    loadRevenue({ silent: true });
+  }
+}
+
+/* =========================================================================
+   PIVOT ANALYSIS TABLE & DATA ANALYST SIDEBAR (SITE × THÁNG)
+   ========================================================================= */
+var PIVOT_STATE = {
+  metric: 'revenue',    // 'revenue' | 'tongSuat' | 'suatTinhTien' | 'mom' | 'tyLeHuy' | 'foodCost'
+  unit: 'compact',      // 'compact' | 'full'
+  search: '',
+  sortBy: 'revenue',    // 'revenue' | 'tongSuat' | 'suatTinhTien' | 'mom' | 'tyLeHuy' | 'foodCost' | 'name'
+  sortDir: 'desc',
+  selectedMonth: 'all'  // 'all' | 'YYYY-MM'
+};
+
+function pivotMatchSite(siteA, siteB) {
+  if (!siteA || !siteB) return false;
+  if (siteA === siteB) return true;
+  var a = String(siteA).toLowerCase().replace(/[^a-z0-9]/g, '');
+  var b = String(siteB).toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (a === b) return true;
+  if (a.indexOf(b) >= 0 || b.indexOf(a) >= 0) return true;
+  var codeA = (String(siteA).match(/K\d{3}/i) || [])[0];
+  var codeB = (String(siteB).match(/K\d{3}/i) || [])[0];
+  if (codeA && codeB && codeA.toUpperCase() === codeB.toUpperCase()) return true;
+  return false;
+}
+
+function fmtPvtMoney(amount, unit) {
+  if (amount === null || amount === undefined || isNaN(amount)) return '0 ₫';
+  var abs = Math.abs(amount);
+  if (unit === 'compact') {
+    if (abs >= 1e9) return (amount / 1e9).toFixed(2).replace('.', ',') + ' tỷ';
+    if (abs >= 1e6) return (amount / 1e6).toFixed(1).replace('.', ',') + ' tr';
+    if (abs >= 1e3) return (amount / 1e3).toFixed(0).replace('.', ',') + ' k';
+    return fmt(Math.round(amount)) + ' ₫';
+  }
+  return fmt(Math.round(amount)) + ' ₫';
+}
+
+function fmtPvtPct(v) {
+  if (v === null || v === undefined || isNaN(v)) return '0%';
+  return (Math.round(v * 10) / 10).toFixed(1).replace('.', ',') + '%';
+}
+
+function fmtPvtMoM(v) {
+  if (v === null || v === undefined || isNaN(v)) return '<span class="pvt-mom-pill pvt-mom-flat">—</span>';
+  var up = v > 0;
+  var cls = up ? 'pvt-mom-up' : (v < 0 ? 'pvt-mom-down' : 'pvt-mom-flat');
+  var sym = up ? '▲ +' : (v < 0 ? '▼ ' : '');
+  return '<span class="pvt-mom-pill ' + cls + '">' + sym + Math.abs(r1(v)).toFixed(1).replace('.', ',') + '%</span>';
+}
+
+function fmtPvtMonth(m) {
+  if (!m) return '—';
+  var parts = String(m).split('-');
+  if (parts.length >= 2) return 'Tháng ' + parts[1] + '/' + parts[0];
+  return String(m);
+}
+
+function fmtPvtMonthShort(m) {
+  if (!m) return '—';
+  var parts = String(m).split('-');
+  if (parts.length >= 2) return parts[1] + '/' + parts[0];
+  return String(m);
+}
+
+function computePivotAnalysisData(reportRows, siteList) {
+  // Lọc dữ liệu giao dịch bán hàng (REV_RAW) theo đúng bộ lọc chung của tab (F: ngày, site, khách hàng)
+  var filteredRevRows = [];
+  if (REV_RAW && REV_RAW.rows) {
+    filteredRevRows = REV_RAW.rows.filter(function(r){
+      if (F.from && r.ngay && r.ngay < F.from) return false;
+      if (F.to   && r.ngay && r.ngay > F.to)   return false;
+      if (F.sites && F.sites.length) {
+        var sKey = r.site || r.ten_cua_hang || '';
+        var matchSite = F.sites.some(function(s){ return pivotMatchSite(s, sKey); });
+        if (!matchSite) return false;
+      }
+      if (F.khach && F.khach.length) {
+        var kKey = r.khachHang || r.tenKhachHang || r.customer || '';
+        var matchKh = F.khach.some(function(k){ return kKey.toLowerCase().indexOf(k.toLowerCase()) >= 0; });
+        if (!matchKh) return false;
+      }
+      return true;
+    });
+  }
+
+  // Danh sách site hợp nhất từ cả Báo cáo vận hành và Giao dịch doanh thu
+  var sl = [];
+  if (F.sites && F.sites.length) {
+    sl = F.sites.slice();
+  } else {
+    var sSet = {};
+    (reportRows || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
+    (filteredRevRows || []).forEach(function(r){
+      var s = r.site || r.ten_cua_hang;
+      if (s) sSet[s] = true;
+    });
+    if (!Object.keys(sSet).length) {
+      (RAW || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
+      if (REV_RAW && REV_RAW.rows) {
+        REV_RAW.rows.forEach(function(r){
+          var s = r.site || r.ten_cua_hang;
+          if (s) sSet[s] = true;
+        });
+      }
+    }
+    sl = Object.keys(sSet).sort(function(a, b){ return a.localeCompare(b, 'vi'); });
+  }
+  if (!sl.length) {
+    sl = ['Tất cả Site'];
+  }
+
+  // Trích xuất các tháng nằm trong phạm vi bộ lọc đang chọn
+  var monthSet = {};
+  (reportRows || []).forEach(function(r){
+    if (r.ngayBaoCao && r.ngayBaoCao.length >= 7) monthSet[r.ngayBaoCao.substring(0, 7)] = true;
+  });
+  filteredRevRows.forEach(function(r){
+    if (r.ngay && r.ngay.length >= 7) monthSet[r.ngay.substring(0, 7)] = true;
+  });
+  var allMonths = Object.keys(monthSet).sort();
+  if (!allMonths.length) {
+    // Nếu bộ lọc ngày quá hẹp không có dòng nào, lấy tháng từ F.from / F.to nếu có
+    if (F.from && F.from.length >= 7) allMonths = [F.from.substring(0, 7)];
+    else allMonths = [(new Date()).toISOString().substring(0, 7)];
+  }
+
+  var activeMonths = allMonths;
+  if (PIVOT_STATE.selectedMonth && PIVOT_STATE.selectedMonth !== 'all') {
+    if (allMonths.indexOf(PIVOT_STATE.selectedMonth) >= 0) {
+      activeMonths = [PIVOT_STATE.selectedMonth];
+    } else {
+      PIVOT_STATE.selectedMonth = 'all';
+      activeMonths = allMonths;
+    }
+  }
+
+  // Map transaction rows từ filteredRevRows
+  var transMap = {};
+  filteredRevRows.forEach(function(r){
+    var m = r.ngay ? r.ngay.substring(0, 7) : '';
+    if (!m) return;
+    var sKey = r.site || r.ten_cua_hang || '';
+    var key = sKey + '|' + m;
+    if (!transMap[key]) {
+      transMap[key] = { gross: 0, disc: 0, retVal: 0, retQty: 0, salesQty: 0, qtyPHA: 0, foodCost: 0 };
+    }
+    var tm = transMap[key];
+    if (r.isReturn) {
+      tm.retVal += Math.abs(r.thanhTien || 0);
+      tm.retQty += Math.abs(r.soLuong || 0);
+      tm.foodCost += (r.giaVon || 0);
+    } else {
+      tm.gross += (r.thanhTien || 0);
+      tm.disc += (r.ckTruocThue || 0);
+      tm.salesQty += (r.soLuong || 0);
+      tm.foodCost += (r.giaVon || 0);
+      var u = String(r.dvt || '').trim().toUpperCase();
+      if (u === 'PHA' || u === 'SUAT') tm.qtyPHA += (r.soLuong || 0);
+    }
+  });
+
+  // Map report rows (tính tổng suất = r.tongSuat + r.suatLuuMau + r.suatGiaoVien)
+  var repMap = {};
+  (reportRows || []).forEach(function(r){
+    var m = r.ngayBaoCao ? r.ngayBaoCao.substring(0, 7) : '';
+    if (!m) return;
+    var s = r.tenSite || '';
+    var key = s + '|' + m;
+    if (!repMap[key]) {
+      repMap[key] = { tongSuat: 0, suatHuy: 0, suatSang: 0, suatTrua: 0, suatChieu: 0, suatNV: 0, suatLuuMau: 0, suatGiaoVien: 0 };
+    }
+    var rm = repMap[key];
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    rm.tongSuat += rTong;
+    rm.suatHuy += (r.suatHuy || 0);
+    rm.suatSang += (r.suatSang || 0);
+    rm.suatTrua += (r.suatTrua || 0);
+    rm.suatChieu += (r.suatChieu || 0);
+    rm.suatNV += (r.suatNhanVien || 0);
+    rm.suatLuuMau += (r.suatLuuMau || 0);
+    rm.suatGiaoVien += (r.suatGiaoVien || 0);
+  });
+
+  var transKeys = Object.keys(transMap);
+  var repKeys = Object.keys(repMap);
+  var siteRows = [];
+
+  sl.forEach(function(siteName){
+    var monthsData = {};
+    var totalTongSuat = 0, totalSuatTinhTien = 0, totalDoanhThu = 0, totalFoodCost = 0, totalSuatHuy = 0;
+    var prevMonthRevenue = null;
+    var prevMonthSuat = null;
+    var latestMoM = null;
+
+    allMonths.forEach(function(m){
+      var rep = null;
+      if (repMap[siteName + '|' + m]) {
+        rep = repMap[siteName + '|' + m];
+      } else {
+        for (var i = 0; i < repKeys.length; i++) {
+          var parts = repKeys[i].split('|');
+          if (parts[1] === m && pivotMatchSite(parts[0], siteName)) {
+            rep = repMap[repKeys[i]];
+            break;
+          }
+        }
+      }
+
+      var tr = null;
+      if (transMap[siteName + '|' + m]) {
+        tr = transMap[siteName + '|' + m];
+      } else {
+        for (var j = 0; j < transKeys.length; j++) {
+          var tparts = transKeys[j].split('|');
+          if (tparts[1] === m && pivotMatchSite(tparts[0], siteName)) {
+            tr = transMap[transKeys[j]];
+            break;
+          }
+        }
+      }
+
+      var repTong = rep ? rep.tongSuat : 0;
+      var repHuy = rep ? rep.suatHuy : 0;
+      var repTinh = rep ? (rep.suatSang + rep.suatTrua + rep.suatChieu) : 0;
+      if (repTinh <= 0 && repTong > 0) repTinh = repTong - repHuy - (rep ? rep.suatNV : 0);
+
+      var trSales = tr ? tr.salesQty : 0;
+      var trPha = tr ? tr.qtyPHA : 0;
+      var netRev = tr ? (tr.gross - tr.disc - tr.retVal) : 0;
+      var fCost = tr ? tr.foodCost : 0;
+
+      // RULE CHUNG: "Tổng số suất ăn" đồng nhất lấy chuẩn từ Báo cáo vận hành (r.tongSuat) khớp với Card
+      var tongSuat = repTong;
+      var suatTinhTien = trPha > 0 ? trPha : (trSales > 0 ? trSales : (repTinh > 0 ? repTinh : Math.max(0, tongSuat - repHuy)));
+      var suatHuy = repHuy;
+      var tyLeHuyPct = tongSuat > 0 ? (suatHuy / tongSuat) * 100 : 0;
+      var foodCostPct = netRev > 0 ? (fCost / netRev) * 100 : 0;
+
+      var momRevenuePct = null;
+      if (prevMonthRevenue !== null && prevMonthRevenue > 0) {
+        momRevenuePct = ((netRev - prevMonthRevenue) / prevMonthRevenue) * 100;
+      }
+      var momSuatPct = null;
+      if (prevMonthSuat !== null && prevMonthSuat > 0) {
+        momSuatPct = ((suatTinhTien - prevMonthSuat) / prevMonthSuat) * 100;
+      }
+
+      if (netRev > 0) prevMonthRevenue = netRev;
+      if (suatTinhTien > 0) prevMonthSuat = suatTinhTien;
+      if (momRevenuePct !== null) latestMoM = momRevenuePct;
+
+      monthsData[m] = {
+        tongSuat: tongSuat,
+        suatTinhTien: suatTinhTien,
+        suatHuy: suatHuy,
+        tyLeHuyPct: tyLeHuyPct,
+        netRevenue: netRev,
+        foodCost: fCost,
+        foodCostPct: foodCostPct,
+        momRevenuePct: momRevenuePct,
+        momSuatPct: momSuatPct
+      };
+
+      totalTongSuat += tongSuat;
+      totalSuatTinhTien += suatTinhTien;
+      totalDoanhThu += netRev;
+      totalFoodCost += fCost;
+      totalSuatHuy += suatHuy;
+    });
+
+    var avgTyLeHuyPct = totalTongSuat > 0 ? (totalSuatHuy / totalTongSuat) * 100 : 0;
+    var avgFoodCostPct = totalDoanhThu > 0 ? (totalFoodCost / totalDoanhThu) * 100 : 0;
+
+    siteRows.push({
+      site: siteName,
+      months: monthsData,
+      totalTongSuat: totalTongSuat,
+      totalSuatTinhTien: totalSuatTinhTien,
+      totalDoanhThu: totalDoanhThu,
+      totalFoodCost: totalFoodCost,
+      totalSuatHuy: totalSuatHuy,
+      avgTyLeHuyPct: avgTyLeHuyPct,
+      avgFoodCostPct: avgFoodCostPct,
+      latestMoM: latestMoM
+    });
+  });
+
+  // Calculate System Total
+  var systemTotals = {
+    months: {},
+    totalTongSuat: 0, totalSuatTinhTien: 0, totalDoanhThu: 0, totalFoodCost: 0, totalSuatHuy: 0
+  };
+  var prevSysRev = null;
+  allMonths.forEach(function(m){
+    var sysTong = 0, sysTinh = 0, sysHuy = 0, sysRev = 0, sysFc = 0;
+    siteRows.forEach(function(s){
+      var sm = s.months[m] || {};
+      sysTong += (sm.tongSuat || 0);
+      sysTinh += (sm.suatTinhTien || 0);
+      sysHuy += (sm.suatHuy || 0);
+      sysRev += (sm.netRevenue || 0);
+      sysFc += (sm.foodCost || 0);
+    });
+    var sysHuyPct = sysTong > 0 ? (sysHuy / sysTong) * 100 : 0;
+    var sysFcPct = sysRev > 0 ? (sysFc / sysRev) * 100 : 0;
+    var sysMoM = (prevSysRev !== null && prevSysRev > 0) ? ((sysRev - prevSysRev) / prevSysRev) * 100 : null;
+    if (sysRev > 0) prevSysRev = sysRev;
+
+    systemTotals.months[m] = {
+      tongSuat: sysTong,
+      suatTinhTien: sysTinh,
+      suatHuy: sysHuy,
+      tyLeHuyPct: sysHuyPct,
+      netRevenue: sysRev,
+      foodCost: sysFc,
+      foodCostPct: sysFcPct,
+      momRevenuePct: sysMoM
+    };
+
+    systemTotals.totalTongSuat += sysTong;
+    systemTotals.totalSuatTinhTien += sysTinh;
+    systemTotals.totalDoanhThu += sysRev;
+    systemTotals.totalFoodCost += sysFc;
+    systemTotals.totalSuatHuy += sysHuy;
+  });
+  systemTotals.avgTyLeHuyPct = systemTotals.totalTongSuat > 0 ? (systemTotals.totalSuatHuy / systemTotals.totalTongSuat) * 100 : 0;
+  systemTotals.avgFoodCostPct = systemTotals.totalDoanhThu > 0 ? (systemTotals.totalFoodCost / systemTotals.totalDoanhThu) * 100 : 0;
+
+  // Filter site rows by search
+  var filteredSiteRows = siteRows;
+  if (PIVOT_STATE.search && PIVOT_STATE.search.trim()) {
+    var q = PIVOT_STATE.search.trim().toLowerCase();
+    filteredSiteRows = filteredSiteRows.filter(function(s){
+      return s.site.toLowerCase().indexOf(q) >= 0;
+    });
+  }
+
+  // Sort site rows
+  filteredSiteRows.sort(function(a, b){
+    var vA, vB;
+    if (PIVOT_STATE.sortBy === 'revenue') {
+      vA = a.totalDoanhThu; vB = b.totalDoanhThu;
+    } else if (PIVOT_STATE.sortBy === 'tongSuat') {
+      vA = a.totalTongSuat; vB = b.totalTongSuat;
+    } else if (PIVOT_STATE.sortBy === 'suatTinhTien') {
+      vA = a.totalSuatTinhTien; vB = b.totalSuatTinhTien;
+    } else if (PIVOT_STATE.sortBy === 'mom') {
+      vA = a.latestMoM !== null ? a.latestMoM : -999;
+      vB = b.latestMoM !== null ? b.latestMoM : -999;
+    } else if (PIVOT_STATE.sortBy === 'tyLeHuy') {
+      vA = a.avgTyLeHuyPct; vB = b.avgTyLeHuyPct;
+      return PIVOT_STATE.sortDir === 'desc' ? vA - vB : vB - vA; // lowest is best
+    } else if (PIVOT_STATE.sortBy === 'foodCost') {
+      vA = a.avgFoodCostPct; vB = b.avgFoodCostPct;
+    } else {
+      return PIVOT_STATE.sortDir === 'desc' ? b.site.localeCompare(a.site) : a.site.localeCompare(b.site);
+    }
+    return PIVOT_STATE.sortDir === 'desc' ? vB - vA : vA - vB;
+  });
+
+  var sortedByRev = siteRows.slice().sort(function(a, b){ return b.totalDoanhThu - a.totalDoanhThu; });
+  var sortedByMoM = siteRows.slice().filter(function(s){ return s.latestMoM !== null; }).sort(function(a, b){ return b.latestMoM - a.latestMoM; });
+
+  return {
+    allMonths: allMonths,
+    activeMonths: activeMonths,
+    siteRows: filteredSiteRows,
+    systemTotals: systemTotals,
+    topSiteRev: sortedByRev[0] || null,
+    topSiteMoM: sortedByMoM[0] || null
+  };
+}
+
+function pivotAnalysisHtml(reportRows, siteList) {
+  var html = '<div class="card" id="vanHanhPivotCard" style="margin-top:13px;position:relative;">';
+  html += '<div class="card-t" style="flex-wrap:wrap;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line);">';
+  html += '  <div style="display:flex;align-items:center;gap:10px;">';
+  html += '    <span style="display:inline-flex;padding:7px;background:var(--brand-soft);border-radius:8px;color:var(--brand);">' + svg(IC.grid, 20) + '</span>';
+  html += '    <div>';
+  html += '      <h3 style="margin:0;font-size:16px;font-weight:700;color:#0F172A;letter-spacing:-0.2px;">Bảng Pivot Thống Kê Vận Hành & Tài Chính (Site × Tháng)</h3>';
+  html += '      <div style="font-size:13px;color:#64748B;margin-top:2px;">Suất ăn · Suất tính tiền · Doanh thu thuần (từ Doanh thu) · Tăng giảm MoM % · Tỷ lệ suất hủy · Food cost</div>';
+  html += '    </div>';
+  html += '  </div>';
+  html += '</div>';
+
+  html += '<div id="pvtContainerInner">';
+  html += pivotInnerContentHtml(reportRows, siteList);
+  html += '</div>';
+  html += '</div>';
+  return html;
+}
+
+function pivotInnerContentHtml(reportRows, siteList) {
+  var pvt = computePivotAnalysisData(reportRows, siteList);
+  var months = pvt.activeMonths;
+  var curMetric = PIVOT_STATE.metric || 'revenue';
+  var unit = PIVOT_STATE.unit;
+
+  var h = '';
+  h += '<div class="pvt-container">';
+  h += '<div class="pvt-main">';
+  
+  // Toolbar: Clean metric tabs on left, clean filters & export on right
+  h += '<div class="pvt-toolbar">';
+  h += '  <div class="pvt-tabs">';
+  var tabs = [
+    { id:'revenue', label:'💰 Doanh thu thuần' },
+    { id:'tongSuat', label:'🍲 Tổng số suất ăn' },
+    { id:'suatTinhTien', label:'🏷️ Suất tính tiền' },
+    { id:'mom', label:'📈 Tăng giảm MoM %' },
+    { id:'tyLeHuy', label:'🗑️ Tỷ lệ hủy %' },
+    { id:'foodCost', label:'📊 Food cost' }
+  ];
+  tabs.forEach(function(t){
+    h += '<button class="pvt-tab-btn ' + (curMetric === t.id ? 'active' : '') + '" data-metric="' + t.id + '">' + t.label + '</button>';
+  });
+  h += '  </div>';
+  
+  h += '  <div class="pvt-controls">';
+  h += '    <input type="text" class="pvt-control-input" id="pvtSearchInput" placeholder="🔍 Tìm site..." value="' + esc(PIVOT_STATE.search) + '">';
+  
+  h += '    <select class="pvt-control-select" id="pvtSortSelect">';
+  var sortOpts = [
+    { v:'revenue', lb:'Sắp xếp: Doanh thu giảm dần' },
+    { v:'tongSuat', lb:'Sắp xếp: Tổng suất ăn giảm dần' },
+    { v:'suatTinhTien', lb:'Sắp xếp: Suất tính tiền giảm dần' },
+    { v:'mom', lb:'Sắp xếp: Tăng trưởng MoM cao nhất' },
+    { v:'tyLeHuy', lb:'Sắp xếp: Tỷ lệ hủy thấp nhất' },
+    { v:'foodCost', lb:'Sắp xếp: Food cost % tăng dần' },
+    { v:'name', lb:'Sắp xếp: Tên site (A → Z)' }
+  ];
+  sortOpts.forEach(function(opt){
+    h += '    <option value="' + opt.v + '"' + (PIVOT_STATE.sortBy === opt.v ? ' selected' : '') + '>' + opt.lb + '</option>';
+  });
+  h += '    </select>';
+
+  h += '    <select class="pvt-control-select" id="pvtMonthSelect">';
+  h += '      <option value="all"' + (PIVOT_STATE.selectedMonth === 'all' ? ' selected' : '') + '>Tất cả các tháng (' + pvt.allMonths.length + ' kỳ)</option>';
+  pvt.allMonths.forEach(function(m){
+    h += '    <option value="' + m + '"' + (PIVOT_STATE.selectedMonth === m ? ' selected' : '') + '>' + fmtPvtMonth(m) + '</option>';
+  });
+  h += '    </select>';
+
+  h += '    <div class="pvt-actions">';
+  h += '      <button class="pvt-unit-btn ' + (unit === 'compact' ? 'active' : '') + '" data-unit="compact">Triệu đ</button>';
+  h += '      <button class="pvt-unit-btn ' + (unit === 'full' ? 'active' : '') + '" data-unit="full">Đầy đủ (₫)</button>';
+  h += '    </div>';
+
+  h += '    <button class="btn btn-out" id="pvtBtnExport" style="height:35px;padding:4px 12px;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px;">';
+  h += '      ' + svg(IC.down, 14) + ' Xuất CSV';
+  h += '    </button>';
+  h += '  </div>';
+  h += '</div>';
+
+  // Table
+  h += '<div class="pvt-table-wrap">';
+  h += '<table class="pvt-table">';
+  h += '<thead>';
+  h += '  <tr>';
+  h += '    <th class="site-col">Cửa hàng / Site (' + pvt.siteRows.length + ')</th>';
+  months.forEach(function(m){
+    h += '  <th class="pvt-num">' + fmtPvtMonth(m) + '</th>';
+  });
+  h += '    <th class="th-total pvt-num">Tổng cộng / Toàn kỳ</th>';
+  h += '  </tr>';
+  h += '</thead>';
+  h += '<tbody>';
+
+  if (!pvt.siteRows.length) {
+    h += '<tr><td colspan="' + (months.length + 2) + '" class="empty" style="text-align:center;padding:32px;font-size:14.5px;">Không tìm thấy site phù hợp bộ lọc</td></tr>';
+  } else {
+    pvt.siteRows.forEach(function(s){
+      h += '<tr>';
+      h += '  <td class="site-col">';
+      h += '    <div style="font-weight:700;font-size:15px;color:#0F172A;line-height:1.3;">' + esc(s.site) + '</div>';
+      h += '    <div style="font-size:12.5px;color:#64748B;margin-top:3px;">Tổng DT: ' + fmtPvtMoney(s.totalDoanhThu, 'compact') + ' · ' + fmt(s.totalTongSuat) + ' suất</div>';
+      h += '  </td>';
+
+      months.forEach(function(m){
+        var md = s.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null };
+        h += '<td>';
+        if (curMetric === 'revenue') {
+          h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+          h += '  <span class="pvt-num" style="font-weight:700;color:#0F172A;">' + fmtPvtMoney(md.netRevenue, unit) + '</span>';
+          h += '  ' + fmtPvtMoM(md.momRevenuePct);
+          h += '</div>';
+        } else if (curMetric === 'tongSuat') {
+          h += '<div class="pvt-num" style="font-weight:700;color:#0F172A;">' + fmt(md.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+        } else if (curMetric === 'suatTinhTien') {
+          var pctTinh = md.tongSuat > 0 ? (md.suatTinhTien / md.tongSuat * 100) : 0;
+          h += '<div class="pvt-num">';
+          h += '  <span style="font-weight:700;color:#0284C7;">' + fmt(md.suatTinhTien) + '</span>';
+          h += '  <span style="font-size:12px;color:#64748B;margin-left:4px;">(' + fmtPvtPct(pctTinh) + ')</span>';
+          h += '</div>';
+        } else if (curMetric === 'mom') {
+          h += '<div style="text-align:right;">' + fmtPvtMoM(md.momRevenuePct) + '</div>';
+        } else if (curMetric === 'tyLeHuy') {
+          var hCls = md.tyLeHuyPct <= 1.5 ? 'pvt-badge-ok' : (md.tyLeHuyPct <= 3 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+          h += '  <span class="pvt-badge ' + hCls + '">' + fmtPvtPct(md.tyLeHuyPct) + '</span>';
+          h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(md.suatHuy) + ' suất)</span>';
+          h += '</div>';
+        } else if (curMetric === 'foodCost') {
+          var fCls = md.foodCostPct <= 58 ? 'pvt-badge-ok' : (md.foodCostPct <= 62 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+          h += '  <span style="font-weight:700;color:#0F172A;">' + fmtPvtMoney(md.foodCost, unit) + '</span>';
+          h += '  <span class="pvt-badge ' + fCls + '">FC: ' + fmtPvtPct(md.foodCostPct) + '</span>';
+          h += '</div>';
+        }
+        h += '</td>';
+      });
+
+      // Grand Total Cell for this site (theo các kỳ đang hiển thị)
+      var rowTongSuat = 0, rowSuatTinhTien = 0, rowDoanhThu = 0, rowFoodCost = 0, rowSuatHuy = 0;
+      months.forEach(function(m){
+        var md = s.months[m] || {};
+        rowTongSuat += (md.tongSuat || 0);
+        rowSuatTinhTien += (md.suatTinhTien || 0);
+        rowDoanhThu += (md.netRevenue || 0);
+        rowFoodCost += (md.foodCost || 0);
+        rowSuatHuy += (md.suatHuy || 0);
+      });
+      var rowHuyPct = rowTongSuat > 0 ? (rowSuatHuy / rowTongSuat) * 100 : 0;
+      var rowFcPct = rowDoanhThu > 0 ? (rowFoodCost / rowDoanhThu) * 100 : 0;
+
+      h += '<td class="td-total">';
+      if (curMetric === 'revenue') {
+        h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+        h += '  <span class="pvt-num" style="font-weight:800;color:#1E40AF;">' + fmtPvtMoney(rowDoanhThu, unit) + '</span>';
+        h += '  ' + fmtPvtMoM(s.latestMoM);
+        h += '</div>';
+      } else if (curMetric === 'tongSuat') {
+        h += '<div class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmt(rowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+      } else if (curMetric === 'suatTinhTien') {
+        h += '<div class="pvt-num" style="font-weight:800;color:#0284C7;">' + fmt(rowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+      } else if (curMetric === 'mom') {
+        h += '<div style="text-align:right;">' + fmtPvtMoM(s.latestMoM) + '</div>';
+      } else if (curMetric === 'tyLeHuy') {
+        var aHuyCls = rowHuyPct <= 1.5 ? 'pvt-badge-ok' : (rowHuyPct <= 3 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+        h += '  <span class="pvt-badge ' + aHuyCls + '">' + fmtPvtPct(rowHuyPct) + '</span>';
+        h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(rowSuatHuy) + ' suất)</span>';
+        h += '</div>';
+      } else if (curMetric === 'foodCost') {
+        var aFcCls = rowFcPct <= 58 ? 'pvt-badge-ok' : (rowFcPct <= 62 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+        h += '  <span style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(rowFoodCost, unit) + '</span>';
+        h += '  <span class="pvt-badge ' + aFcCls + '">FC: ' + fmtPvtPct(rowFcPct) + '</span>';
+        h += '</div>';
+      }
+      h += '</td>';
+      h += '</tr>';
+    });
+  }
+
+  // System Total Row
+  var tot = pvt.systemTotals;
+  var sysRowTongSuat = 0, sysRowSuatTinhTien = 0, sysRowDoanhThu = 0, sysRowFoodCost = 0, sysRowSuatHuy = 0;
+  months.forEach(function(m){
+    var tm = tot.months[m] || {};
+    sysRowTongSuat += (tm.tongSuat || 0);
+    sysRowSuatTinhTien += (tm.suatTinhTien || 0);
+    sysRowDoanhThu += (tm.netRevenue || 0);
+    sysRowFoodCost += (tm.foodCost || 0);
+    sysRowSuatHuy += (tm.suatHuy || 0);
+  });
+  var sysRowHuyPct = sysRowTongSuat > 0 ? (sysRowSuatHuy / sysRowTongSuat) * 100 : 0;
+  var sysRowFcPct = sysRowDoanhThu > 0 ? (sysRowFoodCost / sysRowDoanhThu) * 100 : 0;
+
+  h += '<tr class="total-row">';
+  h += '  <td class="site-col" style="font-size:15px;font-weight:800;">TỔNG CỘNG TOÀN HỆ THỐNG</td>';
+  months.forEach(function(m){
+    var tm = tot.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null };
+    h += '<td>';
+    if (curMetric === 'revenue') {
+      h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+      h += '  <span class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(tm.netRevenue, unit) + '</span>';
+      h += '  ' + fmtPvtMoM(tm.momRevenuePct);
+      h += '</div>';
+    } else if (curMetric === 'tongSuat') {
+      h += '<div class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmt(tm.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+    } else if (curMetric === 'suatTinhTien') {
+      h += '<div class="pvt-num" style="font-weight:800;color:#0284C7;">' + fmt(tm.suatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+    } else if (curMetric === 'mom') {
+      h += '<div style="text-align:right;">' + fmtPvtMoM(tm.momRevenuePct) + '</div>';
+    } else if (curMetric === 'tyLeHuy') {
+      var sHuyCls = tm.tyLeHuyPct <= 1.5 ? 'pvt-badge-ok' : (tm.tyLeHuyPct <= 3 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+      h += '  <span class="pvt-badge ' + sHuyCls + '">' + fmtPvtPct(tm.tyLeHuyPct) + '</span>';
+      h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(tm.suatHuy) + ' suất)</span>';
+      h += '</div>';
+    } else if (curMetric === 'foodCost') {
+      var sFcCls = tm.foodCostPct <= 58 ? 'pvt-badge-ok' : (tm.foodCostPct <= 62 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+      h += '  <span style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(tm.foodCost, unit) + '</span>';
+      h += '  <span class="pvt-badge ' + sFcCls + '">FC: ' + fmtPvtPct(tm.foodCostPct) + '</span>';
+      h += '</div>';
+    }
+    h += '</td>';
+  });
+
+  // Grand Total for System
+  h += '<td class="td-total">';
+  if (curMetric === 'revenue') {
+    h += '<div class="pvt-num" style="font-weight:900;color:#1E40AF;font-size:15px;">' + fmtPvtMoney(sysRowDoanhThu, unit) + '</div>';
+  } else if (curMetric === 'tongSuat') {
+    h += '<div class="pvt-num" style="font-weight:900;color:#0F172A;font-size:15px;">' + fmt(sysRowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+  } else if (curMetric === 'suatTinhTien') {
+    h += '<div class="pvt-num" style="font-weight:900;color:#0284C7;font-size:15px;">' + fmt(sysRowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+  } else if (curMetric === 'mom') {
+    h += '<div style="text-align:right;">—</div>';
+  } else if (curMetric === 'tyLeHuy') {
+    var totHuyCls = sysRowHuyPct <= 1.5 ? 'pvt-badge-ok' : (sysRowHuyPct <= 3 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+    h += '  <span class="pvt-badge ' + totHuyCls + '">' + fmtPvtPct(sysRowHuyPct) + '</span>';
+    h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(sysRowSuatHuy) + ' suất)</span>';
+    h += '</div>';
+  } else if (curMetric === 'foodCost') {
+    var totFcCls = sysRowFcPct <= 58 ? 'pvt-badge-ok' : (sysRowFcPct <= 62 ? 'pvt-badge-warn' : 'pvt-badge-bad');
+    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+    h += '  <span style="font-weight:900;color:#0F172A;font-size:15px;">' + fmtPvtMoney(sysRowFoodCost, unit) + '</span>';
+    h += '  <span class="pvt-badge ' + totFcCls + '">FC: ' + fmtPvtPct(sysRowFcPct) + '</span>';
+    h += '</div>';
+  }
+  h += '</td>';
+  h += '</tr>';
+
+  h += '</tbody>';
+  h += '</table>';
+  h += '</div>'; // .pvt-table-wrap
+  h += '</div>'; // .pvt-main
+  h += '</div>'; // .pvt-container
+
+  return h;
+}
+
+function bindPivotEvents(reportRows, siteList) {
+  var card = document.getElementById('vanHanhPivotCard');
+  if (!card) return;
+  bindPivotInnerEvents(reportRows, siteList);
+}
+
+function bindPivotInnerEvents(reportRows, siteList) {
+  var card = document.getElementById('vanHanhPivotCard');
+  if (!card) return;
+
+  // Metric tab clicks
+  var tabBtns = card.querySelectorAll('.pvt-tab-btn');
+  tabBtns.forEach(function(btn){
+    btn.onclick = function(){
+      PIVOT_STATE.metric = btn.dataset.metric;
+      renderPivotOnly();
+    };
+  });
+
+  // Unit toggle clicks
+  var unitBtns = card.querySelectorAll('.pvt-unit-btn');
+  unitBtns.forEach(function(btn){
+    btn.onclick = function(){
+      PIVOT_STATE.unit = btn.dataset.unit;
+      renderPivotOnly();
+    };
+  });
+
+  // Search input
+  var searchInp = document.getElementById('pvtSearchInput');
+  if (searchInp) {
+    searchInp.oninput = function(){
+      PIVOT_STATE.search = this.value;
+      renderPivotOnly();
+      var inputAgain = document.getElementById('pvtSearchInput');
+      if (inputAgain) {
+        inputAgain.focus();
+        inputAgain.setSelectionRange(inputAgain.value.length, inputAgain.value.length);
+      }
+    };
+  }
+
+  // Sort select
+  var sortSel = document.getElementById('pvtSortSelect');
+  if (sortSel) {
+    sortSel.onchange = function(){
+      PIVOT_STATE.sortBy = this.value;
+      renderPivotOnly();
+    };
+  }
+
+  // Month select
+  var monthSel = document.getElementById('pvtMonthSelect');
+  if (monthSel) {
+    monthSel.onchange = function(){
+      PIVOT_STATE.selectedMonth = this.value;
+      renderPivotOnly();
+    };
+  }
+
+  // Export button
+  var btnExport = document.getElementById('pvtBtnExport');
+  if (btnExport) {
+    btnExport.onclick = function(){ exportPivotCSV(reportRows, siteList); };
+  }
+}
+
+function renderPivotOnly() {
+  var inner = document.getElementById('pvtContainerInner');
+  if (!inner) return;
+  var rows = applyFilter(RAW);
+  var sl = siteListNow();
+  inner.innerHTML = pivotInnerContentHtml(rows, sl);
+  bindPivotInnerEvents(rows, sl);
+}
+
+function exportPivotCSV(reportRows, siteList) {
+  var pvt = computePivotAnalysisData(reportRows, siteList);
+  var months = pvt.activeMonths;
+  var lines = [];
+
+  var header = ['"Site"'];
+  months.forEach(function(m){
+    var mLabel = fmtPvtMonthShort(m);
+    header.push('"Tổng suất (T' + mLabel + ')"');
+    header.push('"Suất tính tiền (T' + mLabel + ')"');
+    header.push('"Doanh thu thuần (T' + mLabel + ')"');
+    header.push('"MoM DT % (T' + mLabel + ')"');
+    header.push('"Tỷ lệ hủy % (T' + mLabel + ')"');
+    header.push('"Food cost % (T' + mLabel + ')"');
+  });
+  header.push('"Tổng suất toàn kỳ"');
+  header.push('"Tổng suất tính tiền"');
+  header.push('"Tổng doanh thu thuần"');
+  header.push('"TB Tỷ lệ hủy %"');
+  header.push('"TB Food cost %"');
+  lines.push(header.join(','));
+
+  pvt.siteRows.forEach(function(s){
+    var row = ['"' + s.site.replace(/"/g, '""') + '"'];
+    months.forEach(function(m){
+      var d = s.months[m] || {};
+      row.push(d.tongSuat || 0);
+      row.push(d.suatTinhTien || 0);
+      row.push(Math.round(d.netRevenue || 0));
+      row.push(d.momRevenuePct !== null ? r1(d.momRevenuePct) : '');
+      row.push(r1(d.tyLeHuyPct || 0));
+      row.push(r1(d.foodCostPct || 0));
+    });
+    row.push(s.totalTongSuat);
+    row.push(s.totalSuatTinhTien);
+    row.push(Math.round(s.totalDoanhThu));
+    row.push(r1(s.avgTyLeHuyPct));
+    row.push(r1(s.avgFoodCostPct));
+    lines.push(row.join(','));
+  });
+
+  var tot = pvt.systemTotals;
+  var totRow = ['"TỔNG CỘNG HỆ THỐNG"'];
+  months.forEach(function(m){
+    var td = tot.months[m] || {};
+    totRow.push(td.tongSuat || 0);
+    totRow.push(td.suatTinhTien || 0);
+    totRow.push(Math.round(td.netRevenue || 0));
+    totRow.push(td.momRevenuePct !== null ? r1(td.momRevenuePct) : '');
+    totRow.push(r1(td.tyLeHuyPct || 0));
+    totRow.push(r1(td.foodCostPct || 0));
+  });
+  totRow.push(tot.totalTongSuat);
+  totRow.push(tot.totalSuatTinhTien);
+  totRow.push(Math.round(tot.totalDoanhThu));
+  totRow.push(r1(tot.avgTyLeHuyPct));
+  totRow.push(r1(tot.avgFoodCostPct));
+  lines.push(totRow.join(','));
+
+  var csvContent = '\uFEFF' + lines.join('\r\n');
+  var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = 'Bao_Cao_Pivot_Van_Hanh_Tai_Chinh_' + (new Date()).toISOString().substring(0, 10) + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 function heatmapHtml(rows, sl){
@@ -883,7 +1683,7 @@ function drawLine(rows, sl){
             pointBackgroundColor:C.brand, pointBorderColor:'#fff', pointBorderWidth:2,
             data: dates.map(function(dt){
               return rows.filter(function(r){return r.ngayBaoCao===dt;})
-                         .reduce(function(s,r){return s+r.tongSuat;},0); }) }];
+                         .reduce(function(s,r){return s + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0); }) }];
   } else {
     ds = sl.map(function(s,i){
       var col = PALETTE[i%PALETTE.length];
@@ -892,7 +1692,7 @@ function drawLine(rows, sl){
                pointBackgroundColor:col, pointBorderColor:'#fff', pointBorderWidth:2,
                data: dates.map(function(dt){
                  return rows.filter(function(r){return r.ngayBaoCao===dt && r.tenSite===s;})
-                            .reduce(function(sum,r){return sum+r.tongSuat;},0); }) };
+                            .reduce(function(sum,r){return sum + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0); }) };
     });
   }
 
@@ -920,13 +1720,28 @@ function drawLine(rows, sl){
 function drawStruct(rows, sl){
   destroyChart('chStruct');
   var ctx = ctxOf('chStruct'); if (!ctx) return;
+
+  // Tính tổng suất cho từng site và sắp xếp từ cao đến thấp
+  var siteTotals = {};
+  sl.forEach(function(s){
+    var sr = rows.filter(function(r){ return r.tenSite === s; });
+    var t = sr.reduce(function(sum, r){
+      return sum + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    }, 0);
+    siteTotals[s] = t;
+  });
+
+  var sortedSl = sl.slice().sort(function(a, b){
+    return (siteTotals[b] || 0) - (siteTotals[a] || 0);
+  });
+
   var keys = [['Sáng','suatSang'],['Trưa','suatTrua'],['Chiều','suatChieu'],
-              ['Nhân viên','suatNhanVien'],['Hủy','suatHuy']];
+              ['Nhân viên','suatNhanVien'],['Hủy','suatHuy'],['Lưu mẫu','suatLuuMau'],['Giáo viên','suatGiaoVien']];
   var ds = keys.map(function(k,i){
     return { label:k[0], backgroundColor:PALETTE[i%PALETTE.length], stack:'a', borderRadius:2,
-             data: sl.map(function(s){
+             data: sortedSl.map(function(s){
                return rows.filter(function(r){return r.tenSite===s;})
-                          .reduce(function(sum,r){return sum+r[k[1]];},0); }) };
+                          .reduce(function(sum,r){return sum+(r[k[1]]||0);},0); }) };
   });
   var o = cloneOpt();
   o.scales.x.stacked = true; o.scales.y.stacked = true;
@@ -948,7 +1763,7 @@ function drawStruct(rows, sl){
   o.plugins.tooltip.footerColor = '#C9A227';
   o.plugins.tooltip.footerFont = { size:11.5, weight:'700' };
   o.plugins.tooltip.footerMarginTop = 7;
-  CHARTS.chStruct = new Chart(ctx, { type:'bar', data:{ labels:sl, datasets:ds }, options:o });
+  CHARTS.chStruct = new Chart(ctx, { type:'bar', data:{ labels:sortedSl, datasets:ds }, options:o });
 }
 
 function drawRank(rows, sl){
@@ -958,7 +1773,7 @@ function drawRank(rows, sl){
     var sr = rows.filter(function(r){return r.tenSite===s;});
     var soTre = sr.filter(function(r){return r.giaoTre;}).length;
     var ttSuat = sr.reduce(function(a,r){return a+r.soThatThoat;},0);
-    var tongSuat = sr.reduce(function(a,r){return a+r.tongSuat;},0);
+    var tongSuat = sr.reduce(function(a,r){return a + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0);
     return { site:s, tre:r1(pct(soTre, sr.length)), thatthoat:r1(pct(ttSuat, tongSuat)),
              soTre:soTre, soNgay:sr.length, tt:ttSuat, tong:tongSuat };  // số liệu thô cho tooltip
   }).sort(function(a,b){ return b[UI.rankMetric]-a[UI.rankMetric]; });
@@ -1164,13 +1979,14 @@ function renderSite(){
   // Dùng % (không dùng số tuyệt đối) để ngày sản lượng thấp không bị đánh giá nhẹ đi.
   var maxTtPct = 0;
   rows.forEach(function(r){
-    var p = pct(r.soThatThoat, r.tongSuat);
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    var p = pct(r.soThatThoat, rTong);
     if (p > maxTtPct) maxTtPct = p;
   });
   var maxSang  = Math.max.apply(null, rows.map(function(r){ return r.suatSang;  }).concat(0));
   var maxTrua  = Math.max.apply(null, rows.map(function(r){ return r.suatTrua;  }).concat(0));
   var maxChieu = Math.max.apply(null, rows.map(function(r){ return r.suatChieu; }).concat(0));
-  var maxTong  = Math.max.apply(null, rows.map(function(r){ return r.tongSuat;  }).concat(0));
+  var maxTong  = Math.max.apply(null, rows.map(function(r){ return (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0); }).concat(0));
 
   html += '<div class="card" style="margin-top:13px">'+cardHead(IC.table,'Chi tiết báo cáo từng ngày',
     '<span style="font-size:11px;color:#B0B0B0">thanh màu = % thất thoát trên tổng suất • bấm vào dòng để mở rộng</span>')+
@@ -1231,6 +2047,7 @@ function renderSite(){
 
   rows.slice().reverse().forEach(function(r){
     var op = UI.expanded === r.id;
+    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
     html += '<tr class="hov row-x" data-id="'+esc(r.id)+'">'+
       '<td style="color:#C0C0C0; text-align:center; width:30px;">'+(op?'▾':'▸')+'</td>'+
       '<td style="font-weight:600;white-space:nowrap">'+esc(r.ngayBaoCao)+'</td>'+
@@ -1242,7 +2059,7 @@ function renderSite(){
       '<td class="num">'+fmt(r.suatLuuMau||0)+'</td>'+
       '<td class="num">'+fmt(r.suatGiaoVien||0)+'</td>'+
       '<td style="max-width:160px;color:#666">'+esc(r.tenKhachHang||'—')+'</td>'+
-      '<td class="num bold-brand">'+dataBarNum(r.tongSuat, maxTong, C.brand)+'</td>'+
+      '<td class="num bold-brand">'+dataBarNum(rTong, maxTong, C.brand)+'</td>'+
       '<td class="ctr">'+(r.giaoTre
         ? '<span class="tag" style="background:#EA580C18;color:#EA580C">Trễ'+(r.phutTre?' '+r.phutTre+"'":'')+'</span>'
         : '<span class="tag" style="background:#16A34A18;color:#16A34A">Đúng giờ</span>')+'</td>'+
@@ -1356,7 +2173,8 @@ function renderSite(){
         var byDate = {};
         rowsRaw.forEach(function(r){
           if (r.tenKhachHang === kh) {
-            byDate[r.ngayBaoCao] = (byDate[r.ngayBaoCao] || 0) + (r.tongSuat || 0);
+            var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+            byDate[r.ngayBaoCao] = (byDate[r.ngayBaoCao] || 0) + rTong;
           }
         });
         datasets.push({
@@ -1371,7 +2189,9 @@ function renderSite(){
       });
       // Thêm line Tổng (nét đứt) để so sánh
       var totalByDate = {};
-      rows.forEach(function(r){ totalByDate[r.ngayBaoCao] = r.tongSuat || 0; });
+      rows.forEach(function(r){
+        totalByDate[r.ngayBaoCao] = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+      });
       datasets.push({
         label: 'Tổng site',
         borderColor: '#666',
@@ -1387,17 +2207,17 @@ function renderSite(){
           borderWidth:2.5, tension:.32, fill:true, yAxisID:'y',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.brand,
           pointBorderColor:'#fff', pointBorderWidth:2,
-          data: rows.map(function(r){return r.tongSuat;}) },
+          data: rows.map(function(r){return (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);}) },
         { label:'Suất NV', borderColor:C.light, backgroundColor:'rgba(155,53,67,.12)',
           borderWidth:2, tension:.3, fill:true, yAxisID:'y1',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.light,
           pointBorderColor:'#fff', pointBorderWidth:2, borderDash:[5, 4],
-          data: rows.map(function(r){return r.suatNhanVien;}) },
+          data: rows.map(function(r){return r.suatNhanVien || 0;}) },
         { label:'Suất hủy', borderColor:C.gold, backgroundColor:'rgba(201,162,39,.16)',
           borderWidth:2, tension:.3, fill:true, yAxisID:'y1',
           pointRadius:0, pointHoverRadius:5, pointBackgroundColor:C.gold,
           pointBorderColor:'#fff', pointBorderWidth:2,
-          data: rows.map(function(r){return r.suatHuy;}) }
+          data: rows.map(function(r){return r.suatHuy || 0;}) }
       ];
     }
 
@@ -1437,13 +2257,14 @@ function renderSite(){
 function dataBarTT(r, maxPct){
   if (!r.soThatThoat) return '<span style="color:#C8C8C8">—</span>';
 
-  var p = pct(r.soThatThoat, r.tongSuat);
+  var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+  var p = pct(r.soThatThoat, rTong);
   var vuot = p > NGUONG.thatThoatPct;
   var col = vuot ? C.brand : C.gold;
   // Tối thiểu 6% để giá trị nhỏ vẫn nhìn thấy được thanh
   var w = maxPct > 0 ? Math.max(6, (p / maxPct) * 100) : 6;
 
-  var tip = 'Thất thoát: '+fmt(r.soThatThoat)+' / '+fmt(r.tongSuat)+' suất\n'+
+  var tip = 'Thất thoát: '+fmt(r.soThatThoat)+' / '+fmt(rTong)+' suất\n'+
             'Tỷ lệ: '+r1(p)+'%  (ngưỡng '+NGUONG.thatThoatPct+'%)'+
             (r.nguyenNhanThatThoat ? '\nNguyên nhân: '+r.nguyenNhanThatThoat : '');
 
@@ -1669,6 +2490,7 @@ function computeAndDrawRevenueSacn(){
   var pr = rev_prevRange(f.from, f.to);
   var prev = pr
     ? rev_filterRows(base, { from: pr.from, to: pr.to, sites: f.sites,
+        vungMien: f.vungMien, loaiCuaHang: f.loaiCuaHang,
         kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang })
     : [];
 
@@ -1748,9 +2570,22 @@ function computeAndDrawRevenueSacn(){
   });
 
   var byNhom  = rev_groupBy(cur, function (r) { return r.nhomSP; }, 'netRevenue');
-  var byKenh  = rev_groupBy(cur, function (r) { return r.kenhBanHang; }, 'netRevenue');
+  var byKenh  = rev_groupBy(cur, function (r) {
+    var tk = r.tenKenhBanHang || r.ten_kenh_ban_hang;
+    if (tk && String(tk).trim()) return String(tk).trim();
+    if (r.kenhBanHang && String(r.kenhBanHang).trim()) return String(r.kenhBanHang).trim();
+    return '(Không tên kênh)';
+  }, 'netRevenue');
   var byNVKD  = rev_groupBy(cur, function (r) { return r.nvKinhDoanh; }, 'netRevenue');
   var byKH    = rev_groupBy(cur, function (r) { return r.tenKH; }, 'netRevenue');
+  var byVung  = rev_groupBy(cur, function (r) {
+    var v = r.vungMien || r.vung_mien;
+    return v && String(v).trim() ? String(v).trim() : '(Chưa phân loại)';
+  }, 'netRevenue');
+  var byLoaiCH = rev_groupBy(cur, function (r) {
+    var l = r.loaiCuaHang || r.loai_cua_hang;
+    return l && String(l).trim() ? String(l).trim() : '(Chưa phân loại)';
+  }, 'netRevenue');
   var byLyDo  = rev_groupBy(
     cur.filter(function (r) { return r.isReturn; }),
     function (r) { return r.lyDoTraHang || '(Không ghi lý do)'; }, 'returnValue');
@@ -1758,7 +2593,8 @@ function computeAndDrawRevenueSacn(){
   byDate.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
 
   var allNoDate = rev_filterRows(base, {
-    sites: f.sites, kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
+    sites: f.sites, vungMien: f.vungMien, loaiCuaHang: f.loaiCuaHang,
+    kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
   });
   var periodCompare = {
     day:     rev_groupByPeriod(allNoDate, 'day'),
@@ -1816,6 +2652,7 @@ function computeAndDrawRevenueSacn(){
   REV_SACN = {
     ok: true, dims: dims, kpi: kpi, kpiPrev: kpiPrev, byDate: byDate,
     periodCompare: periodCompare, bySite: bySite, byNhomSP: byNhom, byKenh: byKenh,
+    byVung: byVung, byLoaiCH: byLoaiCH,
     byNVKD: byNVKD, byKhachHang: byKH.slice(0, 50), byLyDoTraHang: byLyDo,
     siteDetail: siteDetail, opexItems: opexItems, nguong: REV_RAW.nguong,
     disposal: disp,
@@ -1834,6 +2671,7 @@ function computeAndDrawRevenue() {
   var prev = pr
     ? rev_filterRows(REV_RAW.rows, {
         from: pr.from, to: pr.to, sites: f.sites,
+        vungMien: f.vungMien, loaiCuaHang: f.loaiCuaHang,
         kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
       })
     : [];
@@ -1867,12 +2705,8 @@ function computeAndDrawRevenue() {
   kpi.ebitdaPct = (kpi.hasOpex && kpi.netRevenue > 0)
     ? ((kpi.grossProfit - opexAmt) / kpi.netRevenue) * 100 : null;
 
-  // Hủy từ Report (đã có sẵn trong REV_RAW.huyReport)
-  // var huy = REV_RAW.huyReport || { total: { suatHuy: 0, tongSuat: 0, pct: 0 }, bySite: {} };
-  // Hủy từ Report — TÍNH LẠI CÓ LỌC theo ngày/site mỗi lần filter đổi,
-  // thay vì dùng REV_RAW.huyReport (số liệu tổng cố định, không ăn filter).
+  // Hủy từ Report — TÍNH LẠI CÓ LỌC theo ngày/site mỗi lần filter đổi
   var huy = rev_huyFromReport(REV_RAW.huyRows, f);
-  // Có thể lọc thêm bySite theo RF.sites nếu cần chính xác hơn
   kpi.huyReportPct = huy.total.pct;
   kpi.huySuatHuy = huy.total.suatHuy;
   kpi.huyTongSuat = huy.total.tongSuat;
@@ -1885,16 +2719,28 @@ function computeAndDrawRevenue() {
   kpi.netPerDay = kpi.operatingDays > 0 ? kpi.netRevenue / kpi.operatingDays : 0;
 
   var bySite = rev_groupBy(cur, function (r) { return r.site; }, 'netRevenue');
-  // gắn huy theo site nếu cần (giống backend)
   bySite.forEach(function (s) {
     var h = (huy.bySite && huy.bySite[s.key]) || null;
     if (h) { s.huyReportPct = h.pct; s.huyQtyPct = h.pct; }
   });
 
   var byNhom = rev_groupBy(cur, function (r) { return r.nhomSP; }, 'netRevenue');
-  var byKenh = rev_groupBy(cur, function (r) { return r.kenhBanHang; }, 'netRevenue');
+  var byKenh = rev_groupBy(cur, function (r) {
+    var tk = r.tenKenhBanHang || r.ten_kenh_ban_hang;
+    if (tk && String(tk).trim()) return String(tk).trim();
+    if (r.kenhBanHang && String(r.kenhBanHang).trim()) return String(r.kenhBanHang).trim();
+    return '(Không tên kênh)';
+  }, 'netRevenue');
   var byNVKD = rev_groupBy(cur, function (r) { return r.nvKinhDoanh; }, 'netRevenue');
   var byKH = rev_groupBy(cur, function (r) { return r.tenKH; }, 'netRevenue');
+  var byVung = rev_groupBy(cur, function (r) {
+    var v = r.vungMien || r.vung_mien;
+    return v && String(v).trim() ? String(v).trim() : '(Chưa phân loại)';
+  }, 'netRevenue');
+  var byLoaiCH = rev_groupBy(cur, function (r) {
+    var l = r.loaiCuaHang || r.loai_cua_hang;
+    return l && String(l).trim() ? String(l).trim() : '(Chưa phân loại)';
+  }, 'netRevenue');
   var byLyDo = rev_groupBy(
     cur.filter(function (r) { return r.isReturn; }),
     function (r) { return r.lyDoTraHang || '(Không ghi lý do)'; },
@@ -1904,10 +2750,9 @@ function computeAndDrawRevenue() {
   byDate.sort(function (a, b) { return a.key < b.key ? -1 : 1; });
 
   // ===== THÊM MỚI: dữ liệu cho chart "So sánh theo kỳ" =====
-  // Dùng TOÀN BỘ rows (chỉ áp filter site/kênh/nhóm/NVKD/KH, KHÔNG lọc ngày)
-  // giống hệt cách backend làm trong getRevenueFoodCostData, để thấy xu hướng dài hạn.
   var allNoDate = rev_filterRows(REV_RAW.rows, {
-    sites: f.sites, kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
+    sites: f.sites, vungMien: f.vungMien, loaiCuaHang: f.loaiCuaHang,
+    kenh: f.kenh, nhomSP: f.nhomSP, nvkd: f.nvkd, khachHang: f.khachHang
   });
   var periodCompare = {
     day:     rev_groupByPeriod(allNoDate, 'day'),
@@ -1927,14 +2772,16 @@ function computeAndDrawRevenue() {
     kpi: kpi,
     kpiPrev: kpiPrev,
     byDate: byDate,
-    periodCompare: periodCompare,   // ← MỚI
+    periodCompare: periodCompare,
     bySite: bySite,
     byNhomSP: byNhom,
     byKenh: byKenh,
+    byVung: byVung,
+    byLoaiCH: byLoaiCH,
     byNVKD: byNVKD,
     byKhachHang: byKH.slice(0, 50),
     byLyDoTraHang: byLyDo,
-    siteDetail: siteDetail,         // ← MỚI
+    siteDetail: siteDetail,
     opexItems: opexItems,
     nguong: REV_RAW.nguong,
     updatedAt: REV_RAW.updatedAt,
@@ -1976,7 +2823,23 @@ function computeAndDrawRevenue() {
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
 function loadRevenue(opts) {
   opts = opts || {};
+  var box = document.getElementById('tab-revenue');
+  var sacnBox = document.getElementById('tab-sacn');
+
+  // Đảm bảo hiển thị skeleton và animation chờ khi người dùng chủ động xem tab
+  if (!opts.silent) {
+    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...');
+    if (box && !REV_RAW && !box.querySelector('.sk-wrap')) {
+      box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
+    }
+    if (sacnBox && !REV_RAW && !sacnBox.querySelector('.sk-wrap')) {
+      sacnBox.innerHTML = akSkeletonHTML('Doanh thu & Food Cost (SACN)');
+    }
+  }
+
+  // Nếu đang có request chạy ngầm và người dùng chủ động vào tab -> skeleton đã được hiển thị ở trên, chờ kết quả trả về
   if (REV_LOADING) return;
+
   // Đã có raw và không force → chỉ vẽ lại theo filter hiện tại
   if (REV_RAW && !opts.force) {
     computeAndDrawRevenue();
@@ -1984,17 +2847,14 @@ function loadRevenue(opts) {
   }
 
   REV_LOADING = true;
-  var box = document.getElementById('tab-revenue');
-  if (!opts.silent) {
-    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...');
-    if (box && !REV_RAW) box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
-  }
 
   var params = {};
-  var fFrom = (opts && opts.from) || RF.from || '';
-  var fTo = (opts && opts.to) || RF.to || '';
+  var fFrom = (opts && opts.from) || RF.from || (typeof F !== 'undefined' && F ? F.from : '') || '';
+  var fTo = (opts && opts.to) || RF.to || (typeof F !== 'undefined' && F ? F.to : '') || '';
   if (fFrom || fTo) {
     params.filters = JSON.stringify({ from: fFrom, to: fTo });
+  } else if (opts && opts.all) {
+    params.filters = JSON.stringify({ all: true });
   }
 
   callAPI('getRevenueRawData', params)
@@ -2027,6 +2887,7 @@ function loadRevenue(opts) {
       }
       computeAndDrawRevenue();
       computeAndDrawRevenueSacn();
+      renderPivotOnly();
     })
     .catch(function (err) {
       REV_LOADING = false;
@@ -2085,11 +2946,25 @@ function loadRevenue(opts) {
 //   drawRevenue();
 // }
 function renderRevenue(){
-  if (!REV_RAW){ loadRevenue(); return; }
+  if (!REV_RAW){
+    var box = document.getElementById('tab-revenue');
+    if (box && !box.querySelector('.sk-wrap')) {
+      box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
+    }
+    loadRevenue();
+    return;
+  }
   computeAndDrawRevenue();
 }
 function renderSacn(){
-  if (!REV_RAW){ loadRevenue(); return; }
+  if (!REV_RAW){
+    var sacnBox = document.getElementById('tab-sacn');
+    if (sacnBox && !sacnBox.querySelector('.sk-wrap')) {
+      sacnBox.innerHTML = akSkeletonHTML('Doanh thu & Food Cost (SACN)');
+    }
+    loadRevenue();
+    return;
+  }
   if (!REV_SACN_INIT){ buildRevSacnFilters(); REV_SACN_INIT = true; }
   computeAndDrawRevenueSacn();
 }
@@ -2097,13 +2972,19 @@ function renderSacn(){
 function buildRevSacnFilters(){
   var base = sacn_baseRows();
   var siteSet={}, kenhSet={}, nhomSet={}, nvkdSet={}, khSet={}, dateSet={};
+  var vungSet={}, loaiSet={};
   base.forEach(function(r){
     if (r.site) siteSet[r.site]=1;
-    if (r.kenhBanHang) kenhSet[r.kenhBanHang]=1;
+    var tk = r.tenKenhBanHang || r.ten_kenh_ban_hang || r.kenhBanHang;
+    if (tk && String(tk).trim()) kenhSet[String(tk).trim()]=1;
     if (r.nhomSP) nhomSet[r.nhomSP]=1;
     if (r.nvKinhDoanh) nvkdSet[r.nvKinhDoanh]=1;
-    if (r.tenKH) khSet[r.tenKH]=1;
+    if (r.tenKH && String(r.tenKH).trim()) khSet[String(r.tenKH).trim()]=1;
     if (r.ngay) dateSet[r.ngay]=1;
+    var v = r.vungMien || r.vung_mien;
+    vungSet[v && String(v).trim() ? String(v).trim() : '(Chưa phân loại)'] = 1;
+    var l = r.loaiCuaHang || r.loai_cua_hang;
+    loaiSet[l && String(l).trim() ? String(l).trim() : '(Chưa phân loại)'] = 1;
   });
   var viSort=function(a,b){return a.localeCompare(b,'vi');};
   var d = {
@@ -2112,11 +2993,13 @@ function buildRevSacnFilters(){
     nhomSP: Object.keys(nhomSet).sort(viSort),
     nvkd: Object.keys(nvkdSet).sort(viSort),
     khachHang: Object.keys(khSet).sort(viSort),
-    dates: Object.keys(dateSet).sort()
+    dates: Object.keys(dateSet).sort(),
+    vungMien: Object.keys(vungSet).sort(viSort),
+    loaiCuaHang: Object.keys(loaiSet).sort(viSort)
   };
 
   var maxSacnDate = (REV.dims && REV.dims.maxBillingDate) || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
-  var defaultSacnFrom = (REV.dims && REV.dims.defaultFrom) || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 60)] : '2026-07-25');
+  var defaultSacnFrom = (REV.dims && REV.dims.defaultFrom) || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 30)] : '2026-08-25');
 
   if (!RF_SACN.from && d.dates.length){
     RF_SACN.to = maxSacnDate; RF_SACN.from = defaultSacnFrom;
@@ -2135,24 +3018,62 @@ function buildRevSacnFilters(){
   }).join('');
   updateRevSacnMsLabel();
 
+  document.getElementById('sVungList').innerHTML = d.vungMien.map(function(v){
+    return '<label><input type="checkbox" value="'+esc(v)+'"'+
+           (RF_SACN.vungMien.indexOf(v)>=0?' checked':'')+'> '+esc(v)+'</label>';
+  }).join('');
+  updateRevSacnVungLabel();
+
+  document.getElementById('sLoaiList').innerHTML = d.loaiCuaHang.map(function(l){
+    return '<label><input type="checkbox" value="'+esc(l)+'"'+
+           (RF_SACN.loaiCuaHang.indexOf(l)>=0?' checked':'')+'> '+esc(l)+'</label>';
+  }).join('');
+  updateRevSacnLoaiLabel();
+
+  var sKhListEl = document.getElementById('sKhList');
+  if (sKhListEl) {
+    sKhListEl.innerHTML = d.khachHang.map(function(kh){
+      return '<label><input type="checkbox" value="'+esc(kh)+'"'+
+             (RF_SACN.khachHang.indexOf(kh)>=0?' checked':'')+'> '+esc(kh)+'</label>';
+    }).join('');
+    updateRevSacnKhLabel();
+  }
+
   var fill = function(id, arr, cur, allLabel){
-    document.getElementById(id).innerHTML =
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML =
       '<option value="">'+allLabel+'</option>'+
       arr.map(function(v){
         return '<option value="'+esc(v)+'"'+(cur===v?' selected':'')+'>'+esc(v)+'</option>';
       }).join('');
   };
-  fill('sKenh', d.kenh,   RF_SACN.kenh,   'Tất cả kênh');
-  fill('sNhom', d.nhomSP, RF_SACN.nhomSP, 'Tất cả nhóm');
-  fill('sNVKD', d.nvkd,   RF_SACN.nvkd,   'Tất cả NVKD');
-  fill('sKH',   d.khachHang, RF_SACN.khachHang, 'Tất cả khách hàng');
+  fill('sKenh', d.kenh,   RF_SACN.kenh,   'Tất cả kênh bán hàng');
+  fill('sNhom', d.nhomSP, RF_SACN.nhomSP, 'Tất cả nhóm sản phẩm');
+  fill('sNVKD', d.nvkd,   RF_SACN.nvkd,   'Tất cả nhân viên xuất hóa đơn');
 }
 
 function updateRevSacnMsLabel(){
   var n = RF_SACN.sites.length;
-  document.getElementById('sMsLabel').textContent =
-    n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF_SACN.sites[0] : n+' cửa hàng đã chọn');
+  var el = document.getElementById('sMsLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF_SACN.sites[0] : n+' cửa hàng đã chọn');
 }
+function updateRevSacnVungLabel(){
+  var n = RF_SACN.vungMien.length;
+  var el = document.getElementById('sVungLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF_SACN.vungMien[0] : n+' vùng miền đã chọn');
+}
+function updateRevSacnLoaiLabel(){
+  var n = RF_SACN.loaiCuaHang.length;
+  var el = document.getElementById('sLoaiLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả loại cửa hàng' : (n === 1 ? RF_SACN.loaiCuaHang[0] : n+' loại CH đã chọn');
+}
+function updateRevSacnKhLabel(){
+  var n = RF_SACN.khachHang.length;
+  var el = document.getElementById('sKhLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? RF_SACN.khachHang[0] : n+' khách hàng đã chọn');
+}
+
 /* ---------- DỰNG DROPDOWN BỘ LỌC (chạy 1 lần sau khi có dims) ---------- */
 function buildRevFilters(){
   var d = REV.dims || {};
@@ -2160,10 +3081,27 @@ function buildRevFilters(){
   d.sites = d.sites || []; d.kenh = d.kenh || []; d.nhomSP = d.nhomSP || [];
   d.nvkd = d.nvkd || []; d.khachHang = d.khachHang || []; d.dates = d.dates || [];
 
-  var maxDate = d.maxBillingDate || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
-  var defaultFrom = d.defaultFrom || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 60)] : '2026-07-25');
+  var rows = (REV_RAW && REV_RAW.rows) || [];
+  var vungSet = {}, loaiSet = {}, kenhSet = {}, khSet = {};
+  rows.forEach(function(r){
+    var v = r.vungMien || r.vung_mien;
+    vungSet[v && String(v).trim() ? String(v).trim() : '(Chưa phân loại)'] = 1;
+    var l = r.loaiCuaHang || r.loai_cua_hang;
+    loaiSet[l && String(l).trim() ? String(l).trim() : '(Chưa phân loại)'] = 1;
+    var tk = r.tenKenhBanHang || r.ten_kenh_ban_hang || r.kenhBanHang;
+    if (tk && String(tk).trim()) kenhSet[String(tk).trim()] = 1;
+    if (r.tenKH && String(r.tenKH).trim()) khSet[String(r.tenKH).trim()] = 1;
+  });
+  var viSort = function(a,b){ return a.localeCompare(b, 'vi'); };
+  var vungOptions = Object.keys(vungSet).sort(viSort);
+  var loaiOptions = Object.keys(loaiSet).sort(viSort);
+  var kenhOptions = Object.keys(kenhSet).length ? Object.keys(kenhSet).sort(viSort) : d.kenh;
+  var khOptions = Object.keys(khSet).length ? Object.keys(khSet).sort(viSort) : d.khachHang;
 
-  // Mặc định: 2 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  var maxDate = d.maxBillingDate || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
+  var defaultFrom = d.defaultFrom || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 30)] : '2026-08-25');
+
+  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
   if (!RF.from && d.dates.length){
     RF.to = maxDate; RF.from = defaultFrom;
   }
@@ -2181,23 +3119,60 @@ function buildRevFilters(){
   }).join('');
   updateRevMsLabel();
 
+  document.getElementById('rVungList').innerHTML = vungOptions.map(function(v){
+    return '<label><input type="checkbox" value="'+esc(v)+'"'+
+           (RF.vungMien.indexOf(v)>=0?' checked':'')+'> '+esc(v)+'</label>';
+  }).join('');
+  updateRevVungLabel();
+
+  document.getElementById('rLoaiList').innerHTML = loaiOptions.map(function(l){
+    return '<label><input type="checkbox" value="'+esc(l)+'"'+
+           (RF.loaiCuaHang.indexOf(l)>=0?' checked':'')+'> '+esc(l)+'</label>';
+  }).join('');
+  updateRevLoaiLabel();
+
+  var rKhListEl = document.getElementById('rKhList');
+  if (rKhListEl) {
+    rKhListEl.innerHTML = khOptions.map(function(kh){
+      return '<label><input type="checkbox" value="'+esc(kh)+'"'+
+             (RF.khachHang.indexOf(kh)>=0?' checked':'')+'> '+esc(kh)+'</label>';
+    }).join('');
+    updateRevKhLabel();
+  }
+
   var fill = function(id, arr, cur, allLabel){
-    document.getElementById(id).innerHTML =
+    var el = document.getElementById(id);
+    if (!el) return;
+    el.innerHTML =
       '<option value="">'+allLabel+'</option>'+
       arr.map(function(v){
         return '<option value="'+esc(v)+'"'+(cur===v?' selected':'')+'>'+esc(v)+'</option>';
       }).join('');
   };
-  fill('rKenh', d.kenh,   RF.kenh,   'Tất cả kênh');
-  fill('rNhom', d.nhomSP, RF.nhomSP, 'Tất cả nhóm');
-  fill('rNVKD', d.nvkd,   RF.nvkd,   'Tất cả NVKD');
-  fill('rKH',   d.khachHang || [], RF.khachHang, 'Tất cả khách hàng');
+  fill('rKenh', kenhOptions, RF.kenh,   'Tất cả kênh bán hàng');
+  fill('rNhom', d.nhomSP,    RF.nhomSP, 'Tất cả nhóm sản phẩm');
+  fill('rNVKD', d.nvkd,      RF.nvkd,   'Tất cả nhân viên xuất hóa đơn');
 }
 
 function updateRevMsLabel(){
   var n = RF.sites.length;
-  document.getElementById('rMsLabel').textContent =
-    n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF.sites[0] : n+' cửa hàng đã chọn');
+  var el = document.getElementById('rMsLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF.sites[0] : n+' cửa hàng đã chọn');
+}
+function updateRevVungLabel(){
+  var n = RF.vungMien.length;
+  var el = document.getElementById('rVungLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF.vungMien[0] : n+' vùng miền đã chọn');
+}
+function updateRevLoaiLabel(){
+  var n = RF.loaiCuaHang.length;
+  var el = document.getElementById('rLoaiLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả loại cửa hàng' : (n === 1 ? RF.loaiCuaHang[0] : n+' loại CH đã chọn');
+}
+function updateRevKhLabel(){
+  var n = RF.khachHang.length;
+  var el = document.getElementById('rKhLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? RF.khachHang[0] : n+' khách hàng đã chọn');
 }
 
 /* ---------- RENDER CHÍNH TAB DOANH THU ---------- */
@@ -2205,14 +3180,37 @@ function rev_filterRows(rows, f) {
   f = f || RF;
   var from = f.from || '', to = f.to || '';
   var sites = (f.sites && f.sites.length) ? f.sites : null;
+  var vungMien = (f.vungMien && f.vungMien.length) ? f.vungMien : null;
+  var loaiCuaHang = (f.loaiCuaHang && f.loaiCuaHang.length) ? f.loaiCuaHang : null;
+  var khachHang = (f.khachHang && Array.isArray(f.khachHang) && f.khachHang.length) ? f.khachHang : null;
+
   return rows.filter(function (r) {
     if (from && r.ngay < from) return false;
     if (to && r.ngay > to) return false;
     if (sites && sites.indexOf(r.site) < 0) return false;
-    if (f.kenh && r.kenhBanHang !== f.kenh) return false;
+    if (f.kenh) {
+      var rKenhName = (r.tenKenhBanHang || r.ten_kenh_ban_hang || r.kenhBanHang || '').trim();
+      if (rKenhName !== f.kenh && r.kenhBanHang !== f.kenh) return false;
+    }
     if (f.nhomSP && r.nhomSP !== f.nhomSP) return false;
     if (f.nvkd && r.nvKinhDoanh !== f.nvkd) return false;
-    if (f.khachHang && r.tenKH !== f.khachHang) return false;
+
+    if (khachHang) {
+      if (khachHang.indexOf(r.tenKH) < 0) return false;
+    } else if (typeof f.khachHang === 'string' && f.khachHang) {
+      if (r.tenKH !== f.khachHang) return false;
+    }
+
+    if (vungMien) {
+      var v = r.vungMien || r.vung_mien;
+      var valV = v && String(v).trim() ? String(v).trim() : '(Chưa phân loại)';
+      if (vungMien.indexOf(valV) < 0) return false;
+    }
+    if (loaiCuaHang) {
+      var l = r.loaiCuaHang || r.loai_cua_hang;
+      var valL = l && String(l).trim() ? String(l).trim() : '(Chưa phân loại)';
+      if (loaiCuaHang.indexOf(valL) < 0) return false;
+    }
     return true;
   });
 }
@@ -2240,16 +3238,17 @@ function rev_agg() {
 }
 function rev_push(a, r) {
   if (r.isReturn) {
-    a.returnValue += r.thanhTien;
-    a.returnQty += r.soLuong;
+    a.returnValue += Math.abs(r.thanhTien || 0);
+    a.returnQty += Math.abs(r.soLuong || 0);
+    a.foodCost += (r.giaVon || 0);
   } else {
-    a.grossRevenue += r.thanhTien;
+    a.grossRevenue += (r.thanhTien || 0);
     a.discount += (r.ckTruocThue || 0);
-    a.salesQty += r.soLuong;
-    a.foodCost += r.giaVon;
+    a.salesQty += (r.soLuong || 0);
+    a.foodCost += (r.giaVon || 0);
     if (r.soHoaDon) a.invoices[r.soHoaDon] = 1;
     var u = String(r.dvt || '').trim().toUpperCase();
-    var lineNet = r.thanhTien - (r.ckTruocThue || 0);
+    var lineNet = (r.thanhTien || 0) - (r.ckTruocThue || 0);
     if (u === 'PHA') { a.qtyPHA += r.soLuong; a.netPHA += lineNet; }
     else if (u === 'KG') { a.qtyKG += r.soLuong; a.netKG += lineNet; }
     else if (u === 'CHY') { a.qtyCHY += r.soLuong; a.netCHY += lineNet; }
@@ -2463,7 +3462,7 @@ function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
       returns: rs.filter(function (r) { return r.isReturn; }).map(function (r) {
         return {
           ngay: r.ngay, soHoaDon: r.soHoaDon, tenKH: r.tenKH, tenSP: r.tenSP,
-          soLuong: r.soLuong, thanhTien: r.thanhTien,
+          soLuong: Math.abs(r.soLuong || 0), thanhTien: Math.abs(r.thanhTien || 0),
           lyDo: r.lyDoTraHang || '(Không ghi lý do)', soBillingGoc: r.soBillingGoc
         };
       }).slice(0, 200)
@@ -2488,9 +3487,9 @@ function drawRevenueSacn(){
 
   /* KHỐI 1 — 10 KPI: 5 cột × 2 hàng */
   html += '<div class="grid g5">';
-  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.grossRevenue),
+  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.netRevenue),
     k.invoiceCount+' hóa đơn • '+fmt(k.qtyPHA || 0)+' suất (PHA)',
-    d(k.grossRevenue, p.grossRevenue), true, C.brand);
+    d(k.netRevenue, p.netRevenue), true, C.brand);
 
   html += '<div class="kpi" style="border-left-color:'+C.gold+'">'+
     '<div class="kpi-top"><div>'+
@@ -2660,9 +3659,6 @@ function drawRevenueSacn(){
         '<button data-v="nganhHang" class="'+(RUI_SACN.mixDim==='nganhHang'?'on':'')+'">Ngành hàng</button></div>')+
     '<div class="cbox"><canvas id="sChRevMix"></canvas></div></div>';
 
-  html += '<div class="card">'+cardHead(IC.stack,'Doanh thu theo kênh bán hàng','')+
-    '<div class="cbox"><canvas id="sChRevKenh"></canvas></div></div>';
-
   html += '<div class="card">'+cardHead(IC.trash,
       (RUI_SACN.huyMode==='nvl'
         ? 'Tỷ lệ hủy NVL-BTP'+(RUI_SACN.huyDim==='day'?' theo ngày':' theo cửa hàng')
@@ -2679,8 +3675,25 @@ function drawRevenueSacn(){
       : '')+
     '</div>';
 
-  html += '<div class="card">'+cardHead(IC.line,'Food cost % theo nhóm sản phẩm','')+
-    '<div class="cbox"><canvas id="sChRevFcNhom"></canvas></div></div>';
+  var isFcNhomSacn = RUI_SACN.mixChartMode === 'fcNhom';
+  html += '<div class="card">'+cardHead(
+      isFcNhomSacn ? IC.line : IC.stack,
+      isFcNhomSacn ? 'Food cost % theo nhóm sản phẩm' : 'Doanh thu theo kênh bán hàng',
+      '<div class="tg" id="sTgMixChart">'+
+        '<button data-v="kenh" class="'+(!isFcNhomSacn?'on':'')+'">Kênh bán hàng</button>'+
+        '<button data-v="fcNhom" class="'+(isFcNhomSacn?'on':'')+'">FC% nhóm SP</button>'+
+      '</div>')+
+    '<div class="cbox"><canvas id="sChRevKenhMix"></canvas></div></div>';
+
+  var isLoaiSacn = RUI_SACN.geoMode === 'loai';
+  html += '<div class="card">'+cardHead(
+      IC.bars,
+      isLoaiSacn ? 'Hiệu quả theo Loại cửa hàng' : 'Hiệu quả theo Vùng miền',
+      '<div class="tg" id="sTgGeo">'+
+        '<button data-v="vung" class="'+(!isLoaiSacn?'on':'')+'">Theo Vùng miền</button>'+
+        '<button data-v="loai" class="'+(isLoaiSacn?'on':'')+'">Theo Loại cửa hàng</button>'+
+      '</div>')+
+    '<div class="cbox"><canvas id="sChRevGeo"></canvas></div></div>';
   html += '</div>';
 
   html += '<div class="card" style="margin-top:13px">'+
@@ -2742,13 +3755,13 @@ function drawRevenueSacn(){
   document.getElementById('tab-sacn').innerHTML = html;
 
   var safe = function(name, fn){ try { fn(); } catch(e){ console.error('Lỗi vẽ (SACN) '+name+':', e); } };
-  safe('trend',  drawRevTrendSacn);
-  safe('site',   drawRevSiteSacn);
-  safe('mix',    drawRevMixSacn);
-  safe('kenh',   drawRevKenhSacn);
-  safe('huy',    drawRevHuySacn);
-  safe('fcNhom', drawRevFcNhomSacn);
-  safe('period', drawRevPeriodSacn);
+  safe('trend',   drawRevTrendSacn);
+  safe('site',    drawRevSiteSacn);
+  safe('mix',     drawRevMixSacn);
+  safe('huy',     drawRevHuySacn);
+  safe('kenhMix', drawRevKenhMixSacn);
+  safe('geo',     drawRevGeoSacn);
+  safe('period',  drawRevPeriodSacn);
   if (RUI_SACN.drillSite) safe('drill', function(){ renderRevDrillSacn(RUI_SACN.drillSite); });
   bindRevenueEventsSacn();
 }
@@ -2762,9 +3775,9 @@ function drawRevenue(){
   /* ===== KHỐI 1: KPI TỔNG QUAN (mục 5.1) ===== */
   html += '<div class="grid g6">';
 
-  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.grossRevenue),
+  html += kpiCard(IC.wallet, 'Doanh thu thuần', fmtMoney(k.netRevenue),
     k.invoiceCount+' hóa đơn • '+fmt(k.qtyPHA || 0)+' suất (PHA)',
-    d(k.grossRevenue, p.grossRevenue), true, C.brand);
+    d(k.netRevenue, p.netRevenue), true, C.brand);
 
   // Food cost % - kèm gauge so dải mục tiêu 30-40%
   html += '<div class="kpi" style="border-left-color:'+C.gold+'">'+
@@ -2933,15 +3946,29 @@ function drawRevenue(){
       '</div>')+
     '<div class="cbox"><canvas id="chRevMix"></canvas></div></div>';
 
-  html += '<div class="card">'+cardHead(IC.stack,'Doanh thu theo kênh bán hàng','')+
-    '<div class="cbox"><canvas id="chRevKenh"></canvas></div></div>';
-
   html += '<div class="card">'+cardHead(IC.trash,'Tỷ lệ hủy hàng theo cửa hàng (ngưỡng '+
       ng.huyPct.toFixed(2).replace('.',',')+'%)','')+
     '<div class="cbox"><canvas id="chRevHuy"></canvas></div></div>';
 
-  html += '<div class="card">'+cardHead(IC.line,'Food cost % theo nhóm sản phẩm','')+
-    '<div class="cbox"><canvas id="chRevFcNhom"></canvas></div></div>';
+  var isFcNhom = RUI.mixChartMode === 'fcNhom';
+  html += '<div class="card">'+cardHead(
+      isFcNhom ? IC.line : IC.stack,
+      isFcNhom ? 'Food cost % theo nhóm sản phẩm' : 'Doanh thu theo kênh bán hàng',
+      '<div class="tg" id="rTgMixChart">'+
+        '<button data-v="kenh" class="'+(!isFcNhom?'on':'')+'">Kênh bán hàng</button>'+
+        '<button data-v="fcNhom" class="'+(isFcNhom?'on':'')+'">FC% nhóm SP</button>'+
+      '</div>')+
+    '<div class="cbox"><canvas id="chRevKenhMix"></canvas></div></div>';
+
+  var isLoai = RUI.geoMode === 'loai';
+  html += '<div class="card">'+cardHead(
+      IC.bars,
+      isLoai ? 'Hiệu quả theo Loại cửa hàng' : 'Hiệu quả theo Vùng miền',
+      '<div class="tg" id="rTgGeo">'+
+        '<button data-v="vung" class="'+(!isLoai?'on':'')+'">Theo Vùng miền</button>'+
+        '<button data-v="loai" class="'+(isLoai?'on':'')+'">Theo Loại cửa hàng</button>'+
+      '</div>')+
+    '<div class="cbox"><canvas id="chRevGeo"></canvas></div></div>';
 
   html += '</div>';
 
@@ -3034,13 +4061,13 @@ function drawRevenue(){
     try { fn(); }
     catch(e){ console.error('Lỗi vẽ '+name+':', e); }
   };
-  safe('trend',  drawRevTrend);
-  safe('site',   drawRevSite);
-  safe('mix',    drawRevMix);
-  safe('kenh',   drawRevKenh);
-  safe('huy',    drawRevHuy);
-  safe('fcNhom', drawRevFcNhom);
-  safe('period', drawRevPeriod);
+  safe('trend',   drawRevTrend);
+  safe('site',    drawRevSite);
+  safe('mix',     drawRevMix);
+  safe('huy',     drawRevHuy);
+  safe('kenhMix', drawRevKenhMix);
+  safe('geo',     drawRevGeo);
+  safe('period',  drawRevPeriod);
   if (RUI.drillSite) safe('drill', function(){ renderRevDrill(RUI.drillSite); });
   bindRevenueEvents();   // luôn chạy để các nút/chip hoạt động
 }
@@ -3129,21 +4156,119 @@ function drawRevMixSacn(){
         borderWidth:2, borderColor:'#fff' }] }, options:o });
 }
 
-function drawRevKenhSacn(){
-  destroyChart('sChRevKenh');
-  var ctx = ctxOf('sChRevKenh'); if (!ctx) return;
-  var data = (REV_SACN.byKenh||[]).slice(0, 10); if (!data.length) return;
+function drawRevKenhMixSacn(){
+  destroyChart('sChRevKenhMix');
+  var ctx = ctxOf('sChRevKenhMix'); if (!ctx) return;
+  var isFcNhom = RUI_SACN.mixChartMode === 'fcNhom';
+
+  if (isFcNhom) {
+    var FC_MARKS = { ok:58, warn:62, bad:65 };
+    var data = (REV_SACN.byNhomSP||[]).slice().filter(function(x){ return x.netRevenue > 0; })
+      .sort(function(a,b){ return b.foodCostPct - a.foodCostPct; }).slice(0, 12);
+    if (!data.length) return;
+    var o = cloneOpt({ indexAxis:'y' });
+    o.interaction = { mode:'index', intersect:false, axis:'y' };
+    o.hover = { mode:'index', intersect:false, axis:'y' };
+    o.plugins.legend = { display:false };
+    o.scales = {
+      x:{ beginAtZero:true, grid:{color:'#F0F0F0'}, suggestedMax:70, ticks:{font:{size:10}, callback:function(v){ return v+'%'; }} },
+      y:{ grid:{display:false}, ticks:{font:{size:10}} }
+    };
+    o.plugins.tooltip.callbacks = { label:function(c){
+      var x = data[c.dataIndex]; var trangThai;
+      if (x.foodCostPct <= FC_MARKS.ok)        trangThai = '✓ An toàn (≤'+FC_MARKS.ok+'%)';
+      else if (x.foodCostPct <= FC_MARKS.warn) trangThai = '~ Cần lưu ý ('+FC_MARKS.ok+'-'+FC_MARKS.warn+'%)';
+      else if (x.foodCostPct <= FC_MARKS.bad)  trangThai = '▲ Cảnh báo ('+FC_MARKS.warn+'-'+FC_MARKS.bad+'%)';
+      else                                      trangThai = '✕ Vượt ngưỡng (>'+FC_MARKS.bad+'%)';
+      return ['Food cost: '+fmtPct(x.foodCostPct),'DT thuần: '+fmt(x.netRevenue)+'₫','Lãi gộp: '+fmt(x.grossProfit)+'₫',trangThai];
+    }};
+    var bandLine = { id:'sacnFcBand', afterDatasetsDraw:function(chart){
+      if (chart.canvas.id !== 'sChRevKenhMix') return;
+      var x = chart.scales.x, c = chart.ctx;
+      [[FC_MARKS.ok,'#16A34A'],[FC_MARKS.warn,'#C9A227'],[FC_MARKS.bad,'#EA580C']].forEach(function(pair){
+        var xp = x.getPixelForValue(pair[0]); if (isNaN(xp)) return;
+        c.save(); c.beginPath(); c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
+        c.lineWidth = 1.4; c.strokeStyle = pair[1]; c.setLineDash([5,4]); c.stroke(); c.setLineDash([]);
+        c.fillStyle = pair[1]; c.font = 'bold 9.5px Segoe UI'; c.textAlign = 'center';
+        c.fillText(pair[0]+'%', xp, chart.chartArea.top - 2); c.restore();
+      });
+    }};
+    CHARTS.sChRevKenhMix = new Chart(ctx, { type:'bar',
+      data:{ labels: data.map(function(x){ return x.key; }),
+        datasets:[{ data:data.map(function(x){ return r1(x.foodCostPct); }), borderRadius:3,
+          backgroundColor:data.map(function(x){
+            if (x.foodCostPct <= FC_MARKS.ok)   return '#16A34ACC';
+            if (x.foodCostPct <= FC_MARKS.warn) return C.gold+'CC';
+            if (x.foodCostPct <= FC_MARKS.bad)  return '#EA580CCC';
+            return '#C0342CCC';
+          }) }] }, options:o, plugins:[bandLine] });
+  } else {
+    var data = (REV_SACN.byKenh||[]).slice(0, 10); if (!data.length) return;
+    var o = cloneOpt();
+    o.plugins.legend = { display:false };
+    o.scales.y.ticks.callback = function(v){ return fmtMoney(v); };
+    o.plugins.tooltip.callbacks = { label:function(c){
+      var x = data[c.dataIndex];
+      return ['DT thuần: '+fmt(x.netRevenue)+'₫','Lãi gộp: '+fmt(x.grossProfit)+'₫','Food cost: '+fmtPct(x.foodCostPct)];
+    }};
+    CHARTS.sChRevKenhMix = new Chart(ctx, { type:'bar',
+      data:{ labels: data.map(function(x){ return x.key; }),
+        datasets:[{ data:data.map(function(x){ return x.netRevenue; }), backgroundColor:C.dark+'CC', borderRadius:3, barPercentage:.68 }] },
+      options:o });
+  }
+}
+var drawRevKenhSacn = drawRevKenhMixSacn;
+
+function drawRevGeoSacn(){
+  destroyChart('sChRevGeo');
+  var ctx = ctxOf('sChRevGeo'); if (!ctx) return;
+  var isLoai = RUI_SACN.geoMode === 'loai';
+  var data = (isLoai ? REV_SACN.byLoaiCH : REV_SACN.byVung) || [];
+  data = data.slice().sort(function(a,b){ return (b.netRevenue || 0) - (a.netRevenue || 0); });
+  if (!data.length){
+    var el = document.getElementById('sChRevGeo');
+    if (el && el.parentNode) el.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu theo '+(isLoai?'loại cửa hàng':'vùng miền')+'</div>';
+    return;
+  }
   var o = cloneOpt();
-  o.plugins.legend = { display:false };
-  o.scales.y.ticks.callback = function(v){ return fmtMoney(v); };
-  o.plugins.tooltip.callbacks = { label:function(c){
-    var x = data[c.dataIndex];
-    return ['DT thuần: '+fmt(x.netRevenue)+'₫','Lãi gộp: '+fmt(x.grossProfit)+'₫','Food cost: '+fmtPct(x.foodCostPct)];
-  }};
-  CHARTS.sChRevKenh = new Chart(ctx, { type:'bar',
-    data:{ labels: data.map(function(x){ return x.key; }),
-      datasets:[{ data:data.map(function(x){ return x.netRevenue; }), backgroundColor:C.dark+'CC', borderRadius:3, barPercentage:.68 }] },
-    options:o });
+  o.plugins.legend = { display:true, position:'top', labels:{ boxWidth:12, font:{ size:11 } } };
+  o.scales = {
+    x:{ ticks:{ font:{ size:10.5 } }, grid:{ display:false } },
+    y:{
+      position:'left', beginAtZero:true, grid:{ color:'#F0F0F0' },
+      ticks:{ font:{ size:10 }, callback:function(v){ return fmtMoney(v); } },
+      title:{ display:true, text:'Doanh thu thuần', font:{ size:10 }, color:C.brand }
+    },
+    ySL:{
+      position:'left', beginAtZero:true, grid:{ display:false },
+      ticks:{ font:{ size:10 }, callback:function(v){ return fmt(v); } },
+      title:{ display:true, text:'Sản lượng', font:{ size:10 }, color:C.gold }
+    },
+    y1:{
+      position:'right', beginAtZero:true, suggestedMax:100, grid:{ display:false },
+      ticks:{ font:{ size:10 }, callback:function(v){ return v+'%'; } },
+      title:{ display:true, text:'Food cost %', font:{ size:10 }, color:'#EA580C' }
+    }
+  };
+  o.plugins.tooltip.callbacks = {
+    label: function(c){
+      var x = data[c.dataIndex];
+      if (c.dataset.yAxisID === 'y1') return 'Food cost: ' + fmtPct(x.foodCostPct);
+      if (c.dataset.yAxisID === 'ySL') return 'Sản lượng: ' + fmt(x.qtyPHA || x.salesQty || 0) + ' suất';
+      return 'DT thuần: ' + fmt(x.netRevenue) + '₫';
+    }
+  };
+  CHARTS.sChRevGeo = new Chart(ctx, {
+    data:{
+      labels: data.map(function(x){ return x.key; }),
+      datasets:[
+        { type:'bar', label:'Doanh thu thuần', yAxisID:'y', data:data.map(function(x){ return x.netRevenue; }), backgroundColor:C.brand+'CC', borderRadius:3, barPercentage:.65, order:2 },
+        { type:'bar', label:'Sản lượng (suất)', yAxisID:'ySL', data:data.map(function(x){ return x.qtyPHA || x.salesQty || 0; }), backgroundColor:C.gold+'CC', borderRadius:3, barPercentage:.65, order:3 },
+        { type:'line', label:'Food cost %', yAxisID:'y1', data:data.map(function(x){ return r1(x.foodCostPct); }), borderColor:'#EA580C', backgroundColor:'#EA580C', borderWidth:2.2, tension:.3, pointRadius:3, pointBackgroundColor:'#EA580C', order:1 }
+      ]
+    },
+    options:o
+  });
 }
 
 function drawRevHuySacn(){
@@ -3493,6 +4618,34 @@ function bindRevenueEventsSacn(){
     tgBar.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
     drawRevSiteSacn();
   });
+
+  // Toggle card Kênh bán hàng ↔ Food cost % nhóm SP (SACN)
+  var tgMixChartSacn = document.getElementById('sTgMixChart');
+  if (tgMixChartSacn) tgMixChartSacn.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.mixChartMode = b.dataset.v;
+    tgMixChartSacn.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var isFc = RUI_SACN.mixChartMode === 'fcNhom';
+    var head = tgMixChartSacn.closest('.card') && tgMixChartSacn.closest('.card').querySelector('.card-t h3');
+    if (head) {
+      head.innerHTML = svg(isFc ? IC.line : IC.stack, 15) + (isFc ? 'Food cost % theo nhóm sản phẩm' : 'Doanh thu theo kênh bán hàng');
+    }
+    drawRevKenhMixSacn();
+  });
+
+  // Toggle card Vùng miền ↔ Loại cửa hàng (SACN)
+  var tgGeoSacn = document.getElementById('sTgGeo');
+  if (tgGeoSacn) tgGeoSacn.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.geoMode = b.dataset.v;
+    tgGeoSacn.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var isLoai = RUI_SACN.geoMode === 'loai';
+    var head = tgGeoSacn.closest('.card') && tgGeoSacn.closest('.card').querySelector('.card-t h3');
+    if (head) {
+      head.innerHTML = svg(IC.bars, 15) + (isLoai ? 'Hiệu quả theo Loại cửa hàng' : 'Hiệu quả theo Vùng miền');
+    }
+    drawRevGeoSacn();
+  });
   var tgP = document.getElementById('sTgPeriod');
   if (tgP) tgP.addEventListener('click', function(e){
     var b = e.target.closest('button'); if (!b) return;
@@ -3709,32 +4862,7 @@ function drawRevMix(){
 
 // Doanh thu theo kênh bán hàng
 function drawRevKenh(){
-  destroyChart('chRevKenh');
-  var ctx = ctxOf('chRevKenh'); if (!ctx) return;
-  var data = REV.byKenh.slice(0, 10);
-  if (!data.length) return;
-
-  var o = cloneOpt();
-  o.plugins.legend = { display:false };
-  o.scales.y.ticks.callback = function(v){ return fmtMoney(v); };
-  o.plugins.tooltip.callbacks = {
-    label:function(c){
-      var x = data[c.dataIndex];
-      return ['DT thuần: '+fmt(x.netRevenue)+'₫',
-              'Lãi gộp: '+fmt(x.grossProfit)+'₫',
-              'Food cost: '+fmtPct(x.foodCostPct)];
-    }
-  };
-
-  CHARTS.chRevKenh = new Chart(ctx, {
-    type:'bar',
-    data:{
-      labels: data.map(function(x){ return x.key; }),
-      datasets:[{ data:data.map(function(x){ return x.netRevenue; }),
-        backgroundColor:C.dark+'CC', borderRadius:3, barPercentage:.68 }]
-    },
-    options:o
-  });
+  return drawRevKenhMix();
 }
 
 // Tỷ lệ hủy theo site + đường ngưỡng 1.50% (mục 5.2)
@@ -3943,6 +5071,167 @@ function drawRevFcNhom(){
     plugins:[bandLine]
   });
 }
+
+// Gộp: Doanh thu theo kênh bán hàng ↔ Food cost % theo nhóm SP (chRevKenhMix)
+function drawRevKenhMix(){
+  destroyChart('chRevKenhMix');
+  var ctx = ctxOf('chRevKenhMix'); if (!ctx) return;
+  var isFcNhom = RUI.mixChartMode === 'fcNhom';
+
+  if (isFcNhom) {
+    var FC_MARKS = { ok:58, warn:62, bad:65 };
+    var data = (REV.byNhomSP || []).slice()
+      .filter(function(x){ return x.netRevenue > 0; })
+      .sort(function(a,b){ return b.foodCostPct - a.foodCostPct; })
+      .slice(0, 12);
+    if (!data.length) return;
+
+    var o = cloneOpt({ indexAxis:'y' });
+    o.interaction = { mode:'index', intersect:false, axis:'y' };
+    o.hover = { mode:'index', intersect:false, axis:'y' };
+    o.plugins.legend = { display:false };
+    o.scales = {
+      x:{ beginAtZero:true, grid:{color:'#F0F0F0'}, suggestedMax:70,
+          ticks:{font:{size:10}, callback:function(v){ return v+'%'; }} },
+      y:{ grid:{display:false}, ticks:{font:{size:10}} }
+    };
+    o.plugins.tooltip.callbacks = {
+      label:function(c){
+        var x = data[c.dataIndex];
+        var trangThai;
+        if (x.foodCostPct <= FC_MARKS.ok)        trangThai = '✓ An toàn (≤'+FC_MARKS.ok+'%)';
+        else if (x.foodCostPct <= FC_MARKS.warn) trangThai = '~ Cần lưu ý ('+FC_MARKS.ok+'-'+FC_MARKS.warn+'%)';
+        else if (x.foodCostPct <= FC_MARKS.bad)  trangThai = '▲ Cảnh báo ('+FC_MARKS.warn+'-'+FC_MARKS.bad+'%)';
+        else                                      trangThai = '✕ Vượt ngưỡng (>'+FC_MARKS.bad+'%)';
+        return ['Food cost: '+fmtPct(x.foodCostPct),
+                'DT thuần: '+fmt(x.netRevenue)+'₫',
+                'Lãi gộp: '+fmt(x.grossProfit)+'₫',
+                trangThai];
+      }
+    };
+    var bandLine = {
+      id:'akFcBandMix',
+      afterDatasetsDraw:function(chart){
+        if (chart.canvas.id !== 'chRevKenhMix') return;
+        var x = chart.scales.x, c = chart.ctx;
+        [[FC_MARKS.ok,'#16A34A'],[FC_MARKS.warn,'#C9A227'],[FC_MARKS.bad,'#EA580C']].forEach(function(pair){
+          var xp = x.getPixelForValue(pair[0]);
+          if (isNaN(xp)) return;
+          c.save();
+          c.beginPath();
+          c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
+          c.lineWidth = 1.4; c.strokeStyle = pair[1];
+          c.setLineDash([5,4]); c.stroke();
+          c.setLineDash([]);
+          c.fillStyle = pair[1]; c.font = 'bold 9.5px Segoe UI'; c.textAlign = 'center';
+          c.fillText(pair[0]+'%', xp, chart.chartArea.top - 2);
+          c.restore();
+        });
+      }
+    };
+    CHARTS.chRevKenhMix = new Chart(ctx, {
+      type:'bar',
+      data:{
+        labels: data.map(function(x){ return x.key; }),
+        datasets:[{
+          data:data.map(function(x){ return r1(x.foodCostPct); }),
+          borderRadius:3,
+          backgroundColor:data.map(function(x){
+            if (x.foodCostPct <= FC_MARKS.ok)   return '#16A34ACC';
+            if (x.foodCostPct <= FC_MARKS.warn) return C.gold+'CC';
+            if (x.foodCostPct <= FC_MARKS.bad)  return '#EA580CCC';
+            return '#C0342CCC';
+          })
+        }]
+      },
+      options:o,
+      plugins:[bandLine]
+    });
+  } else {
+    // Mode: Kênh bán hàng (Trục X = ten_kenh_ban_hang, không dùng mã kenh_ban_hang)
+    var data = (REV.byKenh || []).slice(0, 10);
+    if (!data.length) return;
+
+    var o = cloneOpt();
+    o.plugins.legend = { display:false };
+    o.scales.y.ticks.callback = function(v){ return fmtMoney(v); };
+    o.plugins.tooltip.callbacks = {
+      label:function(c){
+        var x = data[c.dataIndex];
+        return ['DT thuần: '+fmt(x.netRevenue)+'₫',
+                'Lãi gộp: '+fmt(x.grossProfit)+'₫',
+                'Food cost: '+fmtPct(x.foodCostPct)];
+      }
+    };
+    CHARTS.chRevKenhMix = new Chart(ctx, {
+      type:'bar',
+      data:{
+        labels: data.map(function(x){ return x.key; }),
+        datasets:[{
+          data:data.map(function(x){ return x.netRevenue; }),
+          backgroundColor:C.dark+'CC',
+          borderRadius:3,
+          barPercentage:.68
+        }]
+      },
+      options:o
+    });
+  }
+}
+
+// Chart mới: Theo Vùng miền ↔ Theo Loại cửa hàng (chRevGeo)
+function drawRevGeo(){
+  destroyChart('chRevGeo');
+  var ctx = ctxOf('chRevGeo'); if (!ctx) return;
+  var isLoai = RUI.geoMode === 'loai';
+  var data = (isLoai ? REV.byLoaiCH : REV.byVung) || [];
+  data = data.slice().sort(function(a,b){ return (b.netRevenue || 0) - (a.netRevenue || 0); });
+  if (!data.length){
+    var el = document.getElementById('chRevGeo');
+    if (el && el.parentNode) el.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu theo '+(isLoai?'loại cửa hàng':'vùng miền')+'</div>';
+    return;
+  }
+  var o = cloneOpt();
+  o.plugins.legend = { display:true, position:'top', labels:{ boxWidth:12, font:{ size:11 } } };
+  o.scales = {
+    x:{ ticks:{ font:{ size:10.5 } }, grid:{ display:false } },
+    y:{
+      position:'left', beginAtZero:true, grid:{ color:'#F0F0F0' },
+      ticks:{ font:{ size:10 }, callback:function(v){ return fmtMoney(v); } },
+      title:{ display:true, text:'Doanh thu thuần', font:{ size:10 }, color:C.brand }
+    },
+    ySL:{
+      position:'left', beginAtZero:true, grid:{ display:false },
+      ticks:{ font:{ size:10 }, callback:function(v){ return fmt(v); } },
+      title:{ display:true, text:'Sản lượng', font:{ size:10 }, color:C.gold }
+    },
+    y1:{
+      position:'right', beginAtZero:true, suggestedMax:100, grid:{ display:false },
+      ticks:{ font:{ size:10 }, callback:function(v){ return v+'%'; } },
+      title:{ display:true, text:'Food cost %', font:{ size:10 }, color:'#EA580C' }
+    }
+  };
+  o.plugins.tooltip.callbacks = {
+    label: function(c){
+      var x = data[c.dataIndex];
+      if (c.dataset.yAxisID === 'y1') return 'Food cost: ' + fmtPct(x.foodCostPct);
+      if (c.dataset.yAxisID === 'ySL') return 'Sản lượng: ' + fmt(x.qtyPHA || x.salesQty || 0) + ' suất';
+      return 'DT thuần: ' + fmt(x.netRevenue) + '₫';
+    }
+  };
+  CHARTS.chRevGeo = new Chart(ctx, {
+    data:{
+      labels: data.map(function(x){ return x.key; }),
+      datasets:[
+        { type:'bar', label:'Doanh thu thuần', yAxisID:'y', data:data.map(function(x){ return x.netRevenue; }), backgroundColor:C.brand+'CC', borderRadius:3, barPercentage:.65, order:2 },
+        { type:'bar', label:'Sản lượng (suất)', yAxisID:'ySL', data:data.map(function(x){ return x.qtyPHA || x.salesQty || 0; }), backgroundColor:C.gold+'CC', borderRadius:3, barPercentage:.65, order:3 },
+        { type:'line', label:'Food cost %', yAxisID:'y1', data:data.map(function(x){ return r1(x.foodCostPct); }), borderColor:'#EA580C', backgroundColor:'#EA580C', borderWidth:2.2, tension:.3, pointRadius:3, pointBackgroundColor:'#EA580C', order:1 }
+      ]
+    },
+    options:o
+  });
+}
+
 
 // Chart so sánh theo kỳ (ngày/tuần/tháng/quý/năm): cột DT thuần + Lãi gộp, đường Food cost %
 function drawRevPeriod(){
@@ -4180,6 +5469,34 @@ function bindRevenueEvents(){
     else document.getElementById('rDrill').innerHTML = '';
   });
 
+  // Toggle card Kênh bán hàng ↔ Food cost % nhóm SP
+  var tgMixChart = document.getElementById('rTgMixChart');
+  if (tgMixChart) tgMixChart.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI.mixChartMode = b.dataset.v;
+    tgMixChart.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var isFc = RUI.mixChartMode === 'fcNhom';
+    var head = tgMixChart.closest('.card') && tgMixChart.closest('.card').querySelector('.card-t h3');
+    if (head) {
+      head.innerHTML = svg(isFc ? IC.line : IC.stack, 15) + (isFc ? 'Food cost % theo nhóm sản phẩm' : 'Doanh thu theo kênh bán hàng');
+    }
+    drawRevKenhMix();
+  });
+
+  // Toggle card Vùng miền ↔ Loại cửa hàng
+  var tgGeo = document.getElementById('rTgGeo');
+  if (tgGeo) tgGeo.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI.geoMode = b.dataset.v;
+    tgGeo.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var isLoai = RUI.geoMode === 'loai';
+    var head = tgGeo.closest('.card') && tgGeo.closest('.card').querySelector('.card-t h3');
+    if (head) {
+      head.innerHTML = svg(IC.bars, 15) + (isLoai ? 'Hiệu quả theo Loại cửa hàng' : 'Hiệu quả theo Vùng miền');
+    }
+    drawRevGeo();
+  });
+
   // Bấm dòng bảng xếp hạng -> mở drill-down site đó
   document.querySelectorAll('#tab-revenue tr.hov[data-site]').forEach(function(tr){
     tr.addEventListener('click', function(){
@@ -4201,7 +5518,7 @@ function bindRevenueFiltersSacn(){
 
   document.getElementById('sFrom').addEventListener('change', function(){
     RF_SACN.from = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedFrom && RF_SACN.from < REV_RAW.dims.loadedFrom) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedFrom && RF_SACN.from < REV_RAW.dims.loadedFrom)) {
       loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
     } else {
       reload();
@@ -4209,7 +5526,7 @@ function bindRevenueFiltersSacn(){
   });
   document.getElementById('sTo').addEventListener('change', function(){
     RF_SACN.to = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedTo && RF_SACN.to > REV_RAW.dims.loadedTo) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedTo && RF_SACN.to > REV_RAW.dims.loadedTo)) {
       loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
     } else {
       reload();
@@ -4218,7 +5535,6 @@ function bindRevenueFiltersSacn(){
   document.getElementById('sKenh').addEventListener('change', function(){ RF_SACN.kenh = this.value; reload(); });
   document.getElementById('sNhom').addEventListener('change', function(){ RF_SACN.nhomSP = this.value; reload(); });
   document.getElementById('sNVKD').addEventListener('change', function(){ RF_SACN.nvkd = this.value; reload(); });
-  document.getElementById('sKH').addEventListener('change',   function(){ RF_SACN.khachHang = this.value; reload(); });
 
   var msBtn = document.getElementById('sMsBtn'), msPop = document.getElementById('sMsPop');
   msBtn.addEventListener('click', function(e){ e.stopPropagation(); msPop.classList.toggle('open'); });
@@ -4239,8 +5555,95 @@ function bindRevenueFiltersSacn(){
     updateRevSacnMsLabel(); reload();
   });
 
+  // Vùng miền multi-select SACN
+  var sVungBtn = document.getElementById('sVungBtn'), sVungPop = document.getElementById('sVungPop');
+  if (sVungBtn && sVungPop) {
+    sVungBtn.addEventListener('click', function(e){ e.stopPropagation(); sVungPop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      var wrap = document.getElementById('sVungWrap');
+      if (wrap && !wrap.contains(e.target)) sVungPop.classList.remove('open');
+    });
+    sVungPop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (RF_SACN.vungMien.indexOf(v) < 0) RF_SACN.vungMien.push(v); }
+      else RF_SACN.vungMien = RF_SACN.vungMien.filter(function(s){ return s !== v; });
+      updateRevSacnVungLabel(); reload();
+    });
+    var sVungAll = document.getElementById('sVungAll');
+    if (sVungAll) {
+      sVungAll.addEventListener('click', function(){
+        var cbs = sVungPop.querySelectorAll('input[type=checkbox]');
+        var allVals = [];
+        cbs.forEach(function(c){ allVals.push(c.value); });
+        var all = RF_SACN.vungMien.length === 0;
+        RF_SACN.vungMien = all ? allVals.slice() : [];
+        cbs.forEach(function(c){ c.checked = !!all; });
+        updateRevSacnVungLabel(); reload();
+      });
+    }
+  }
+
+  // Loại cửa hàng multi-select SACN
+  var sLoaiBtn = document.getElementById('sLoaiBtn'), sLoaiPop = document.getElementById('sLoaiPop');
+  if (sLoaiBtn && sLoaiPop) {
+    sLoaiBtn.addEventListener('click', function(e){ e.stopPropagation(); sLoaiPop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      var wrap = document.getElementById('sLoaiWrap');
+      if (wrap && !wrap.contains(e.target)) sLoaiPop.classList.remove('open');
+    });
+    sLoaiPop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (RF_SACN.loaiCuaHang.indexOf(v) < 0) RF_SACN.loaiCuaHang.push(v); }
+      else RF_SACN.loaiCuaHang = RF_SACN.loaiCuaHang.filter(function(s){ return s !== v; });
+      updateRevSacnLoaiLabel(); reload();
+    });
+    var sLoaiAll = document.getElementById('sLoaiAll');
+    if (sLoaiAll) {
+      sLoaiAll.addEventListener('click', function(){
+        var cbs = sLoaiPop.querySelectorAll('input[type=checkbox]');
+        var allVals = [];
+        cbs.forEach(function(c){ allVals.push(c.value); });
+        var all = RF_SACN.loaiCuaHang.length === 0;
+        RF_SACN.loaiCuaHang = all ? allVals.slice() : [];
+        cbs.forEach(function(c){ c.checked = !!all; });
+        updateRevSacnLoaiLabel(); reload();
+      });
+    }
+  }
+
+  // Khách hàng multi-select SACN
+  var sKhBtn = document.getElementById('sKhBtn'), sKhPop = document.getElementById('sKhPop');
+  if (sKhBtn && sKhPop) {
+    sKhBtn.addEventListener('click', function(e){ e.stopPropagation(); sKhPop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      var wrap = document.getElementById('sKhWrap');
+      if (wrap && !wrap.contains(e.target)) sKhPop.classList.remove('open');
+    });
+    sKhPop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (RF_SACN.khachHang.indexOf(v) < 0) RF_SACN.khachHang.push(v); }
+      else RF_SACN.khachHang = RF_SACN.khachHang.filter(function(s){ return s !== v; });
+      updateRevSacnKhLabel(); reload();
+    });
+    var sKhAll = document.getElementById('sKhAll');
+    if (sKhAll) {
+      sKhAll.addEventListener('click', function(){
+        var cbs = sKhPop.querySelectorAll('input[type=checkbox]');
+        var allVals = [];
+        cbs.forEach(function(c){ allVals.push(c.value); });
+        var all = RF_SACN.khachHang.length === 0;
+        RF_SACN.khachHang = all ? allVals.slice() : [];
+        cbs.forEach(function(c){ c.checked = !!all; });
+        updateRevSacnKhLabel(); reload();
+      });
+    }
+  }
+
   document.getElementById('sBtnReset').addEventListener('click', function(){
-    RF_SACN = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
+    RF_SACN = { from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
     RUI_SACN.drillSite = ''; buildRevSacnFilters(); computeAndDrawRevenueSacn();
   });
   document.getElementById('sBtnRefresh').addEventListener('click', function(){ refreshAllTabs(true); });
@@ -4252,7 +5655,7 @@ function bindRevenueFilters(){
 
   document.getElementById('rFrom').addEventListener('change', function(){
     RF.from = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedFrom && RF.from < REV_RAW.dims.loadedFrom) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedFrom && RF.from < REV_RAW.dims.loadedFrom)) {
       loadRevenue({ force: true, from: RF.from, to: RF.to });
     } else {
       reload();
@@ -4260,7 +5663,7 @@ function bindRevenueFilters(){
   });
   document.getElementById('rTo').addEventListener('change', function(){
     RF.to = this.value;
-    if (REV_RAW && REV_RAW.dims && REV_RAW.dims.loadedTo && RF.to > REV_RAW.dims.loadedTo) {
+    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedTo && RF.to > REV_RAW.dims.loadedTo)) {
       loadRevenue({ force: true, from: RF.from, to: RF.to });
     } else {
       reload();
@@ -4269,7 +5672,6 @@ function bindRevenueFilters(){
   document.getElementById('rKenh').addEventListener('change', function(){ RF.kenh = this.value; reload(); });
   document.getElementById('rNhom').addEventListener('change', function(){ RF.nhomSP = this.value; reload(); });
   document.getElementById('rNVKD').addEventListener('change', function(){ RF.nvkd = this.value; reload(); });
-  document.getElementById('rKH').addEventListener('change',   function(){ RF.khachHang = this.value; reload(); });
 
   var msBtn = document.getElementById('rMsBtn'), msPop = document.getElementById('rMsPop');
   msBtn.addEventListener('click', function(e){ e.stopPropagation(); msPop.classList.toggle('open'); });
@@ -4290,15 +5692,96 @@ function bindRevenueFilters(){
     updateRevMsLabel(); reload();
   });
 
-  // document.getElementById('rBtnReset').addEventListener('click', function(){
-  //   RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
-  //   RUI.drillSite = ''; REV_INIT = false; REV = null;
-  //   //loadRevenue();
-  //   computeAndDrawRevenue();
-  // });
+  // Vùng miền multi-select ALL
+  var rVungBtn = document.getElementById('rVungBtn'), rVungPop = document.getElementById('rVungPop');
+  if (rVungBtn && rVungPop) {
+    rVungBtn.addEventListener('click', function(e){ e.stopPropagation(); rVungPop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      var wrap = document.getElementById('rVungWrap');
+      if (wrap && !wrap.contains(e.target)) rVungPop.classList.remove('open');
+    });
+    rVungPop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (RF.vungMien.indexOf(v) < 0) RF.vungMien.push(v); }
+      else RF.vungMien = RF.vungMien.filter(function(s){ return s !== v; });
+      updateRevVungLabel(); reload();
+    });
+    var rVungAll = document.getElementById('rVungAll');
+    if (rVungAll) {
+      rVungAll.addEventListener('click', function(){
+        var cbs = rVungPop.querySelectorAll('input[type=checkbox]');
+        var allVals = [];
+        cbs.forEach(function(c){ allVals.push(c.value); });
+        var all = RF.vungMien.length === 0;
+        RF.vungMien = all ? allVals.slice() : [];
+        cbs.forEach(function(c){ c.checked = !!all; });
+        updateRevVungLabel(); reload();
+      });
+    }
+  }
+
+  // Loại cửa hàng multi-select ALL
+  var rLoaiBtn = document.getElementById('rLoaiBtn'), rLoaiPop = document.getElementById('rLoaiPop');
+  if (rLoaiBtn && rLoaiPop) {
+    rLoaiBtn.addEventListener('click', function(e){ e.stopPropagation(); rLoaiPop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      var wrap = document.getElementById('rLoaiWrap');
+      if (wrap && !wrap.contains(e.target)) rLoaiPop.classList.remove('open');
+    });
+    rLoaiPop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (RF.loaiCuaHang.indexOf(v) < 0) RF.loaiCuaHang.push(v); }
+      else RF.loaiCuaHang = RF.loaiCuaHang.filter(function(s){ return s !== v; });
+      updateRevLoaiLabel(); reload();
+    });
+    var rLoaiAll = document.getElementById('rLoaiAll');
+    if (rLoaiAll) {
+      rLoaiAll.addEventListener('click', function(){
+        var cbs = rLoaiPop.querySelectorAll('input[type=checkbox]');
+        var allVals = [];
+        cbs.forEach(function(c){ allVals.push(c.value); });
+        var all = RF.loaiCuaHang.length === 0;
+        RF.loaiCuaHang = all ? allVals.slice() : [];
+        cbs.forEach(function(c){ c.checked = !!all; });
+        updateRevLoaiLabel(); reload();
+      });
+    }
+  }
+
+  // Khách hàng multi-select ALL
+  var rKhBtn = document.getElementById('rKhBtn'), rKhPop = document.getElementById('rKhPop');
+  if (rKhBtn && rKhPop) {
+    rKhBtn.addEventListener('click', function(e){ e.stopPropagation(); rKhPop.classList.toggle('open'); });
+    document.addEventListener('click', function(e){
+      var wrap = document.getElementById('rKhWrap');
+      if (wrap && !wrap.contains(e.target)) rKhPop.classList.remove('open');
+    });
+    rKhPop.addEventListener('change', function(e){
+      if (e.target.type !== 'checkbox') return;
+      var v = e.target.value;
+      if (e.target.checked){ if (RF.khachHang.indexOf(v) < 0) RF.khachHang.push(v); }
+      else RF.khachHang = RF.khachHang.filter(function(s){ return s !== v; });
+      updateRevKhLabel(); reload();
+    });
+    var rKhAll = document.getElementById('rKhAll');
+    if (rKhAll) {
+      rKhAll.addEventListener('click', function(){
+        var cbs = rKhPop.querySelectorAll('input[type=checkbox]');
+        var allVals = [];
+        cbs.forEach(function(c){ allVals.push(c.value); });
+        var all = RF.khachHang.length === 0;
+        RF.khachHang = all ? allVals.slice() : [];
+        cbs.forEach(function(c){ c.checked = !!all; });
+        updateRevKhLabel(); reload();
+      });
+    }
+  }
+
   document.getElementById('rBtnReset').addEventListener('click', function(){
   // 1) Xóa điều kiện lọc
-  RF = { from:'', to:'', sites:[], kenh:'', nhomSP:'', nvkd:'', khachHang:'' };
+  RF = { from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
   RUI.drillSite = '';
 
   // 2) Đảm bảo còn dims để build lại filter (KHÔNG xóa REV_RAW / REV_INIT)
@@ -4319,6 +5802,2058 @@ function bindRevenueFilters(){
     refreshAllTabs(true);
   });
 }
+
+/* =========================================================================
+   TAB MỚI: DOANH THU ƯỚC TÍNH (GIAO BAN TUẦN / THÁNG)
+   So sánh Doanh thu ƯỚC TÍNH (transactions_est) với KẾ HOẠCH (kehoach_pl_thang),
+   phân tích Food Cost, AM1 (Lãi gộp), AM2 (Sau CP nhân sự) theo site,
+   và cung cấp insight site kéo / đẩy chỉ số toàn hệ thống.
+   ========================================================================= */
+
+var REV_EST_RAW = null;
+var REV_EST = null;
+var REV_EST_LOADING = false;
+var REV_EST_INIT = false;
+var REV_EST_RENDERED = false;
+var RF_EST = {
+  gran: 'month', // 'week' | 'month' | 'quarter' | 'year'
+  periods: [], // array of selected period keys e.g. ['2026-09'], empty means all
+  sites: [],
+  vungMien: [],
+  loaiCuaHang: [],
+  kenh: '',
+  nhomSP: '',
+  comboSort: 'dt', // 'dt' | 'fc' | 'am1' | 'am2'
+  shareMode: 'both', // 'both' | 'am1' | 'am2'
+  trendView: 'am2' // 'am1' | 'am2' - default to am2
+};
+
+function renderRevenueEst(opts){
+  opts = opts || {};
+  var box = document.getElementById('tab-revenue-est');
+  if (!REV_EST_RAW){
+    if (box) box.innerHTML = akSkeletonHTML('Doanh thu ước tính');
+    akShowLoading('Đang tải dữ liệu Doanh thu ước tính...', 'Đang xử lý giao dịch ước tính và kế hoạch P&L...');
+    loadRevenueEst(opts);
+    return;
+  }
+  // Animation mượt mà khi người dùng mở tab
+  if (!REV_EST_RENDERED) {
+    if (box) box.innerHTML = akSkeletonHTML('Doanh thu ước tính');
+    akShowLoading('Đang chuẩn bị dữ liệu Doanh thu ước tính...', 'Đang tính toán chỉ số AM1, AM2 và tỷ lệ đạt KH...');
+    setTimeout(function(){
+      akHideLoading();
+      if (!REV_EST_INIT){
+        buildRevEstFilters();
+        bindRevEstFilters();
+        REV_EST_INIT = true;
+      }
+      REV_EST_RENDERED = true;
+      computeAndDrawRevenueEst();
+    }, 280);
+    return;
+  }
+  if (!REV_EST_INIT){
+    buildRevEstFilters();
+    bindRevEstFilters();
+    REV_EST_INIT = true;
+  }
+  computeAndDrawRevenueEst();
+}
+
+function loadRevenueEst(opts){
+  opts = opts || {};
+  if (REV_EST_LOADING) return;
+  REV_EST_LOADING = true;
+
+  var box = document.getElementById('tab-revenue-est');
+  if (box && !REV_EST_RAW) {
+    box.innerHTML = akSkeletonHTML('Doanh thu ước tính');
+  }
+  if (!opts.silent) {
+    akShowLoading('Đang tải dữ liệu Doanh thu ước tính...', 'Đang xử lý giao dịch ước tính và kế hoạch P&L...');
+  }
+
+  callAPI('getRevenueEstData')
+    .then(function(res){
+      REV_EST_LOADING = false;
+      akHideLoading();
+      if (res && res.updatedAt) {
+        document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
+        setLive(true, liveLabel(res.updatedAt));
+      }
+      if (!res || !res.ok){
+        if (box) box.innerHTML = '<div class="card"><div class="empty">'+
+          esc((res && res.message) || 'Không đọc được dữ liệu doanh thu ước tính')+'</div></div>';
+        return;
+      }
+      REV_EST_RAW = res;
+      if (res && res.keHoach && !KH) {
+        KH = res.keHoach;
+      }
+      REV_EST = { dims: res.dims, updatedAt: res.updatedAt };
+      if (!REV_EST_INIT){
+        buildRevEstFilters();
+        bindRevEstFilters();
+        REV_EST_INIT = true;
+      }
+      REV_EST_RENDERED = true;
+      if (TAB === 'revenue-est'){
+        computeAndDrawRevenueEst();
+      }
+    })
+    .catch(function(err){
+      REV_EST_LOADING = false;
+      akHideLoading();
+      if (box && !REV_EST_RAW){
+        box.innerHTML = '<div class="card"><div class="empty">Lỗi tải dữ liệu doanh thu ước tính: '+
+          esc(String(err && err.message ? err.message : err))+'</div></div>';
+      }
+    });
+}
+
+function est_getWeekInfo(dateStr) {
+  var d = new Date(dateStr + 'T00:00:00');
+  var day = d.getDay();
+  var diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  var monday = new Date(d.setDate(diff));
+  var sunday = new Date(monday);
+  sunday.setDate(monday.getDate() + 6);
+  var mStr = ('0' + monday.getDate()).slice(-2) + '/' + ('0' + (monday.getMonth() + 1)).slice(-2);
+  var sStr = ('0' + sunday.getDate()).slice(-2) + '/' + ('0' + (sunday.getMonth() + 1)).slice(-2);
+  var startOfYear = new Date(monday.getFullYear(), 0, 1);
+  var weekNum = Math.ceil((((monday - startOfYear) / 86400000) + startOfYear.getDay() + 1) / 7);
+  var y = monday.getFullYear();
+  var m = ('0' + (monday.getMonth() + 1)).slice(-2);
+  return {
+    key: y + '-W' + ('0' + weekNum).slice(-2),
+    label: 'Tuần ' + weekNum + ' (' + mStr + ' - ' + sStr + ')',
+    month: y + '-' + m,
+    year: String(y)
+  };
+}
+
+function est_getQuarterInfo(dateStr) {
+  var y = dateStr.substring(0, 4);
+  var m = parseInt(dateStr.substring(5, 7), 10);
+  var q = Math.ceil(m / 3);
+  return {
+    key: y + '-Q' + q,
+    label: 'Quý ' + q + '/' + y,
+    year: y,
+    quarter: q
+  };
+}
+
+var EST_EXCLUDED_SITES = [
+  'A.Kitchen - Miền Nam',
+  'MN Bếp Ăn Đại Học Hùng Vương',
+  'MB A.Kitchen - Hub An Khánh'
+];
+
+function est_isExcludedSite(siteName) {
+  if (!siteName) return false;
+  var sClean = String(siteName).trim().toLowerCase();
+  for (var i = 0; i < EST_EXCLUDED_SITES.length; i++) {
+    var exClean = EST_EXCLUDED_SITES[i].trim().toLowerCase();
+    if (sClean === exClean || sClean.indexOf(exClean) >= 0 || exClean.indexOf(sClean) >= 0) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function updateEstPeriodDropdown(isDefaultInit) {
+  var pList = document.getElementById('estPeriodList');
+  var pLbl = document.getElementById('estPeriodLabel');
+  if (!REV_EST_RAW) return;
+
+  var allRows = REV_EST_RAW.rows || [];
+  var gran = RF_EST.gran || 'month';
+  var periodMap = {};
+
+  if (gran === 'week') {
+    if (pLbl) pLbl.textContent = 'Chọn tuần';
+    allRows.forEach(function(r) {
+      if (!r.ngay) return;
+      var w = est_getWeekInfo(r.ngay);
+      if (!periodMap[w.key]) periodMap[w.key] = w.label;
+    });
+  } else if (gran === 'quarter') {
+    if (pLbl) pLbl.textContent = 'Chọn quý';
+    allRows.forEach(function(r) {
+      if (!r.ngay) return;
+      var q = est_getQuarterInfo(r.ngay);
+      if (!periodMap[q.key]) periodMap[q.key] = q.label;
+    });
+  } else if (gran === 'year') {
+    if (pLbl) pLbl.textContent = 'Chọn năm';
+    allRows.forEach(function(r) {
+      if (!r.ngay) return;
+      var y = r.ngay.substring(0, 4);
+      if (!periodMap[y]) periodMap[y] = 'Năm ' + y;
+    });
+  } else {
+    // month
+    if (pLbl) pLbl.textContent = 'Chọn tháng';
+    allRows.forEach(function(r) {
+      var k = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
+      if (!k) return;
+      if (!periodMap[k]) periodMap[k] = 'Tháng ' + k.substring(5, 7) + '/' + k.substring(0, 4);
+    });
+  }
+
+  var sortedKeys = Object.keys(periodMap).sort().reverse();
+
+  // Mặc định chọn Tháng gần nhất nếu chưa chọn hoặc khi khởi tạo/đặt lại
+  if (isDefaultInit || !Array.isArray(RF_EST.periods) || RF_EST.periods.length === 0) {
+    RF_EST.periods = sortedKeys.length > 0 ? [sortedKeys[0]] : [];
+  } else {
+    RF_EST.periods = RF_EST.periods.filter(function(k){ return sortedKeys.indexOf(k) >= 0; });
+  }
+
+  if (pList) {
+    pList.innerHTML = sortedKeys.map(function(k) {
+      var checked = RF_EST.periods.indexOf(k) >= 0 ? ' checked' : '';
+      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '> ' + esc(periodMap[k]) + '</label>';
+    }).join('');
+  }
+
+  updateEstPeriodLabel(periodMap);
+}
+
+function updateEstPeriodLabel(periodMap) {
+  var el = document.getElementById('estPeriodBtnText');
+  if (!el) return;
+  var gran = RF_EST.gran || 'month';
+  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
+  var allLabel = gran === 'week' ? 'Tất cả các tuần' : (gran === 'quarter' ? 'Tất cả các quý' : (gran === 'year' ? 'Tất cả các năm' : 'Tất cả các tháng'));
+
+  var n = RF_EST.periods ? RF_EST.periods.length : 0;
+  if (n === 0) {
+    el.textContent = allLabel;
+  } else if (n === 1) {
+    var k = RF_EST.periods[0];
+    if (periodMap && periodMap[k]) {
+      el.textContent = periodMap[k];
+    } else {
+      var cb = document.querySelector('#estPeriodList input[value="' + k + '"]');
+      el.textContent = cb && cb.parentElement ? cb.parentElement.textContent.trim() : k;
+    }
+  } else {
+    el.textContent = n + ' ' + granWord + ' đã chọn';
+  }
+}
+
+function buildRevEstFilters(isReset){
+  var dims = (REV_EST_RAW && REV_EST_RAW.dims) || {};
+  var isFirstInit = !REV_EST_INIT || isReset;
+
+  // Multi-select Sites: Mặc định chọn tất cả site TRỪ 3 site bị loại
+  var sites = dims.sites || [];
+  if (isFirstInit) {
+    RF_EST.sites = sites.filter(function(s) {
+      return !est_isExcludedSite(s);
+    });
+  }
+
+  // Cập nhật dropdown chọn kỳ (mặc định tháng gần nhất khi isFirstInit)
+  updateEstPeriodDropdown(isFirstInit);
+
+  var msList = document.getElementById('estMsList');
+  if (msList){
+    msList.innerHTML = sites.map(function(s){
+      var checked = RF_EST.sites.indexOf(s) >= 0 ? ' checked' : '';
+      return '<label><input type="checkbox" value="'+esc(s)+'"'+checked+'> '+esc(s)+'</label>';
+    }).join('');
+    updateEstMsLabel();
+  }
+
+  // Multi-select Vùng miền
+  var vungMien = dims.vungMien || [];
+  var vungList = document.getElementById('estVungList');
+  if (vungList){
+    vungList.innerHTML = vungMien.map(function(v){
+      var checked = RF_EST.vungMien.indexOf(v) >= 0 ? ' checked' : '';
+      return '<label><input type="checkbox" value="'+esc(v)+'"'+checked+'> '+esc(v)+'</label>';
+    }).join('');
+    updateEstVungLabel();
+  }
+
+  // Multi-select Loại cửa hàng
+  var loaiCuaHang = dims.loaiCuaHang || [];
+  var loaiList = document.getElementById('estLoaiList');
+  if (loaiList){
+    loaiList.innerHTML = loaiCuaHang.map(function(l){
+      var checked = RF_EST.loaiCuaHang.indexOf(l) >= 0 ? ' checked' : '';
+      return '<label><input type="checkbox" value="'+esc(l)+'"'+checked+'> '+esc(l)+'</label>';
+    }).join('');
+    updateEstLoaiLabel();
+  }
+
+  // Kênh dropdown
+  var kenhSel = document.getElementById('estKenh');
+  if (kenhSel){
+    var kh = dims.kenh || [];
+    kenhSel.innerHTML = '<option value="">Tất cả kênh bán hàng</option>' +
+      kh.map(function(k){ return '<option value="'+esc(k)+'"'+(RF_EST.kenh===k?' selected':'')+'>'+esc(k)+'</option>'; }).join('');
+  }
+
+  // Nhóm SP dropdown
+  var nhomSel = document.getElementById('estNhom');
+  if (nhomSel){
+    var nh = dims.nhomSP || [];
+    nhomSel.innerHTML = '<option value="">Tất cả nhóm sản phẩm</option>' +
+      nh.map(function(n){ return '<option value="'+esc(n)+'"'+(RF_EST.nhomSP===n?' selected':'')+'>'+esc(n)+'</option>'; }).join('');
+  }
+}
+
+function updateEstMsLabel(){
+  var n = RF_EST.sites.length;
+  var el = document.getElementById('estMsLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả site' : (n === 1 ? RF_EST.sites[0] : n + ' site đã chọn');
+}
+function updateEstVungLabel(){
+  var n = RF_EST.vungMien.length;
+  var el = document.getElementById('estVungLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF_EST.vungMien[0] : n + ' vùng đã chọn');
+}
+function updateEstLoaiLabel(){
+  var n = RF_EST.loaiCuaHang.length;
+  var el = document.getElementById('estLoaiLabel');
+  if (el) el.textContent = n === 0 ? 'Tất cả loại CH' : (n === 1 ? RF_EST.loaiCuaHang[0] : n + ' loại CH đã chọn');
+}
+
+function bindRevEstFilters(){
+  // Toggle kỳ Tuần / Tháng / Quý / Năm
+  var granBox = document.getElementById('estGran');
+  if (granBox){
+    granBox.addEventListener('click', function(e){
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
+      RF_EST.gran = btn.dataset.v || 'month';
+      RF_EST.periods = [];
+      updateEstPeriodDropdown();
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Multi-select Thời gian theo kỳ (Tuần / Tháng / Quý / Năm)
+  var pBtn = document.getElementById('estPeriodBtn');
+  var pPop = document.getElementById('estPeriodPop');
+  var pAll = document.getElementById('estPeriodAll');
+  var pList = document.getElementById('estPeriodList');
+  if (pBtn && pPop){
+    pBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      pPop.classList.toggle('open');
+      var mp = document.getElementById('estMsPop'); if (mp) mp.classList.remove('open');
+      var vp = document.getElementById('estVungPop'); if (vp) vp.classList.remove('open');
+      var lp = document.getElementById('estLoaiPop'); if (lp) lp.classList.remove('open');
+    });
+  }
+  if (pAll && pList){
+    pAll.addEventListener('click', function(e){
+      e.stopPropagation();
+      var cbs = pList.querySelectorAll('input[type="checkbox"]');
+      var allChecked = RF_EST.periods.length === cbs.length;
+      RF_EST.periods = [];
+      cbs.forEach(function(cb){
+        cb.checked = !allChecked;
+        if (!allChecked) RF_EST.periods.push(cb.value);
+      });
+      updateEstPeriodLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+  if (pList){
+    pList.addEventListener('change', function(){
+      var cbs = pList.querySelectorAll('input[type="checkbox"]:checked');
+      RF_EST.periods = Array.from(cbs).map(function(cb){ return cb.value; });
+      updateEstPeriodLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Site multi-select popup
+  var msBtn = document.getElementById('estMsBtn');
+  var msPop = document.getElementById('estMsPop');
+  var msAll = document.getElementById('estMsAll');
+  var msList = document.getElementById('estMsList');
+  if (msBtn && msPop){
+    msBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      msPop.classList.toggle('open');
+      if (pPop) pPop.classList.remove('open');
+      var vp = document.getElementById('estVungPop'); if (vp) vp.classList.remove('open');
+      var lp = document.getElementById('estLoaiPop'); if (lp) lp.classList.remove('open');
+    });
+  }
+  if (msAll && msList){
+    msAll.addEventListener('click', function(e){
+      e.stopPropagation();
+      var cbs = msList.querySelectorAll('input[type="checkbox"]');
+      var allChecked = RF_EST.sites.length === cbs.length;
+      RF_EST.sites = [];
+      cbs.forEach(function(cb){
+        cb.checked = !allChecked;
+        if (!allChecked) RF_EST.sites.push(cb.value);
+      });
+      updateEstMsLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+  if (msList){
+    msList.addEventListener('change', function(){
+      var cbs = msList.querySelectorAll('input[type="checkbox"]:checked');
+      RF_EST.sites = Array.from(cbs).map(function(cb){ return cb.value; });
+      updateEstMsLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Vùng miền multi-select popup
+  var vungBtn = document.getElementById('estVungBtn');
+  var vungPop = document.getElementById('estVungPop');
+  var vungAll = document.getElementById('estVungAll');
+  var vungList = document.getElementById('estVungList');
+  if (vungBtn && vungPop){
+    vungBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      vungPop.classList.toggle('open');
+      if (pPop) pPop.classList.remove('open');
+      if (msPop) msPop.classList.remove('open');
+      var lp = document.getElementById('estLoaiPop'); if (lp) lp.classList.remove('open');
+    });
+  }
+  if (vungAll && vungList){
+    vungAll.addEventListener('click', function(e){
+      e.stopPropagation();
+      var cbs = vungList.querySelectorAll('input[type="checkbox"]');
+      var allChecked = RF_EST.vungMien.length === cbs.length;
+      RF_EST.vungMien = [];
+      cbs.forEach(function(cb){
+        cb.checked = !allChecked;
+        if (!allChecked) RF_EST.vungMien.push(cb.value);
+      });
+      updateEstVungLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+  if (vungList){
+    vungList.addEventListener('change', function(){
+      var cbs = vungList.querySelectorAll('input[type="checkbox"]:checked');
+      RF_EST.vungMien = Array.from(cbs).map(function(cb){ return cb.value; });
+      updateEstVungLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Loại cửa hàng multi-select popup
+  var loaiBtn = document.getElementById('estLoaiBtn');
+  var loaiPop = document.getElementById('estLoaiPop');
+  var loaiAll = document.getElementById('estLoaiAll');
+  var loaiList = document.getElementById('estLoaiList');
+  if (loaiBtn && loaiPop){
+    loaiBtn.addEventListener('click', function(e){
+      e.stopPropagation();
+      loaiPop.classList.toggle('open');
+      if (pPop) pPop.classList.remove('open');
+      if (msPop) msPop.classList.remove('open');
+      if (vungPop) vungPop.classList.remove('open');
+    });
+  }
+  if (loaiAll && loaiList){
+    loaiAll.addEventListener('click', function(e){
+      e.stopPropagation();
+      var cbs = loaiList.querySelectorAll('input[type="checkbox"]');
+      var allChecked = RF_EST.loaiCuaHang.length === cbs.length;
+      RF_EST.loaiCuaHang = [];
+      cbs.forEach(function(cb){
+        cb.checked = !allChecked;
+        if (!allChecked) RF_EST.loaiCuaHang.push(cb.value);
+      });
+      updateEstLoaiLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+  if (loaiList){
+    loaiList.addEventListener('change', function(){
+      var cbs = loaiList.querySelectorAll('input[type="checkbox"]:checked');
+      RF_EST.loaiCuaHang = Array.from(cbs).map(function(cb){ return cb.value; });
+      updateEstLoaiLabel();
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Kênh & Nhóm dropdown
+  var kenhSel = document.getElementById('estKenh');
+  if (kenhSel){
+    kenhSel.addEventListener('change', function(){
+      RF_EST.kenh = this.value;
+      computeAndDrawRevenueEst();
+    });
+  }
+  var nhomSel = document.getElementById('estNhom');
+  if (nhomSel){
+    nhomSel.addEventListener('change', function(){
+      RF_EST.nhomSP = this.value;
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Đóng popups khi click ngoài
+  document.addEventListener('click', function(e){
+    if (pPop && !pPop.contains(e.target) && (!pBtn || !pBtn.contains(e.target))) pPop.classList.remove('open');
+    if (msPop && !msPop.contains(e.target) && (!msBtn || !msBtn.contains(e.target))) msPop.classList.remove('open');
+    if (vungPop && !vungPop.contains(e.target) && (!vungBtn || !vungBtn.contains(e.target))) vungPop.classList.remove('open');
+    if (loaiPop && !loaiPop.contains(e.target) && (!loaiBtn || !loaiBtn.contains(e.target))) loaiPop.classList.remove('open');
+  });
+
+  // Nút Đặt lại
+  var resetBtn = document.getElementById('estBtnReset');
+  if (resetBtn){
+    resetBtn.addEventListener('click', function(){
+      RF_EST = {
+        gran: 'month',
+        periods: [],
+        sites: [],
+        vungMien: [],
+        loaiCuaHang: [],
+        kenh: '',
+        nhomSP: '',
+        comboSort: 'dt',
+        shareMode: 'both',
+        trendView: 'am2'
+      };
+      if (granBox){
+        granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.dataset.v === 'month'); });
+      }
+      buildRevEstFilters(true);
+      computeAndDrawRevenueEst();
+      toast('Đã đặt lại bộ lọc');
+    });
+  }
+
+  // Nút Tải lại
+  var refBtn = document.getElementById('estBtnRefresh');
+  if (refBtn){
+    refBtn.addEventListener('click', function(){
+      refreshAllTabs(true);
+    });
+  }
+
+  // Nút tải bảng CSV
+  var xlsxBtn = document.getElementById('estBtnXlsx');
+  if (xlsxBtn){
+    xlsxBtn.addEventListener('click', function(){
+      est_exportCsv();
+    });
+  }
+}
+
+function est_matchPlanSite(txSite, planSites) {
+  if (!txSite || !planSites || !planSites.length) return txSite || '';
+  if (planSites.indexOf(txSite) >= 0) return txSite;
+  var clean = function(s){
+    return String(s || '').toLowerCase()
+      .replace(/k\d+\s*-\s*/g, '')
+      .replace(/[^a-z0-9àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđ\s]/gi, ' ')
+      .replace(/\s+/g, ' ').trim();
+  };
+  var cTx = clean(txSite);
+  for (var i = 0; i < planSites.length; i++) {
+    var ps = planSites[i];
+    var cPs = clean(ps);
+    if (cTx === cPs || cTx.indexOf(cPs) >= 0 || cPs.indexOf(cTx) >= 0) return ps;
+    if (cTx.indexOf('thuận an') >= 0 && cPs.indexOf('thuận an') >= 0) return ps;
+    if (cTx.indexOf('đa phúc') >= 0 && cPs.indexOf('đa phúc') >= 0) return ps;
+    if (cTx.indexOf('quảng trực') >= 0 && cPs.indexOf('quảng trực') >= 0) return ps;
+    if (cTx.indexOf('hòa bình') >= 0 && cPs.indexOf('hòa bình') >= 0) return ps;
+    if (cTx.indexOf('an khánh') >= 0 && cPs.indexOf('an khánh') >= 0) return ps;
+    if (cTx.indexOf('julie') >= 0 && cPs.indexOf('julie') >= 0) return ps;
+    if (cTx.indexOf('hùng vương') >= 0 && cPs.indexOf('hùng vương') >= 0) return ps;
+  }
+  return txSite;
+}
+
+function computeAndDrawRevenueEst(){
+  var box = document.getElementById('tab-revenue-est');
+  if (!box || !REV_EST_RAW) return;
+
+  var allRows = REV_EST_RAW.rows || [];
+  var plans = REV_EST_RAW.planBySiteKy || [];
+  var personnel = REV_EST_RAW.personnelBySiteKy || [];
+  var nguong = REV_EST_RAW.nguong || { foodCostMax: 62, foodCostMin: 30, am2Min: 12, planPctMin: 95 };
+
+  // 1. Lọc dữ liệu theo bộ lọc hiện tại
+  var rows = allRows.filter(function(r){
+    if (RF_EST.periods && RF_EST.periods.length > 0){
+      var pKey = '';
+      if (RF_EST.gran === 'week'){
+        var w = est_getWeekInfo(r.ngay);
+        pKey = w.key;
+      } else if (RF_EST.gran === 'quarter'){
+        var q = est_getQuarterInfo(r.ngay);
+        pKey = q.key;
+      } else if (RF_EST.gran === 'year'){
+        pKey = r.ngay ? r.ngay.substring(0, 4) : '';
+      } else {
+        // month
+        pKey = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
+      }
+      if (RF_EST.periods.indexOf(pKey) < 0) return false;
+    }
+    if (RF_EST.sites.length && RF_EST.sites.indexOf(r.site) < 0) return false;
+    if (RF_EST.vungMien.length && RF_EST.vungMien.indexOf(r.vungMien || '(Chưa phân loại)') < 0) return false;
+    if (RF_EST.loaiCuaHang.length && RF_EST.loaiCuaHang.indexOf(r.loaiCuaHang || '(Chưa phân loại)') < 0) return false;
+    if (RF_EST.kenh && (r.tenKenhBanHang !== RF_EST.kenh && r.kenhBanHang !== RF_EST.kenh)) return false;
+    if (RF_EST.nhomSP && r.nhomSP !== RF_EST.nhomSP) return false;
+    return true;
+  });
+
+  if (!rows.length){
+    box.innerHTML = '<div class="card"><div class="empty">Không có giao dịch ước tính nào phù hợp với bộ lọc hiện tại.</div></div>';
+    return;
+  }
+
+  // 2. Lập bản đồ Kế hoạch & Nhân sự từ kehoach_pl_thang (đồng bộ chuẩn 100% với tab So sánh kế hoạch)
+  var khData = (REV_EST_RAW && REV_EST_RAW.keHoach) || KH;
+  var siteTongKey = (khData && khData.siteTong) ? khData.siteTong : (window.KEHOACH_SITE_TONG || 'Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)');
+  var khPeriods = (khData && khData.periods && khData.periods.length) ? khData.periods : [];
+  var planSites = Array.from(new Set(plans.map(function(p){ return p.site; })));
+  var khSites = (khData && khData.sites) ? khData.sites : planSites;
+
+  var planMap = {};
+  plans.forEach(function(p){ planMap[p.site + '|' + p.ky] = p; });
+  var nsMap = {};
+  personnel.forEach(function(p){ nsMap[p.site + '|' + p.ky] = p.amount; });
+
+  // Bản đồ tuần -> tháng từ transactions
+  var weekToMonthMap = {};
+  allRows.forEach(function(r){
+    if (r.ngay) {
+      var wInfo = est_getWeekInfo(r.ngay);
+      if (!weekToMonthMap[wInfo.key]) weekToMonthMap[wInfo.key] = wInfo.month;
+    }
+  });
+
+  // Xác định bộ lọc thời gian & trọng số tháng
+  var isAllTime = !RF_EST.periods || RF_EST.periods.length === 0;
+  var gran = RF_EST.gran || 'month';
+  var monthWeights = {};
+
+  if (!isAllTime) {
+    if (gran === 'week') {
+      // Vì kế hoạch theo tháng -> khi chọn tuần phải lấy số liệu trong tháng chia đều cho 4 tuần
+      RF_EST.periods.forEach(function(wKey){
+        var mKey = weekToMonthMap[wKey];
+        if (!mKey) {
+          var parts = wKey.split('-W');
+          if (parts.length === 2) {
+            var yr = parseInt(parts[0], 10);
+            var wk = parseInt(parts[1], 10);
+            var approx = new Date(yr, 0, 1 + (wk - 1) * 7 + 3);
+            mKey = yr + '-' + ('0' + (approx.getMonth() + 1)).slice(-2);
+          }
+        }
+        if (mKey) {
+          monthWeights[mKey] = (monthWeights[mKey] || 0) + 0.25;
+        }
+      });
+    } else if (gran === 'quarter') {
+      RF_EST.periods.forEach(function(qKey){
+        var parts = qKey.split('-Q');
+        if (parts.length === 2) {
+          var yr = parts[0];
+          var qNum = parseInt(parts[1], 10);
+          var mStart = (qNum - 1) * 3 + 1;
+          for (var i = 0; i < 3; i++) {
+            var mo = yr + '-' + ('0' + (mStart + i)).slice(-2);
+            monthWeights[mo] = 1;
+          }
+        }
+      });
+    } else if (gran === 'year') {
+      RF_EST.periods.forEach(function(yKey){
+        for (var m = 1; m <= 12; m++) {
+          var mo = yKey + '-' + ('0' + m).slice(-2);
+          monthWeights[mo] = 1;
+        }
+      });
+    } else {
+      // month
+      RF_EST.periods.forEach(function(mKey){
+        monthWeights[mKey] = 1;
+      });
+    }
+  }
+
+  // Helper tính kế hoạch cho 1 site (hoặc siteTongKey) theo kỳ đang chọn
+  function getPlanForSite(targetSite) {
+    var dt = 0, fc = 0, lg = 0;
+    if (isAllTime) {
+      if (khPeriods.length > 0) {
+        khPeriods.forEach(function(per){
+          var p = per.bySite ? per.bySite[targetSite] : null;
+          if (p) {
+            dt += (p.DoanhThu ? p.DoanhThu.plan : 0);
+            fc += (p.FoodCost ? p.FoodCost.planVal : 0);
+            lg += (p.LaiGop ? p.LaiGop.plan : 0);
+          }
+        });
+      } else {
+        plans.forEach(function(p){
+          if (p.site === targetSite) {
+            dt += (p.doanhThu || 0);
+            fc += (p.foodCost || 0);
+            lg += (p.laiGop || 0);
+          }
+        });
+      }
+    } else {
+      Object.keys(monthWeights).forEach(function(mKey){
+        var weight = monthWeights[mKey];
+        var found = false;
+        if (khPeriods.length > 0) {
+          var per = khPeriods.find(function(x){ return x.key === mKey; });
+          if (per && per.bySite && per.bySite[targetSite]) {
+            var p = per.bySite[targetSite];
+            dt += (p.DoanhThu ? p.DoanhThu.plan : 0) * weight;
+            fc += (p.FoodCost ? p.FoodCost.planVal : 0) * weight;
+            lg += (p.LaiGop ? p.LaiGop.plan : 0) * weight;
+            found = true;
+          }
+        }
+        if (!found) {
+          var p2 = planMap[targetSite + '|' + mKey];
+          if (p2) {
+            dt += (p2.doanhThu || 0) * weight;
+            fc += (p2.foodCost || 0) * weight;
+            lg += (p2.laiGop || 0) * weight;
+          }
+        }
+      });
+    }
+    return { dt: dt, fc: fc, lg: lg };
+  }
+
+  // 3. Gom dữ liệu theo Site từ transactions thực tế
+  var siteMap = {};
+  rows.forEach(function(r){
+    var s = r.site;
+    if (!siteMap[s]){
+      siteMap[s] = {
+        site: s,
+        maSite: r.maSite,
+        vungMien: r.vungMien,
+        loaiCuaHang: r.loaiCuaHang,
+        dt: 0,
+        fc: 0,
+        months: {},
+        weeks: {}
+      };
+    }
+    siteMap[s].dt += r.netRevenue;
+    siteMap[s].fc += r.foodCost;
+    siteMap[s].months[r.ky] = (siteMap[s].months[r.ky] || 0) + r.netRevenue;
+    if (RF_EST.gran === 'week'){
+      var wInfo = est_getWeekInfo(r.ngay);
+      siteMap[s].weeks[wInfo.key] = (siteMap[s].weeks[wInfo.key] || 0) + r.netRevenue;
+    }
+  });
+
+  var siteList = Object.values(siteMap);
+  var totDT = 0, totFC = 0, totAM1 = 0, totNS = 0;
+
+  // Tính số liệu thực tế & kế hoạch chi tiết từng site
+  siteList.forEach(function(s){
+    s.am1 = s.dt - s.fc;
+    s.fc_pct = s.dt > 0 ? (s.fc / s.dt * 100) : 0;
+    totDT += s.dt;
+    totFC += s.fc;
+    totAM1 += s.am1;
+
+    var ps = est_matchPlanSite(s.site, khSites);
+    var pSite = getPlanForSite(ps);
+    s.planDT = pSite.dt;
+    s.planFC = pSite.fc;
+    s.planLG = pSite.lg;
+    s.hasPlan = (pSite.dt > 0);
+
+    // Tính chi phí nhân sự
+    var nsVal = 0;
+    var hasNS = false;
+    if (isAllTime) {
+      if (khPeriods.length > 0) {
+        khPeriods.forEach(function(per){
+          var v = nsMap[ps + '|' + per.key];
+          if (v !== undefined && v > 0) { nsVal += v; hasNS = true; }
+        });
+      } else {
+        personnel.forEach(function(pn){
+          if (pn.site === ps && pn.amount > 0) { nsVal += pn.amount; hasNS = true; }
+        });
+      }
+    } else {
+      Object.keys(monthWeights).forEach(function(mKey){
+        var weight = monthWeights[mKey];
+        var v = nsMap[ps + '|' + mKey];
+        if (v !== undefined && v > 0) { nsVal += v * weight; hasNS = true; }
+      });
+    }
+
+    s.ns = nsVal;
+    s.hasNS = hasNS;
+    s.am2 = s.am1 - (hasNS ? nsVal : 0);
+    s.bienAM2 = s.dt > 0 ? (s.am2 / s.dt * 100) : 0;
+    s.pctKH = (s.hasPlan && s.planDT > 0) ? (s.dt / s.planDT * 100) : null;
+    if (hasNS) totNS += nsVal;
+  });
+
+  // Tính số liệu KẾ HOẠCH TỔNG cho KPI Cards & Table Footer
+  // Nếu chọn "Toàn thời gian" và không lọc site: so sánh với TỔNG KẾ HOẠCH (siteTongKey) giống hệt tab "So sánh kế hoạch"
+  var isAllSites = (!RF_EST.sites || RF_EST.sites.length === 0);
+  var totPlanDT = 0, totPlanFC = 0, totPlanLG = 0;
+
+  if (isAllSites) {
+    var topP = getPlanForSite(siteTongKey);
+    totPlanDT = topP.dt;
+    totPlanFC = topP.fc;
+    totPlanLG = topP.lg;
+  } else {
+    RF_EST.sites.forEach(function(sName){
+      var ps = est_matchPlanSite(sName, khSites);
+      var p = getPlanForSite(ps);
+      totPlanDT += p.dt;
+      totPlanFC += p.fc;
+      totPlanLG += p.lg;
+    });
+  }
+
+  var totAM2 = totAM1 - totNS;
+  var totPlanAM1 = totPlanLG > 0 ? totPlanLG : (totPlanDT - totPlanFC);
+  var totPlanAM2 = totPlanAM1 - totNS;
+  var totFC_pct = totDT > 0 ? (totFC / totDT * 100) : 0;
+  var totAM1_pct = totDT > 0 ? (totAM1 / totDT * 100) : 0;
+  var totAM2_pct = totDT > 0 ? (totAM2 / totDT * 100) : 0;
+  var totPctKH = totPlanDT > 0 ? (totDT / totPlanDT * 100) : null;
+
+  // Đánh giá Tag cho từng site
+  siteList.forEach(function(s){
+    var isBad = s.fc_pct > (nguong.foodCostMax || 62) ||
+                (s.hasPlan && s.pctKH !== null && s.pctKH < (nguong.planPctMin || 95)) ||
+                (s.hasNS && s.bienAM2 < (nguong.am2Min || 12));
+    var isWarn = s.fc_pct >= 55 || (s.hasPlan && s.pctKH !== null && s.pctKH < 100);
+    if (isBad) {
+      s.tag = '<span class="tag tag-bad">Cần xử lý</span>';
+      s.rawTag = 'Cần xử lý';
+    } else if (isWarn) {
+      s.tag = '<span class="tag tag-warn">Theo dõi</span>';
+      s.rawTag = 'Theo dõi';
+    } else {
+      s.tag = '<span class="tag tag-ok">Ổn định</span>';
+      s.rawTag = 'Ổn định';
+    }
+  });
+
+  // Lưu siteList vào REV_EST để CSV export dùng lại
+  if (REV_EST) REV_EST.lastSiteList = siteList;
+
+  // 4. Insights tự động
+  var sortedByFC = siteList.slice().filter(function(s){ return s.dt > 0; }).sort(function(a,b){ return b.fc_pct - a.fc_pct; });
+  var maxFC = sortedByFC[0] || { site: '—', fc_pct: 0 };
+
+  var sortedByAM2 = siteList.slice().filter(function(s){ return s.dt > 0; }).sort(function(a,b){ return a.bienAM2 - b.bienAM2; });
+  var minAM2 = sortedByAM2[0] || { site: '—', bienAM2: 0 };
+
+  var sortedByAM1 = siteList.slice().sort(function(a,b){ return b.am1 - a.am1; });
+  var maxAM1 = sortedByAM1[0] || { site: '—', am1: 0 };
+
+  var sitesWithPlan = siteList.slice().filter(function(s){ return s.hasPlan && s.planDT > 0; });
+  var worstPlan = sitesWithPlan.sort(function(a,b){ return (a.pctKH || 0) - (b.pctKH || 0); })[0];
+
+  // 5. Render HTML
+  var html = '<div class="fade" style="display:flex;flex-direction:column;gap:14px;">';
+
+  // Khối 1: KPI với thanh bar tiến độ % đạt kế hoạch (giống tab So sánh kế hoạch)
+  html += '<div class="grid g6">';
+
+  // KPI 1: Doanh thu ước tính
+  var achDT = totPctKH;
+  var achDTClamped = achDT === null ? 0 : Math.max(0, Math.min(100, achDT));
+  var barColorDT = achDT === null ? '#D9D9D9' : (achDT >= 100 ? '#16A34A' : (achDT >= 95 ? (C.gold || '#C9A227') : '#C0342C'));
+  var bgDT = achDT === null ? '#F3F4F6' : (achDT >= 100 ? '#E7F6EC' : (achDT >= 95 ? '#FEF6E0' : '#FDECEC'));
+  var fgDT = achDT === null ? '#6B7280' : (achDT >= 100 ? '#15803D' : (achDT >= 95 ? '#A16207' : '#C0342C'));
+  html += '<div class="kpi" style="border-left-color:var(--brand);">' +
+    '<div class="kpi-top">' +
+      '<div>' +
+        '<div class="kpi-lb">Doanh thu ước tính</div>' +
+        '<div class="kpi-v" style="color:var(--brand)">' + fmtMoney(totDT) + '</div>' +
+        '<div class="kpi-sub">KH: ' + (totPlanDT > 0 ? fmtMoney(totPlanDT) : 'Chưa có KH') + '</div>' +
+      '</div>' +
+      '<div class="kpi-ic" style="background:var(--brand-soft);color:var(--brand);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>' +
+    '</div>' +
+    '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + achDTClamped + '%;background:' + barColorDT + '"></div></div>' +
+    '<div class="thr" style="margin-top:6px;background:' + bgDT + ';color:' + fgDT + '">' +
+      (achDT === null ? 'Chưa đủ dữ liệu kế hoạch' : ((achDT >= 100 ? '✓ Đạt ' : '▲ Đạt ') + fmtPct(achDT) + '% kế hoạch')) +
+    '</div>' +
+  '</div>';
+
+  // KPI 2: Doanh thu Kế hoạch
+  var achPlanClamped = totPlanDT > 0 ? Math.max(0, Math.min(100, (totDT / totPlanDT) * 100)) : 0;
+  html += '<div class="kpi" style="border-left-color:#2563EB;">' +
+    '<div class="kpi-top">' +
+      '<div>' +
+        '<div class="kpi-lb">Doanh thu Kế hoạch</div>' +
+        '<div class="kpi-v" style="color:#1D4ED8">' + (totPlanDT > 0 ? fmtMoney(totPlanDT) : '—') + '</div>' +
+        '<div class="kpi-sub">Thực tế: ' + fmtMoney(totDT) + '</div>' +
+      '</div>' +
+      '<div class="kpi-ic" style="background:#EFF6FF;color:#2563EB;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg></div>' +
+    '</div>' +
+    '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + achPlanClamped + '%;background:#2563EB"></div></div>' +
+    '<div class="thr" style="margin-top:6px;background:#EFF6FF;color:#1D4ED8">' +
+      (totPlanDT > 0 ? (totDT >= totPlanDT ? '✓ Hoàn thành chỉ tiêu doanh thu' : 'Chênh lệch: ' + fmtMoney(totPlanDT - totDT)) : 'Chưa có kế hoạch P&L') +
+    '</div>' +
+  '</div>';
+
+  // KPI 3: % Đạt KH
+  var achPctClamped = totPctKH === null ? 0 : Math.max(0, Math.min(100, totPctKH));
+  var barColorPct = totPctKH === null ? '#D9D9D9' : (totPctKH >= 100 ? '#16A34A' : (totPctKH >= 95 ? (C.gold || '#C9A227') : '#C0342C'));
+  var bgPct = totPctKH === null ? '#F3F4F6' : (totPctKH >= 100 ? '#E7F6EC' : (totPctKH >= 95 ? '#FEF6E0' : '#FDECEC'));
+  var fgPct = totPctKH === null ? '#6B7280' : (totPctKH >= 100 ? '#15803D' : (totPctKH >= 95 ? '#A16207' : '#C0342C'));
+  html += '<div class="kpi" style="border-left-color:' + (totPctKH !== null ? barColorPct : '#666') + ';">' +
+    '<div class="kpi-top">' +
+      '<div>' +
+        '<div class="kpi-lb">% Đạt Kế hoạch</div>' +
+        '<div class="kpi-v" style="color:' + barColorPct + '">' + (totPctKH !== null ? fmtPct(totPctKH) + '%' : '—') + '</div>' +
+        '<div class="kpi-sub">Mục tiêu tối thiểu: ≥ 95%</div>' +
+      '</div>' +
+      '<div class="kpi-ic" style="background:#FEF3C7;color:#D97706;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg></div>' +
+    '</div>' +
+    '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + achPctClamped + '%;background:' + barColorPct + '"></div></div>' +
+    '<div class="thr" style="margin-top:6px;background:' + bgPct + ';color:' + fgPct + '">' +
+      (totPctKH !== null ? (totPctKH >= 100 ? '✓ Đạt & Vượt chỉ tiêu (≥100%)' : (totPctKH >= 95 ? '▲ Vùng cảnh báo (95-99%)' : '⚠ Cần thúc đẩy doanh thu (<95%)')) : 'Chưa có KH cho khoảng lọc') +
+    '</div>' +
+  '</div>';
+
+  // KPI 4: Food cost %
+  var fcColor = totFC_pct > (nguong.foodCostMax || 62) ? '#C0342C' : (totFC_pct >= 55 ? (C.gold || '#C9A227') : '#16A34A');
+  var fcClamped = Math.max(0, Math.min(100, Math.round(totFC_pct)));
+  var bgFC = totFC_pct > 62 ? '#FDECEC' : (totFC_pct >= 55 ? '#FEF6E0' : '#E7F6EC');
+  var fgFC = totFC_pct > 62 ? '#C0342C' : (totFC_pct >= 55 ? '#A16207' : '#15803D');
+  html += '<div class="kpi" style="border-left-color:' + fcColor + ';">' +
+    '<div class="kpi-top">' +
+      '<div>' +
+        '<div class="kpi-lb">Food cost % (Toàn hệ thống)</div>' +
+        '<div class="kpi-v" style="color:' + fcColor + '">' + fmtPct(totFC_pct) + '%</div>' +
+        '<div class="kpi-sub">Giá vốn: ' + fmtMoney(totFC) + (totPlanFC > 0 ? ' (KH: ' + fmtMoney(totPlanFC) + ')' : '') + '</div>' +
+      '</div>' +
+      '<div class="kpi-ic" style="background:#FEE2E2;color:#DC2626;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></div>' +
+    '</div>' +
+    '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + fcClamped + '%;background:' + fcColor + '"></div></div>' +
+    '<div class="thr" style="margin-top:6px;background:' + bgFC + ';color:' + fgFC + '">' +
+      (totFC_pct > 62 ? '⚠ Vượt trần kiểm soát 62%' : (totFC_pct >= 55 ? '▲ Cần theo dõi (55-62%)' : '✓ Trong vùng tối ưu (<55%)')) +
+    '</div>' +
+  '</div>';
+
+  // KPI 5: AM1 (Lãi gộp)
+  var achAM1 = totPlanAM1 > 0 ? (totAM1 / totPlanAM1 * 100) : totAM1_pct;
+  var achAM1Clamped = Math.max(0, Math.min(100, Math.round(achAM1 || 0)));
+  html += '<div class="kpi" style="border-left-color:#16A34A;">' +
+    '<div class="kpi-top">' +
+      '<div>' +
+        '<div class="kpi-lb">AM1 (Lãi gộp hàng hóa)</div>' +
+        '<div class="kpi-v" style="color:#16A34A">' + fmtMoney(totAM1) + '</div>' +
+        '<div class="kpi-sub">Biên AM1: ' + fmtPct(totAM1_pct) + '% (DT − Giá vốn)</div>' +
+      '</div>' +
+      '<div class="kpi-ic" style="background:#DCFCE7;color:#16A34A;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>' +
+    '</div>' +
+    '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + achAM1Clamped + '%;background:#16A34A"></div></div>' +
+    '<div class="thr" style="margin-top:6px;background:#E7F6EC;color:#15803D">' +
+      (totPlanAM1 > 0 ? ((totAM1 >= totPlanAM1 ? '✓ ' : '▲ ') + 'Đạt ' + fmtPct(totAM1 / totPlanAM1 * 100) + '% KH AM1') : ('✓ Lãi gộp đóng góp: ' + fmtMoney(totAM1))) +
+    '</div>' +
+  '</div>';
+
+  // KPI 6: AM2 (Lãi sau CP NS)
+  var am2Color = totAM2 >= 0 ? '#16A34A' : '#C0342C';
+  var achAM2 = totPlanAM2 > 0 ? (totAM2 / totPlanAM2 * 100) : Math.max(0, Math.min(100, totAM2_pct * 2));
+  var achAM2Clamped = Math.max(0, Math.min(100, Math.round(achAM2 || 0)));
+  html += '<div class="kpi" style="border-left-color:#7C3AED;">' +
+    '<div class="kpi-top">' +
+      '<div>' +
+        '<div class="kpi-lb">AM2 (Lãi sau CP Nhân sự)</div>' +
+        '<div class="kpi-v" style="color:' + am2Color + '">' + fmtMoney(totAM2) + '</div>' +
+        '<div class="kpi-sub">Biên AM2: ' + fmtPct(totAM2_pct) + '% | CP NS: ' + fmtMoney(totNS) + '</div>' +
+      '</div>' +
+      '<div class="kpi-ic" style="background:#F3E8FF;color:#7C3AED;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87"/><path d="M16 3.13a4 4 0 010 7.75"/></svg></div>' +
+    '</div>' +
+    '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + achAM2Clamped + '%;background:' + (totAM2 >= 0 ? '#7C3AED' : '#C0342C') + '"></div></div>' +
+    '<div class="thr" style="margin-top:6px;background:' + (totAM2 >= 0 ? '#F3E8FF' : '#FDECEC') + ';color:' + (totAM2 >= 0 ? '#6B21A8' : '#C0342C') + '">' +
+      (totPlanAM2 > 0 ? ((totAM2 >= totPlanAM2 ? '✓ ' : '▲ ') + 'Đạt ' + fmtPct(totAM2 / totPlanAM2 * 100) + '% KH AM2') : (totAM2 >= 0 ? '✓ Lãi thuần: ' + fmtMoney(totAM2) : '⚠ Thâm hụt: ' + fmtMoney(totAM2))) +
+    '</div>' +
+  '</div>';
+
+  html += '</div>'; // Hết Khối 1
+
+  // Khối Bổ Sung: Chú giải công thức nghiệp vụ bắt buộc
+  html += '<div class="card" style="padding:12px 18px;background:#FAF8F5;border-left:4px solid var(--gold);box-shadow:0 1px 3px rgba(0,0,0,0.04);">' +
+    '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;">' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:50%;background:rgba(201,162,39,0.18);color:var(--brand);font-weight:800;font-size:12px;">ℹ</span>' +
+        '<span style="font-weight:700;font-size:12.5px;color:var(--brand);text-transform:uppercase;letter-spacing:0.3px;">Công thức nghiệp vụ & Chú giải chỉ số:</span>' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:10px 18px;font-size:12.5px;color:#333;">' +
+        '<div style="background:#FFF;padding:4px 10px;border-radius:6px;border:1px solid #EAE2D8;"><strong style="color:var(--brand);">AM1 (Lãi gộp)</strong> = Doanh thu thuần − Giá vốn hàng hóa</div>' +
+        '<div style="background:#FFF;padding:4px 10px;border-radius:6px;border:1px solid #EAE2D8;"><strong style="color:#7C3AED;">AM2</strong> = AM1 − Chi phí nhân sự</div>' +
+        '<div style="background:#FFF;padding:4px 10px;border-radius:6px;border:1px solid #EAE2D8;"><strong style="color:#2563EB;">% đạt KH</strong> = Thực tế / Kế hoạch × 100</div>' +
+        '<div style="background:#FFF;padding:4px 10px;border-radius:6px;border:1px solid #EAE2D8;"><strong style="color:#DC2626;">Food cost %</strong> = Giá vốn / Doanh thu thuần × 100</div>' +
+      '</div>' +
+    '</div>' +
+  '</div>';
+
+  // Khối 2: Waterfall "Cơ cấu lãi (DT → FC → NS → AM2)" + Gom "Xu hướng AM1 / AM2" có nút chuyển đổi
+  var granLabelText = RF_EST.gran === 'week' ? 'Tuần' : (RF_EST.gran === 'quarter' ? 'Quý' : (RF_EST.gran === 'year' ? 'Năm' : 'Tháng'));
+  var trendView = RF_EST.trendView || 'am1';
+
+  html += '<div class="grid g2">';
+
+  // Vị trí 1: Chart WATERFALL Cơ cấu lãi (DT → FC → NS → AM2) (5 cột)
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 16l4-4 4 4 6-6"/></svg> Cơ cấu lãi (DT → FC → NS → AM2)</h3>' +
+        '<span style="font-size:11px;color:#888;">Thác nước biến động: Doanh thu → Giá vốn → Lãi gộp AM1 → Nhân sự → Lãi AM2</span>' +
+      '</div>' +
+      '<div style="text-align:right;">' +
+        '<div style="font-size:10.5px;color:#888;">Lãi thuần AM2</div>' +
+        '<div style="font-size:13.5px;font-weight:800;color:' + (totAM2 >= 0 ? '#16A34A' : '#DC2626') + ';" id="wfAM2Val">' + fmtMoney(totAM2) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox" style="height:280px"><canvas id="chEstWaterfall"></canvas></div>' +
+  '</div>';
+
+  // Vị trí 2: Gom 2 chart Xu hướng AM1 và AM2 & Biên AM2 % có nút chuyển đổi qua lại
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3 id="estTrendTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg> ' + (trendView === 'am2' ? 'Xu hướng AM2 & Biên AM2 %' : 'Xu hướng AM1 (Lãi gộp hàng hóa)') + '</h3>' +
+        '<span style="font-size:11px;color:#888;" id="estTrendSub">' + (trendView === 'am2' ? 'AM2 (trục trái VNĐ) | Biên AM2 % (trục phải %)' : 'Theo ' + granLabelText) + '</span>' +
+      '</div>' +
+      '<div class="tg" id="estTrendView">' +
+        '<button data-view="am1" class="' + (trendView === 'am1' ? 'on' : '') + '">Xu hướng AM1</button>' +
+        '<button data-view="am2" class="' + (trendView === 'am2' ? 'on' : '') + '">AM2 & Biên AM2 %</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox" style="height:280px"><canvas id="chEstTrendCombined"></canvas></div>' +
+  '</div>';
+
+  html += '</div>'; // Hết Khối 2
+
+  // Khối 3: Combo Chart theo Site (2 Cột Doanh thu & Food Cost + 2 Line Biên AM1 & AM2 %)
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg> Phân tích Doanh thu, Food Cost & Biên AM1, AM2 theo Site</h3>' +
+        '<span style="font-size:11px;color:#888;">2 Cột: Doanh thu & Food Cost (trục trái VNĐ) | Line liền: Biên AM1 % | Line nét đứt: Biên AM2 % (trục phải %) — Rê chuột để xem giá trị chi tiết</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:11px;color:#888;">Sắp xếp theo:</span>' +
+        '<div class="tg" id="estComboSort">' +
+          '<button data-sort="dt" class="' + (RF_EST.comboSort==='dt'?'on':'') + '">Doanh thu</button>' +
+          '<button data-sort="fc" class="' + (RF_EST.comboSort==='fc'?'on':'') + '">Food Cost</button>' +
+          '<button data-sort="am1" class="' + (RF_EST.comboSort==='am1'?'on':'') + '">AM1</button>' +
+          '<button data-sort="am2" class="' + (RF_EST.comboSort==='am2'?'on':'') + '">AM2</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox tall"><canvas id="chEstComboSite"></canvas></div>' +
+  '</div>'; // Hết Khối 3
+
+  // Khối 4: Tỷ trọng đóng góp AM1 & AM2 và Tương quan Doanh thu vs Nhân sự
+  var shareMode = RF_EST.shareMode || 'both';
+  html += '<div class="grid g2">';
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 118 2.83M22 12A10 10 0 0012 2v10z"/></svg> Tỷ trọng đóng góp AM1 & AM2 từng Site</h3>' +
+        '<span style="font-size:11px;color:#888;">Tương quan chuyển dịch từ Lãi gộp (AM1) sang Lãi sau nhân sự (AM2)</span>' +
+      '</div>' +
+      '<div class="tg" id="estShareMode">' +
+        '<button data-mode="both" class="' + (shareMode === 'both' ? 'on' : '') + '">AM1 & AM2</button>' +
+        '<button data-mode="am1" class="' + (shareMode === 'am1' ? 'on' : '') + '">Chỉ AM1</button>' +
+        '<button data-mode="am2" class="' + (shareMode === 'am2' ? 'on' : '') + '">Chỉ AM2</button>' +
+      '</div>' +
+    '</div>';
+
+  if (shareMode === 'both') {
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px;">' +
+      '<div style="background:#FAFBFB;padding:8px;border-radius:6px;border:1px solid #EAEAEA;">' +
+        '<div style="text-align:center;font-size:11px;font-weight:700;color:#15803D;margin-bottom:4px;text-transform:uppercase;">AM1 (Lãi gộp): ' + fmtMoney(totAM1) + '</div>' +
+        '<div class="cbox" style="height:230px;"><canvas id="chEstAM1Share"></canvas></div>' +
+      '</div>' +
+      '<div style="background:#FAFBFB;padding:8px;border-radius:6px;border:1px solid #EAEAEA;">' +
+        '<div style="text-align:center;font-size:11px;font-weight:700;color:#7C3AED;margin-bottom:4px;text-transform:uppercase;">AM2 (Lãi sau NS): ' + fmtMoney(totAM2) + '</div>' +
+        '<div class="cbox" style="height:230px;"><canvas id="chEstAM2Share"></canvas></div>' +
+      '</div>' +
+    '</div>';
+  } else if (shareMode === 'am2') {
+    html += '<div style="margin-top:6px;">' +
+      '<div style="text-align:center;font-size:11.5px;font-weight:700;color:#7C3AED;margin-bottom:6px;text-transform:uppercase;">Tổng AM2 (Lãi sau CP Nhân sự): ' + fmtMoney(totAM2) + '</div>' +
+      '<div class="cbox" style="height:250px;"><canvas id="chEstAM2Share"></canvas></div>' +
+    '</div>';
+  } else {
+    html += '<div style="margin-top:6px;">' +
+      '<div style="text-align:center;font-size:11.5px;font-weight:700;color:#15803D;margin-bottom:6px;text-transform:uppercase;">Tổng AM1 (Lãi gộp hàng hóa): ' + fmtMoney(totAM1) + '</div>' +
+      '<div class="cbox" style="height:250px;"><canvas id="chEstAM1Share"></canvas></div>' +
+    '</div>';
+  }
+
+  html += '<div id="estAM1ShareLegend" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;max-height:160px;overflow-y:auto;padding-top:8px;border-top:1px dashed #E5E7EB;"></div>' +
+  '</div>';
+
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 16v1a2 2 0 01-2 2H3a2 2 0 01-2-2V7a2 2 0 012-2h11a2 2 0 012 2v1"/><path d="M18 8h4a2 2 0 012 2v7a2 2 0 01-2 2h-4"/></svg> Tương quan % Doanh thu vs % CP Nhân sự</h3>' +
+      '<span style="font-size:11px;color:#888;">Nhận diện site quy mô nhỏ nhưng chi phí NS lớn</span>' +
+    '</div>' +
+    '<div class="cbox" style="height:280px"><canvas id="chEstDtVsNs"></canvas></div>' +
+  '</div>';
+  html += '</div>'; // Hết Khối 4
+
+  // Khối 5: Insight Cards tự động
+  html += '<div class="grid g4">';
+  // Card 1: Site Food Cost cao nhất
+  html += '<div class="card" style="border-top:3px solid #DC2626;">' +
+    '<div style="font-size:11px;font-weight:700;color:#DC2626;text-transform:uppercase;margin-bottom:6px;">Site Food Cost % Cao Nhất</div>' +
+    '<div style="font-size:16px;font-weight:800;color:#222;margin-bottom:4px;">' + esc(maxFC.site) + '</div>' +
+    '<div style="font-size:20px;font-weight:800;color:#DC2626;">' + fmtPct(maxFC.fc_pct) + '%</div>' +
+    '<div style="font-size:11.5px;color:#777;margin-top:6px;line-height:1.4;">' +
+      (maxFC.fc_pct > 62 ? '⚠ Đang vượt trần định mức 62%. Cần rà soát giá nhập và kiểm soát hao hụt tại bếp.' : '✓ Nằm trong vùng kiểm soát.') +
+    '</div>' +
+  '</div>';
+
+  // Card 2: Site Biên AM2 thấp nhất
+  html += '<div class="card" style="border-top:3px solid #D97706;">' +
+    '<div style="font-size:11px;font-weight:700;color:#D97706;text-transform:uppercase;margin-bottom:6px;">Site Biên AM2 Thấp Nhất</div>' +
+    '<div style="font-size:16px;font-weight:800;color:#222;margin-bottom:4px;">' + esc(minAM2.site) + '</div>' +
+    '<div style="font-size:20px;font-weight:800;color:#D97706;">' + fmtPct(minAM2.bienAM2) + '%</div>' +
+    '<div style="font-size:11.5px;color:#777;margin-top:6px;line-height:1.4;">' +
+      (minAM2.hasNS ? 'Chi phí nhân sự KH ' + fmtMoney(minAM2.ns) + ' tạo áp lực lớn lên lãi thuần.' : 'Chưa có kế hoạch nhân sự riêng.') +
+    '</div>' +
+  '</div>';
+
+  // Card 3: Trụ cột đóng góp AM1 lớn nhất
+  var maxAM1Pct = totAM1 > 0 ? (maxAM1.am1 / totAM1 * 100) : 0;
+  html += '<div class="card" style="border-top:3px solid #16A34A;">' +
+    '<div style="font-size:11px;font-weight:700;color:#16A34A;text-transform:uppercase;margin-bottom:6px;">Trụ Cột Đóng Góp AM1 Lớn Nhất</div>' +
+    '<div style="font-size:16px;font-weight:800;color:#222;margin-bottom:4px;">' + esc(maxAM1.site) + '</div>' +
+    '<div style="font-size:20px;font-weight:800;color:#16A34A;">' + fmtMoney(maxAM1.am1) + ' <span style="font-size:13px;color:#666;">(' + fmtPct(maxAM1Pct) + '%)</span></div>' +
+    '<div style="font-size:11.5px;color:#777;margin-top:6px;line-height:1.4;">Đóng góp lớn nhất vào nguồn lợi nhuận gộp toàn bộ chuỗi A.Kitchen.</div>' +
+  '</div>';
+
+  // Card 4: Tiến độ kế hoạch DT
+  html += '<div class="card" style="border-top:3px solid #2563EB;">' +
+    '<div style="font-size:11px;font-weight:700;color:#2563EB;text-transform:uppercase;margin-bottom:6px;">Tiến Độ Kế Hoạch Doanh Thu</div>' +
+    (worstPlan ? (
+      '<div style="font-size:16px;font-weight:800;color:#222;margin-bottom:4px;">' + esc(worstPlan.site) + '</div>' +
+      '<div style="font-size:20px;font-weight:800;color:' + (worstPlan.pctKH < 95 ? '#DC2626' : '#2563EB') + ';">' +
+        fmtPct(worstPlan.pctKH) + '% <span style="font-size:12px;color:#666;">KH</span>' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:#777;margin-top:6px;line-height:1.4;">' +
+        (worstPlan.dt < worstPlan.planDT ? 'Hụt ' + fmtMoney(worstPlan.planDT - worstPlan.dt) + ' so với kế hoạch kỳ này.' : 'Đã hoàn thành kế hoạch doanh thu.') +
+      '</div>'
+    ) : (
+      '<div style="font-size:14px;color:#666;margin-top:10px;">Toàn hệ thống hoàn thành tốt kế hoạch</div>'
+    )) +
+  '</div>';
+  html += '</div>'; // Hết Khối 5
+
+  // Khối 6: Bảng chi tiết Site
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg> Bảng Chi Tiết Doanh Thu, Kế Hoạch & Lợi Nhuận Theo Site</h3>' +
+      '<span style="font-size:11px;color:#888;">Giao ban tuần/tháng: bấm tiêu đề cột để xem đối soát</span>' +
+    '</div>' +
+    '<div class="tw">' +
+      '<table>' +
+        '<thead>' +
+          '<tr>' +
+            '<th>Site / Điểm bán</th>' +
+            '<th class="num">DT Ước tính</th>' +
+            '<th class="num">DT Kế hoạch</th>' +
+            '<th class="ctr">% Đạt KH</th>' +
+            '<th class="num">Giá vốn (FC)</th>' +
+            '<th class="num">FC %</th>' +
+            '<th class="num">AM1 (Lãi gộp)</th>' +
+            '<th class="num">CP Nhân sự</th>' +
+            '<th class="num">AM2 (Sau NS)</th>' +
+            '<th class="num">Biên AM2</th>' +
+            '<th class="ctr">Trạng thái</th>' +
+          '</tr>' +
+        '</thead>' +
+        '<tbody>' +
+          siteList.sort(function(a,b){ return b.dt - a.dt; }).map(function(s){
+            var fcCls = s.fc_pct > 62 ? 'fc-hi' : (s.fc_pct >= 55 ? 'fc-mid' : 'fc-ok');
+            return '<tr class="hov">' +
+              '<td>' +
+                '<div style="font-weight:700;color:#222;">' + esc(s.site) + '</div>' +
+                '<div style="font-size:10.5px;color:#888;">' + esc([s.vungMien, s.loaiCuaHang].filter(Boolean).join(' • ')) + '</div>' +
+              '</td>' +
+              '<td class="num font-bold">' + fmtMoney(s.dt) + '</td>' +
+              '<td class="num">' + (s.hasPlan ? fmtMoney(s.planDT) : '<span style="color:#AAA;">Chưa có KH</span>') + '</td>' +
+              '<td class="ctr font-bold" style="color:' + (s.pctKH >= 100 ? '#16A34A' : (s.pctKH >= 95 ? '#D97706' : (s.pctKH ? '#DC2626' : '#888'))) + ';">' +
+                (s.pctKH !== null ? fmtPct(s.pctKH) + '%' : '—') +
+              '</td>' +
+              '<td class="num">' + fmtMoney(s.fc) + '</td>' +
+              '<td class="num ' + fcCls + '">' + fmtPct(s.fc_pct) + '%</td>' +
+              '<td class="num bold-brand">' + fmtMoney(s.am1) + '</td>' +
+              '<td class="num">' + (s.hasNS ? fmtMoney(s.ns) : '<span style="color:#AAA;">Chưa có KH NS</span>') + '</td>' +
+              '<td class="num font-bold" style="color:' + (s.am2 >= 0 ? '#16A34A' : '#DC2626') + ';">' + fmtMoney(s.am2) + '</td>' +
+              '<td class="num font-bold">' + fmtPct(s.bienAM2) + '%</td>' +
+              '<td class="ctr">' + s.tag + '</td>' +
+            '</tr>';
+          }).join('') +
+        '</tbody>' +
+        '<tfoot>' +
+          '<tr style="background:#FBF7F8;font-weight:800;border-top:2px solid var(--brand);">' +
+            '<td>TỔNG CỘNG HỆ THỐNG</td>' +
+            '<td class="num bold-brand">' + fmtMoney(totDT) + '</td>' +
+            '<td class="num">' + (totPlanDT > 0 ? fmtMoney(totPlanDT) : '—') + '</td>' +
+            '<td class="ctr" style="color:' + (totPctKH >= 100 ? '#16A34A' : (totPctKH >= 95 ? '#D97706' : '#DC2626')) + ';">' +
+              (totPctKH !== null ? fmtPct(totPctKH) + '%' : '—') +
+            '</td>' +
+            '<td class="num">' + fmtMoney(totFC) + '</td>' +
+            '<td class="num ' + (totFC_pct > 62 ? 'fc-hi' : 'fc-ok') + '">' + fmtPct(totFC_pct) + '%</td>' +
+            '<td class="num bold-brand">' + fmtMoney(totAM1) + '</td>' +
+            '<td class="num">' + fmtMoney(totNS) + '</td>' +
+            '<td class="num" style="color:' + (totAM2 >= 0 ? '#16A34A' : '#DC2626') + ';">' + fmtMoney(totAM2) + '</td>' +
+            '<td class="num">' + fmtPct(totAM2_pct) + '%</td>' +
+            '<td class="ctr"><span class="tag ' + (totFC_pct > 62 || (totPctKH !== null && totPctKH < 95) ? 'tag-warn' : 'tag-ok') + '">' +
+              (totFC_pct > 62 || (totPctKH !== null && totPctKH < 95) ? 'Theo dõi' : 'Ổn định') +
+            '</span></td>' +
+          '</tr>' +
+        '</tfoot>' +
+      '</table>' +
+    '</div>' +
+  '</div>'; // Hết Khối 6
+
+  html += '</div>'; // Hết wrap
+
+  box.innerHTML = html;
+
+  // Bind sort toggle Khối 3
+  var sortBox = document.getElementById('estComboSort');
+  if (sortBox){
+    sortBox.addEventListener('click', function(e){
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      sortBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
+      RF_EST.comboSort = btn.dataset.sort || 'dt';
+      drawEstComboSite(siteList, nguong);
+    });
+  }
+
+  // Bind trend view toggle Khối 2 (AM1 vs AM2)
+  var trendViewBox = document.getElementById('estTrendView');
+  if (trendViewBox){
+    trendViewBox.addEventListener('click', function(e){
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var view = btn.dataset.view;
+      if (!view || RF_EST.trendView === view) return;
+      RF_EST.trendView = view;
+      trendViewBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.dataset.view === view); });
+      var titleEl = document.getElementById('estTrendTitle');
+      var subEl = document.getElementById('estTrendSub');
+      var granText = RF_EST.gran === 'week' ? 'Tuần' : (RF_EST.gran === 'quarter' ? 'Quý' : (RF_EST.gran === 'year' ? 'Năm' : 'Tháng'));
+      if (titleEl) {
+        titleEl.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg> ' +
+          (view === 'am2' ? 'Xu hướng AM2 & Biên AM2 % theo kỳ' : 'Xu hướng AM1 (Lãi gộp hàng hóa) theo kỳ');
+      }
+      if (subEl) {
+        subEl.textContent = view === 'am2' ? 'AM2 (trục trái VNĐ) | Biên AM2 % (trục phải %)' : ('Theo ' + granText);
+      }
+      drawEstTrendCombined(rows, planMap, nsMap, planSites);
+    });
+  }
+
+  // Bind share mode toggle Khối 4 (AM1 vs AM2 Share mode)
+  var shareModeBox = document.getElementById('estShareMode');
+  if (shareModeBox){
+    shareModeBox.addEventListener('click', function(e){
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var mode = btn.dataset.mode;
+      if (!mode || RF_EST.shareMode === mode) return;
+      RF_EST.shareMode = mode;
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // 6. Vẽ toàn bộ các biểu đồ Chart.js
+  drawEstWaterfall(totDT, totFC, totAM1, totNS, totAM2);
+  drawEstTrendCombined(rows, planMap, nsMap, planSites);
+  drawEstComboSite(siteList, nguong);
+  drawEstShareCharts(siteList, totAM1, totAM2, totDT, totNS);
+}
+
+function drawEstWaterfall(totDT, totFC, totAM1, totNS, totAM2) {
+  destroyChart('chEstWaterfall');
+  var ctx = ctxOf('chEstWaterfall');
+  if (!ctx) return;
+
+  var labels = [
+    '1. Doanh thu',
+    '2. Food cost',
+    '3. Lãi gộp AM1',
+    '4. Chi phí NS',
+    '5. Lãi thuần AM2'
+  ];
+
+  // Waterfall floating bars: [start, end]
+  // Col 0 (DT): [0, totDT]
+  // Col 1 (FC): [totAM1, totDT] (giam)
+  // Col 2 (AM1): [0, totAM1] (tong trung gian)
+  // Col 3 (NS): [totAM2, totAM1] (giam)
+  // Col 4 (AM2): totAM2 >= 0 ? [0, totAM2] : [totAM2, 0]
+  var floatingData = [
+    [0, totDT],
+    [totAM1, totDT],
+    [0, totAM1],
+    [totAM2, totAM1],
+    totAM2 >= 0 ? [0, totAM2] : [totAM2, 0]
+  ];
+
+  var bgColors = [
+    'rgba(59, 130, 246, 0.85)',   // Doanh thu - Xanh duong
+    'rgba(239, 68, 68, 0.85)',    // Food cost - Do (giam)
+    'rgba(122, 31, 43, 0.85)',    // AM1 - Brand burgundy
+    'rgba(245, 158, 11, 0.85)',   // NS - Cam (giam)
+    totAM2 >= 0 ? 'rgba(22, 163, 74, 0.85)' : 'rgba(239, 68, 68, 0.85)' // AM2 - Xanh la / Do
+  ];
+
+  var borderColors = [
+    '#2563EB',
+    '#DC2626',
+    '#7A1F2B',
+    '#D97706',
+    totAM2 >= 0 ? '#16A34A' : '#DC2626'
+  ];
+
+  CHARTS.chEstWaterfall = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Giá trị (VNĐ)',
+        data: floatingData,
+        backgroundColor: bgColors,
+        borderColor: borderColors,
+        borderWidth: 1.5,
+        borderRadius: 4,
+        barPercentage: 0.6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: true },
+      plugins: {
+        legend: { display: false },
+        tooltip: Object.assign({}, TIP_STYLE, {
+          callbacks: {
+            title: function(items) {
+              return items.length ? items[0].label : '';
+            },
+            label: function(c) {
+              var idx = c.dataIndex;
+              if (idx === 0) return 'Doanh thu thuần: ' + fmtMoney(totDT);
+              if (idx === 1) {
+                var pctFC = totDT > 0 ? (totFC / totDT * 100).toFixed(1) : '0';
+                return 'Food cost (-): ' + fmtMoney(totFC) + ' (' + pctFC + '% DT)';
+              }
+              if (idx === 2) {
+                var pctAM1 = totDT > 0 ? (totAM1 / totDT * 100).toFixed(1) : '0';
+                return 'Lãi gộp AM1: ' + fmtMoney(totAM1) + ' (' + pctAM1 + '% DT)';
+              }
+              if (idx === 3) {
+                var pctNS = totDT > 0 ? (totNS / totDT * 100).toFixed(1) : '0';
+                return 'Chi phí Nhân sự (-): ' + fmtMoney(totNS) + ' (' + pctNS + '% DT)';
+              }
+              if (idx === 4) {
+                var pctAM2 = totDT > 0 ? (totAM2 / totDT * 100).toFixed(1) : '0';
+                return 'Lãi thuần AM2: ' + fmtMoney(totAM2) + ' (' + pctAM2 + '% DT)';
+              }
+              return '';
+            }
+          }
+        })
+      },
+      scales: {
+        x: {
+          ticks: { font: { size: 11, weight: '500' } },
+          grid: { display: false }
+        },
+        y: {
+          ticks: {
+            font: { size: 10.5 },
+            callback: function(v) { return fmtMoney(v); }
+          },
+          grid: { color: '#F0F0F0' }
+        }
+      }
+    },
+    plugins: [{
+      id: 'waterfallConnectors',
+      afterDraw: function(chart) {
+        var ctxDraw = chart.ctx;
+        var meta = chart.getDatasetMeta(0);
+        var yScale = chart.scales.y;
+        if (!meta || !meta.data || meta.data.length < 5 || !yScale) return;
+
+        ctxDraw.save();
+        ctxDraw.beginPath();
+        ctxDraw.setLineDash([3, 3]);
+        ctxDraw.strokeStyle = '#9CA3AF';
+        ctxDraw.lineWidth = 1.2;
+
+        var connValues = [totDT, totAM1, totAM1, totAM2];
+        for (var i = 0; i < 4; i++) {
+          var b1 = meta.data[i];
+          var b2 = meta.data[i + 1];
+          if (b1 && b2) {
+            var py = yScale.getPixelForValue(connValues[i]);
+            var x1 = b1.x + (b1.width ? b1.width / 2 : 15);
+            var x2 = b2.x - (b2.width ? b2.width / 2 : 15);
+            ctxDraw.moveTo(x1, py);
+            ctxDraw.lineTo(x2, py);
+          }
+        }
+        ctxDraw.stroke();
+        ctxDraw.restore();
+      }
+    }]
+  });
+}
+
+function drawEstTrendCombined(rows, planMap, nsMap, planSites) {
+  destroyChart('chEstTrendCombined');
+  var ctx = ctxOf('chEstTrendCombined');
+  if (!ctx) return;
+
+  var bucketMap = {};
+
+  rows.forEach(function(r) {
+    var k, lbl, mArr = [];
+    if (RF_EST.gran === 'week') {
+      var w = est_getWeekInfo(r.ngay);
+      k = w.key;
+      lbl = w.label;
+      mArr = [w.month];
+    } else if (RF_EST.gran === 'quarter') {
+      var q = est_getQuarterInfo(r.ngay);
+      k = q.key;
+      lbl = q.label;
+      var qStartMonth = (q.quarter - 1) * 3 + 1;
+      mArr = [
+        q.year + '-' + ('0' + qStartMonth).slice(-2),
+        q.year + '-' + ('0' + (qStartMonth + 1)).slice(-2),
+        q.year + '-' + ('0' + (qStartMonth + 2)).slice(-2)
+      ];
+    } else if (RF_EST.gran === 'year') {
+      var yr = r.ngay.substring(0, 4);
+      k = yr;
+      lbl = 'Năm ' + yr;
+      for (var mi = 1; mi <= 12; mi++) {
+        mArr.push(yr + '-' + ('0' + mi).slice(-2));
+      }
+    } else {
+      // month
+      k = r.ky;
+      lbl = 'T' + r.ky.substring(5, 7) + '/' + r.ky.substring(0, 4);
+      mArr = [r.ky];
+    }
+
+    if (!bucketMap[k]) {
+      bucketMap[k] = { key: k, label: lbl, months: mArr, dt: 0, fc: 0, sites: new Set() };
+    }
+    bucketMap[k].dt += r.netRevenue;
+    bucketMap[k].fc += r.foodCost;
+    bucketMap[k].sites.add(r.site);
+  });
+
+  var sortedKeys = Object.keys(bucketMap).sort();
+  var labels = [];
+  var am1Data = [];
+  var am2Data = [];
+  var bienAM2Data = [];
+
+  sortedKeys.forEach(function(k) {
+    var b = bucketMap[k];
+    labels.push(b.label);
+    var am1 = b.dt - b.fc;
+    am1Data.push(Math.round(am1));
+
+    // Tính NS cho bucket
+    var nsVal = 0;
+    b.sites.forEach(function(site) {
+      var ps = est_matchPlanSite(site, planSites);
+      (b.months || []).forEach(function(m) {
+        var mNS = nsMap[ps + '|' + m] || 0;
+        if (RF_EST.gran === 'week') {
+          mNS = mNS / 4.33;
+        }
+        nsVal += mNS;
+      });
+    });
+
+    var am2 = am1 - nsVal;
+    var bien = b.dt > 0 ? (am2 / b.dt * 100) : 0;
+    am2Data.push(Math.round(am2));
+    bienAM2Data.push(Number(bien.toFixed(1)));
+  });
+
+  if (RF_EST.trendView === 'am2') {
+    // Chart AM2 & Biên AM2 % (Dual Y-Axis)
+    CHARTS.chEstTrendCombined = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            type: 'bar',
+            label: 'AM2 (Lãi sau CP NS)',
+            data: am2Data,
+            backgroundColor: am2Data.map(function(v) { return v >= 0 ? 'rgba(22,163,74,0.75)' : 'rgba(220,38,38,0.75)'; }),
+            borderColor: am2Data.map(function(v) { return v >= 0 ? '#16A34A' : '#DC2626'; }),
+            borderWidth: 1,
+            borderRadius: 4,
+            yAxisID: 'y'
+          },
+          {
+            type: 'line',
+            label: 'Biên AM2 %',
+            data: bienAM2Data,
+            borderColor: '#D97706',
+            backgroundColor: '#D97706',
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            tension: 0.3,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false, axis: 'x' },
+        hover: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: true, position: 'top', labels: { font: { size: 11 }, usePointStyle: true, boxWidth: 10 } },
+          tooltip: Object.assign({}, TIP_STYLE, {
+            callbacks: {
+              label: function(c) {
+                if (c.dataset.yAxisID === 'y1') return c.dataset.label + ': ' + c.parsed.y + '%';
+                return c.dataset.label + ': ' + fmtMoney(c.parsed.y);
+              }
+            }
+          })
+        },
+        scales: {
+          x: { ticks: { font: { size: 10.5 } }, grid: { display: false } },
+          y: {
+            type: 'linear',
+            position: 'left',
+            ticks: {
+              font: { size: 10.5 },
+              callback: function(v) { return fmtMoney(v); }
+            },
+            grid: { color: '#F0F0F0' }
+          },
+          y1: {
+            type: 'linear',
+            position: 'right',
+            grid: { drawOnChartArea: false },
+            ticks: {
+              font: { size: 10.5 },
+              callback: function(v) { return v + '%'; }
+            }
+          }
+        }
+      }
+    });
+  } else {
+    // Chart AM1
+    CHARTS.chEstTrendCombined = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'AM1 (Lãi gộp hàng hóa)',
+            data: am1Data,
+            borderColor: C.brand || '#7A1F2B',
+            backgroundColor: 'rgba(122,31,43,0.08)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: C.brand || '#7A1F2B'
+          }
+        ]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false, axis: 'x' },
+        hover: { mode: 'index', intersect: false },
+        plugins: {
+          legend: { display: true, position: 'top', labels: { font: { size: 11 }, usePointStyle: true, boxWidth: 10 } },
+          tooltip: Object.assign({}, TIP_STYLE, {
+            callbacks: {
+              label: function(c) { return c.dataset.label + ': ' + fmtMoney(c.parsed.y); }
+            }
+          })
+        },
+        scales: {
+          x: { ticks: { font: { size: 10.5 } }, grid: { display: false } },
+          y: {
+            ticks: {
+              font: { size: 10.5 },
+              callback: function(v) { return fmtMoney(v); }
+            },
+            grid: { color: '#F0F0F0' }
+          }
+        }
+      }
+    });
+  }
+}
+
+function drawEstComboSite(siteList, nguong){
+  destroyChart('chEstComboSite');
+  var ctx = ctxOf('chEstComboSite');
+  if (!ctx) return;
+
+  var sorted = siteList.slice();
+  if (RF_EST.comboSort === 'am1'){
+    sorted.sort(function(a,b){ return b.am1 - a.am1; });
+  } else if (RF_EST.comboSort === 'am2'){
+    sorted.sort(function(a,b){ return b.am2 - a.am2; });
+  } else if (RF_EST.comboSort === 'fc'){
+    sorted.sort(function(a,b){ return b.fc - a.fc; });
+  } else {
+    sorted.sort(function(a,b){ return b.dt - a.dt; });
+  }
+
+  var labels = sorted.map(function(s){ return s.site; });
+  var dtData = sorted.map(function(s){ return Math.round(s.dt); });
+  var fcData = sorted.map(function(s){ return Math.round(s.fc); });
+  var am1PctData = sorted.map(function(s){ return Number((s.dt > 0 ? (s.am1 / s.dt * 100) : 0).toFixed(1)); });
+  var am2PctData = sorted.map(function(s){ return Number((s.dt > 0 ? (s.am2 / s.dt * 100) : 0).toFixed(1)); });
+
+  CHARTS.chEstComboSite = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Doanh thu (Cột)',
+          data: dtData,
+          backgroundColor: 'rgba(122,31,43,0.85)',
+          borderColor: C.brand || '#7A1F2B',
+          borderWidth: 1,
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 3
+        },
+        {
+          type: 'bar',
+          label: 'Food Cost / Giá vốn (Cột)',
+          data: fcData,
+          backgroundColor: 'rgba(234,88,12,0.82)',
+          borderColor: '#EA580C',
+          borderWidth: 1,
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 4
+        },
+        {
+          type: 'line',
+          label: 'Biên AM1 % (Line)',
+          data: am1PctData,
+          borderColor: '#16A34A',
+          backgroundColor: '#16A34A',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+          yAxisID: 'y1',
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Biên AM2 % (Line)',
+          data: am2PctData,
+          borderColor: '#2563EB',
+          backgroundColor: '#2563EB',
+          borderWidth: 2.5,
+          borderDash: [6, 4],
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+          yAxisID: 'y1',
+          order: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      hover: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { font: { size: 11 }, usePointStyle: true, boxWidth: 10 }
+        },
+        tooltip: Object.assign({}, TIP_STYLE, {
+          callbacks: {
+            label: function(c){
+              var s = sorted[c.dataIndex];
+              if (!s) return ' ' + c.dataset.label + ': ' + c.formattedValue;
+              if (c.datasetIndex === 0) {
+                return ' Doanh thu: ' + fmtMoney(s.dt);
+              } else if (c.datasetIndex === 1) {
+                var fcPct = s.dt > 0 ? (s.fc / s.dt * 100).toFixed(1) : '0';
+                return ' Food Cost (Giá vốn): ' + fmtMoney(s.fc) + ' (' + fcPct + '%)';
+              } else if (c.datasetIndex === 2) {
+                var am1Pct = (s.dt > 0 ? (s.am1 / s.dt * 100) : 0).toFixed(1);
+                return ' Biên AM1: ' + am1Pct + '%  —  Giá trị AM1: ' + fmtMoney(s.am1);
+              } else if (c.datasetIndex === 3) {
+                var am2Pct = (s.dt > 0 ? (s.am2 / s.dt * 100) : 0).toFixed(1);
+                return ' Biên AM2: ' + am2Pct + '%  —  Giá trị AM2: ' + fmtMoney(s.am2);
+              }
+              return ' ' + c.dataset.label + ': ' + c.formattedValue;
+            }
+          }
+        })
+      },
+      scales: {
+        x: {
+          ticks: {
+            font: { size: 10.5 },
+            maxRotation: 25,
+            minRotation: 0,
+            autoSkip: false
+          },
+          grid: { display: false }
+        },
+        y: {
+          position: 'left',
+          title: {
+            display: true,
+            text: 'VNĐ (Doanh thu & Food Cost)',
+            font: { size: 10.5, weight: '600' }
+          },
+          ticks: {
+            font: { size: 10.5 },
+            callback: function(v){ return fmtMoney(v); }
+          },
+          grid: { color: '#F0F0F0' }
+        },
+        y1: {
+          position: 'right',
+          title: {
+            display: true,
+            text: 'Tỷ lệ % (Biên AM1 & AM2)',
+            font: { size: 10.5, weight: '600' }
+          },
+          grid: { drawOnChartArea: false },
+          suggestedMin: 0,
+          suggestedMax: 100,
+          ticks: {
+            font: { size: 10.5 },
+            callback: function(v){ return v + '%'; }
+          }
+        }
+      }
+    }
+  });
+}
+
+function drawEstShareCharts(siteList, totAM1, totAM2, totDT, totNS){
+  destroyChart('chEstAM1Share');
+  destroyChart('chEstAM2Share');
+  destroyChart('chEstDtVsNs');
+
+  var ctxAM1 = ctxOf('chEstAM1Share');
+  var ctxAM2 = ctxOf('chEstAM2Share');
+  var ctxDtNs = ctxOf('chEstDtVsNs');
+
+  var shareMode = RF_EST.shareMode || 'both';
+
+  // 1. Tạo bảng màu cố định theo từng site để đồng bộ màu sắc giữa AM1 và AM2
+  var sortedAll = siteList.slice().sort(function(a,b){ return b.am1 - a.am1; });
+  var siteColorMap = {};
+  sortedAll.forEach(function(s, idx){
+    siteColorMap[s.site] = DONUT_PALETTE[idx % DONUT_PALETTE.length];
+  });
+
+  // Tính tổng các giá trị dương để tính tỷ trọng phần trăm chuẩn xác
+  var posAM1 = 0, posAM2 = 0;
+  siteList.forEach(function(s){
+    if (s.am1 > 0) posAM1 += s.am1;
+    if (s.am2 > 0) posAM2 += s.am2;
+  });
+
+  // Donut AM1 Share
+  if (ctxAM1 && (shareMode === 'both' || shareMode === 'am1')) {
+    var am1Sites = siteList.filter(function(s){ return s.am1 > 0; }).sort(function(a,b){ return b.am1 - a.am1; });
+    var am1Labels = am1Sites.map(function(s){ return s.site; });
+    var am1Data = am1Sites.map(function(s){ return Math.round(s.am1); });
+    var am1Colors = am1Sites.map(function(s){ return siteColorMap[s.site] || '#999'; });
+
+    CHARTS.chEstAM1Share = new Chart(ctxAM1, {
+      type: 'doughnut',
+      data: {
+        labels: am1Labels,
+        datasets: [{
+          data: am1Data,
+          backgroundColor: am1Colors,
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, TIP_STYLE, {
+            callbacks: {
+              label: function(c){
+                var s = am1Sites[c.dataIndex];
+                var pct1 = posAM1 > 0 ? (s.am1 / posAM1 * 100).toFixed(1) : '0';
+                var pct2 = posAM2 > 0 ? (Math.max(0, s.am2) / posAM2 * 100).toFixed(1) : '0';
+                return [
+                  ' ' + c.label,
+                  ' • Tỷ trọng AM1: ' + pct1 + '% (' + fmtMoney(s.am1) + ')',
+                  ' • Tỷ trọng AM2: ' + pct2 + '% (' + fmtMoney(s.am2) + ')',
+                  ' • Chi phí nhân sự: ' + fmtMoney(s.ns || 0)
+                ];
+              }
+            }
+          })
+        },
+        cutout: shareMode === 'both' ? '55%' : '62%'
+      }
+    });
+  }
+
+  // Donut AM2 Share
+  if (ctxAM2 && (shareMode === 'both' || shareMode === 'am2')) {
+    var am2Sites = siteList.filter(function(s){ return s.am2 > 0; }).sort(function(a,b){ return b.am2 - a.am2; });
+    var am2Labels = am2Sites.map(function(s){ return s.site; });
+    var am2Data = am2Sites.map(function(s){ return Math.round(s.am2); });
+    var am2Colors = am2Sites.map(function(s){ return siteColorMap[s.site] || '#999'; });
+
+    CHARTS.chEstAM2Share = new Chart(ctxAM2, {
+      type: 'doughnut',
+      data: {
+        labels: am2Labels,
+        datasets: [{
+          data: am2Data,
+          backgroundColor: am2Colors,
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, TIP_STYLE, {
+            callbacks: {
+              label: function(c){
+                var s = am2Sites[c.dataIndex];
+                var pct2 = posAM2 > 0 ? (s.am2 / posAM2 * 100).toFixed(1) : '0';
+                var pct1 = posAM1 > 0 ? (Math.max(0, s.am1) / posAM1 * 100).toFixed(1) : '0';
+                return [
+                  ' ' + c.label,
+                  ' • Tỷ trọng AM2: ' + pct2 + '% (' + fmtMoney(s.am2) + ')',
+                  ' • Tỷ trọng AM1: ' + pct1 + '% (' + fmtMoney(s.am1) + ')',
+                  ' • Chi phí nhân sự: ' + fmtMoney(s.ns || 0)
+                ];
+              }
+            }
+          })
+        },
+        cutout: shareMode === 'both' ? '55%' : '62%'
+      }
+    });
+  }
+
+  // Chú thích so sánh tương quan AM1 & AM2
+  var legendBox = document.getElementById('estAM1ShareLegend');
+  if (legendBox){
+    var sitesForLegend = sortedAll.filter(function(s){ return s.am1 > 0 || s.am2 > 0; });
+    legendBox.innerHTML = sitesForLegend.map(function(s){
+      var col = siteColorMap[s.site] || '#666';
+      var pct1 = posAM1 > 0 ? (Math.max(0, s.am1) / posAM1 * 100).toFixed(1) : '0';
+      var pct2 = posAM2 > 0 ? (Math.max(0, s.am2) / posAM2 * 100).toFixed(1) : '0';
+      var diff = Number((pct2 - pct1).toFixed(1));
+      var diffBadge = '';
+      if (diff > 0) {
+        diffBadge = '<span style="color:#16A34A;font-weight:700;font-size:10px;background:#E7F6EC;padding:1px 5px;border-radius:4px;">▲ +' + diff + '%</span>';
+      } else if (diff < 0) {
+        diffBadge = '<span style="color:#C0342C;font-weight:700;font-size:10px;background:#FDECEC;padding:1px 5px;border-radius:4px;">▼ ' + diff + '%</span>';
+      } else {
+        diffBadge = '<span style="color:#888;font-size:10px;">(=)</span>';
+      }
+
+      if (shareMode === 'both') {
+        return '<div style="background:#FFF;padding:5px 9px;border-radius:6px;border:1px solid #E5E7EB;display:inline-flex;align-items:center;gap:6px;font-size:11px;">' +
+          '<span style="width:9px;height:9px;border-radius:50%;background:' + col + ';display:inline-block;flex-shrink:0;"></span>' +
+          '<strong style="color:#222;">' + esc(s.site) + ':</strong>' +
+          '<span style="color:#15803D;">AM1 ' + pct1 + '%</span>' +
+          '<span style="color:#9CA3AF;">→</span>' +
+          '<span style="color:#7C3AED;">AM2 ' + pct2 + '%</span>' +
+          diffBadge +
+        '</div>';
+      } else if (shareMode === 'am2') {
+        return '<div style="background:#FFF;padding:5px 9px;border-radius:6px;border:1px solid #E5E7EB;display:inline-flex;align-items:center;gap:6px;font-size:11px;">' +
+          '<span style="width:9px;height:9px;border-radius:50%;background:' + col + ';display:inline-block;flex-shrink:0;"></span>' +
+          '<strong style="color:#222;">' + esc(s.site) + ':</strong>' +
+          '<span style="color:#7C3AED;font-weight:600;">' + fmtMoney(s.am2) + ' (' + pct2 + '%)</span>' +
+        '</div>';
+      } else {
+        return '<div style="background:#FFF;padding:5px 9px;border-radius:6px;border:1px solid #E5E7EB;display:inline-flex;align-items:center;gap:6px;font-size:11px;">' +
+          '<span style="width:9px;height:9px;border-radius:50%;background:' + col + ';display:inline-block;flex-shrink:0;"></span>' +
+          '<strong style="color:#222;">' + esc(s.site) + ':</strong>' +
+          '<span style="color:#15803D;font-weight:600;">' + fmtMoney(s.am1) + ' (' + pct1 + '%)</span>' +
+        '</div>';
+      }
+    }).join('');
+  }
+
+  // Grouped Bar %DT vs %CP NS với hover mượt mà
+  var sortedByDT = siteList.slice().sort(function(a,b){ return b.dt - a.dt; });
+  var dtNsLabels = sortedByDT.map(function(s){ return s.site; });
+  var dtPctData = sortedByDT.map(function(s){
+    return Number((totDT > 0 ? (s.dt / totDT * 100) : 0).toFixed(1));
+  });
+  var nsPctData = sortedByDT.map(function(s){
+    return Number((totNS > 0 ? (s.ns / totNS * 100) : 0).toFixed(1));
+  });
+
+  CHARTS.chEstDtVsNs = new Chart(ctxDtNs, {
+    type: 'bar',
+    data: {
+      labels: dtNsLabels,
+      datasets: [
+        {
+          label: '% Doanh thu hệ thống',
+          data: dtPctData,
+          backgroundColor: 'rgba(37,99,235,0.85)',
+          borderRadius: 4
+        },
+        {
+          label: '% Chi phí Nhân sự KH',
+          data: nsPctData,
+          backgroundColor: 'rgba(234,88,12,0.85)',
+          borderRadius: 4
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      hover: { mode: 'index', intersect: false },
+      plugins: {
+        legend: { display: true, position: 'top', labels: { font: { size: 11 }, usePointStyle: true, boxWidth: 10 } },
+        tooltip: Object.assign({}, TIP_STYLE, {
+          callbacks: {
+            label: function(c){ return c.dataset.label + ': ' + c.parsed.y + '%'; }
+          }
+        })
+      },
+      scales: {
+        x: {
+          ticks: {
+            font: { size: 10.5 },
+            maxRotation: 25,
+            minRotation: 0,
+            autoSkip: false
+          },
+          grid: { display: false }
+        },
+        y: {
+          ticks: {
+            font: { size: 10.5 },
+            callback: function(v){ return v + '%'; }
+          },
+          grid: { color: '#F0F0F0' }
+        }
+      }
+    }
+  });
+}
+
+function est_exportCsv(){
+  if (!REV_EST || !REV_EST.lastSiteList || !REV_EST.lastSiteList.length){
+    toast('Chưa có dữ liệu để xuất bảng');
+    return;
+  }
+  var list = REV_EST.lastSiteList;
+  var rows = [
+    ['Site / Điểm bán', 'Vùng miền', 'Loại cửa hàng', 'Doanh thu ước tính (VND)', 'Doanh thu KH (VND)', '% Đạt KH', 'Food cost (VND)', 'Food cost %', 'AM1 Lãi gộp (VND)', 'CP Nhân sự KH (VND)', 'AM2 (VND)', 'Biên AM2 %', 'Trạng thái']
+  ];
+
+  list.forEach(function(s){
+    rows.push([
+      s.site,
+      s.vungMien || '',
+      s.loaiCuaHang || '',
+      Math.round(s.dt),
+      s.hasPlan ? Math.round(s.planDT) : '',
+      s.pctKH !== null ? s.pctKH.toFixed(1) + '%' : '',
+      Math.round(s.fc),
+      s.fc_pct.toFixed(1) + '%',
+      Math.round(s.am1),
+      s.hasNS ? Math.round(s.ns) : '',
+      Math.round(s.am2),
+      s.bienAM2.toFixed(1) + '%',
+      s.rawTag || ''
+    ]);
+  });
+
+  var csvContent = '\uFEFF' + rows.map(function(r){
+    return r.map(function(v){
+      var str = String(v === undefined || v === null ? '' : v).replace(/"/g, '""');
+      return '"' + str + '"';
+    }).join(',');
+  }).join('\r\n');
+
+  var blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  var link = document.createElement('a');
+  var url = URL.createObjectURL(blob);
+  link.setAttribute('href', url);
+  link.setAttribute('download', 'A_Kitchen_DoanhThuUocTinh_' + (RF_EST.gran || 'month') + '.csv');
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  toast('Đã tải bảng CSV thành công');
+}
+
 /* =========================================================================
    TAB 5 - SO SÁNH THEO KỲ vs KẾ HOẠCH
    Toàn bộ số liệu (kế hoạch + thực tế đã ghép) tính sẵn ở kehoach.gs,
@@ -4557,7 +8092,7 @@ function loadKeHoach(){
     });
 }
 
-function renderKeHoach(){ if (!KH){ loadKeHoach(); return; } drawKehoach(); }
+function renderKeHoach(){ if (!KH){ loadKeHoach(); return; } if (!KH_INIT){ buildKehoachFilters(); KH_INIT = true; } drawKehoach(); }
 
 function buildKehoachFilters(){
   var sel = document.getElementById('pfSite');
@@ -5087,19 +8622,17 @@ function switchTab(tab){
   document.querySelectorAll('#nav button').forEach(function(b){
     b.classList.toggle('on', b.dataset.tab === tab);
   });
-  ['overview','site','incident','revenue','sacn','kehoach','quanlykho','dinhduong'].forEach(function(t){
+  ['overview','site','incident','revenue','sacn','revenue-est','kehoach','quanlykho','dinhduong'].forEach(function(t){
     var el = document.getElementById('tab-'+t);
     if (el) el.classList.toggle('hide', t !== tab);
   });
   // Mỗi tab dùng 1 thanh filter riêng -> chỉ hiện đúng 1 thanh tương ứng.
   // Tab quản lý kho có bộ lọc nằm ngay trong panel nên ẩn cả 3 thanh filter cũ.
-  // document.querySelector('.fbar').classList.toggle('hide', tab === 'revenue' || tab === 'kehoach' || tab === 'quanlykho'  || tab === 'dinhduong');
-  // document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
-  // document.getElementById('fbarPlan').classList.toggle('hide', tab !== 'kehoach');
   document.querySelector('.fbar').classList.toggle('hide',
-      tab === 'revenue' || tab === 'sacn' || tab === 'kehoach' || tab === 'quanlykho' || tab === 'dinhduong');
+      tab === 'revenue' || tab === 'sacn' || tab === 'revenue-est' || tab === 'kehoach' || tab === 'quanlykho' || tab === 'dinhduong');
   document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
   document.getElementById('fbarSacn').classList.toggle('hide', tab !== 'sacn');
+  document.getElementById('fbarEst').classList.toggle('hide', tab !== 'revenue-est');
   document.getElementById('fbarPlan').classList.toggle('hide', tab !== 'kehoach');
   document.getElementById('fbarKho').classList.toggle('hide', tab !== 'quanlykho');
   document.getElementById('fbarDD').classList.toggle('hide', tab !== 'dinhduong');
@@ -5110,6 +8643,7 @@ function switchTab(tab){
 function renderCurrent(){
   if (TAB === 'revenue'){ renderRevenue(); return; }
   if (TAB === 'sacn'){ renderSacn(); return; }
+  if (TAB === 'revenue-est'){ renderRevenueEst(); return; }
   if (TAB === 'kehoach'){ renderKeHoach(); return; }
   if (TAB === 'quanlykho'){ QLK.render(); return; }
   if (TAB === 'dinhduong'){ DD.render(); return; }
@@ -5196,20 +8730,97 @@ function buildKhachFilter(){
 function setDefaultRange(){
   if (!DATES.length) return;
   var last = DATES[DATES.length-1];
-  // Mặc định: từ ngày CŨ NHẤT đến ngày MỚI NHẤT có dữ liệu trong sheet Report
+  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
+  var lastD = new Date(last);
+  var oneMonthAgo = new Date(lastD);
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  var defFrom = oneMonthAgo.toISOString().slice(0, 10);
+  if (defFrom < DATES[0]) defFrom = DATES[0];
   F.to = last;
-  F.from = DATES[0];
+  F.from = defFrom;
   document.getElementById('fFrom').value = F.from;
   document.getElementById('fTo').value = F.to;
   document.getElementById('fFrom').min = DATES[0];
   document.getElementById('fFrom').max = last;
   document.getElementById('fTo').min = DATES[0];
   document.getElementById('fTo').max = last;
+  syncMonthSelectWithDates();
+}
+
+function buildMonthFilter(){
+  var sel = document.getElementById('fMonth');
+  if (!sel) return;
+  var months = uniqSorted((RAW || []).map(function(r){
+    return r.ngayBaoCao ? r.ngayBaoCao.substring(0, 7) : '';
+  }).filter(Boolean)).reverse(); // Mới nhất lên đầu
+
+  var curVal = sel.value;
+  var optHtml = '<option value="">Tất cả các kỳ (' + months.length + ' tháng)</option>';
+  months.forEach(function(m){
+    optHtml += '<option value="' + m + '">' + fmtPvtMonth(m) + '</option>';
+  });
+  sel.innerHTML = optHtml;
+  if (curVal && months.indexOf(curVal) >= 0) sel.value = curVal;
+  else syncMonthSelectWithDates();
+}
+
+function syncMonthSelectWithDates(){
+  var sel = document.getElementById('fMonth');
+  if (!sel) return;
+  if (F.from && F.to && F.from.substring(0, 7) === F.to.substring(0, 7)) {
+    var m = F.from.substring(0, 7);
+    var parts = m.split('-');
+    var yr = parseInt(parts[0], 10), mo = parseInt(parts[1], 10);
+    var lastDay = new Date(yr, mo, 0).getDate();
+    if (F.from.slice(-2) === '01' && parseInt(F.to.slice(-2), 10) === lastDay) {
+      sel.value = m;
+      return;
+    }
+  }
+  sel.value = '';
 }
 
 function bindFilters(){
-  document.getElementById('fFrom').addEventListener('change', function(){ F.from=this.value; renderCurrent(); });
-  document.getElementById('fTo').addEventListener('change',   function(){ F.to=this.value;   renderCurrent(); });
+  var checkReloadRevenueIfWider = function(){
+    if (REV_RAW && REV_RAW.dims) {
+      if ((F.from && F.from < REV_RAW.dims.loadedFrom) || (F.to && F.to > REV_RAW.dims.loadedTo)) {
+        loadRevenue({ silent: true, force: true, from: F.from, to: F.to });
+      }
+    }
+  };
+
+  document.getElementById('fFrom').addEventListener('change', function(){
+    F.from = this.value;
+    syncMonthSelectWithDates();
+    checkReloadRevenueIfWider();
+    renderCurrent();
+  });
+  document.getElementById('fTo').addEventListener('change', function(){
+    F.to = this.value;
+    syncMonthSelectWithDates();
+    checkReloadRevenueIfWider();
+    renderCurrent();
+  });
+
+  var fMonthEl = document.getElementById('fMonth');
+  if (fMonthEl) {
+    fMonthEl.addEventListener('change', function(){
+      var v = this.value;
+      if (!v) {
+        setDefaultRange();
+      } else {
+        var parts = v.split('-');
+        var yr = parseInt(parts[0], 10), mo = parseInt(parts[1], 10);
+        var lastDay = new Date(yr, mo, 0).getDate();
+        F.from = v + '-01';
+        F.to = v + '-' + (lastDay < 10 ? '0' + lastDay : lastDay);
+        document.getElementById('fFrom').value = F.from;
+        document.getElementById('fTo').value = F.to;
+      }
+      checkReloadRevenueIfWider();
+      renderCurrent();
+    });
+  }
 
   // Multi-select Người báo cáo
   (function(){
@@ -5288,7 +8899,8 @@ function bindFilters(){
   document.getElementById('btnReset').addEventListener('click', function(){
     F.sites = []; F.nguoi = []; F.khach = []; F.q = ''; document.getElementById('fQ').value = '';
     UI.incLoai=''; UI.incMucDo=''; UI.expanded='';
-    setDefaultRange(); buildSiteFilter(); buildNguoiFilter();buildKhachFilter(); renderCurrent();
+    var mSel = document.getElementById('fMonth'); if (mSel) mSel.value = '';
+    setDefaultRange(); buildSiteFilter(); buildNguoiFilter(); buildKhachFilter(); buildMonthFilter(); renderCurrent();
     toast('Đã đặt lại bộ lọc');
   });
 
@@ -5328,6 +8940,9 @@ function invalidateAllCaches(){
   try { if (typeof DD !== 'undefined' && DD.invalidate) DD.invalidate(); } catch(e){}
   try { REV_SACN = null; } catch(e){}
   try { if (typeof RUI_SACN !== 'undefined') RUI_SACN.drillSite = ''; } catch(e){}
+  try { REV_EST_RAW = null; } catch(e){}
+  try { REV_EST = null; } catch(e){}
+  try { REV_EST_RENDERED = false; } catch(e){}
 }
 
 /**
@@ -5345,14 +8960,14 @@ function refreshAllTabs(manual){
   loadData(!!manual);
 
   // Các tab còn lại: CHỈ tải ngay nếu đang mở đúng tab đó.
-  // invalidateAllCaches() đã xoá REV_RAW/KH/QLK.D/DD.D về null, nên khi người
-  // dùng CHUYỂN sang tab đó sau này, renderRevenue()/renderKeHoach()/QLK.render()/
-  // DD.render() (đã có sẵn) sẽ tự phát hiện chưa có dữ liệu và tự load lại.
   if (TAB === 'revenue') {
     try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
   }
   if (TAB === 'sacn') {
     try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
+  }
+  if (TAB === 'revenue-est') {
+    try { loadRevenueEst({ force: true }); } catch(e){}
   }
   if (TAB === 'kehoach') {
     try { loadKeHoach(); } catch(e){}
@@ -5406,6 +9021,7 @@ function onData(res){
     buildSiteFilter();
     buildNguoiFilter();
     buildKhachFilter();
+    buildMonthFilter();
     firstLoad = false;
   } else {
     // Giữ nguyên bộ lọc người dùng đang chọn, chỉ mở rộng biên ngày nếu có ngày mới
@@ -5420,9 +9036,13 @@ function onData(res){
     buildSiteFilter();
     buildNguoiFilter();   // có người báo cáo mới thì dropdown tự bổ sung
     buildKhachFilter();
+    buildMonthFilter();
   }
   // Tab doanh thu đọc sheet Transactions riêng -> không redraw theo version của Report
   renderCurrent();
+  if (!REV_RAW && !REV_LOADING) {
+    loadRevenue({ silent: true });
+  }
 }
 
 function showError(title, detail){

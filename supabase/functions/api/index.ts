@@ -7,7 +7,7 @@
 import { corsHeaders, verifyToken, jsonResponse, errorResponse } from "./auth.ts";
 import { supabase } from "./lib/db.ts";
 import { handleGetDataVersion, handleGetDashboardData } from "./handlers/dashboard.ts";
-import { handleGetRevenueRawData, handleGetRevenueFoodCostData } from "./handlers/revenue.ts";
+import { handleGetRevenueRawData, handleGetRevenueFoodCostData, handleGetRevenueEstData } from "./handlers/revenue.ts";
 import { handleGetKeHoachData } from "./handlers/kehoach.ts";
 import { handleGetWarehouseDashboardData } from "./handlers/warehouse.ts";
 import { handleGetNutritionDashboardData } from "./handlers/nutrition.ts";
@@ -100,6 +100,13 @@ Deno.serve(async (req: Request) => {
         result = await handleGetRevenueFoodCostData();
         cacheSeconds = 30;
         break;
+
+      case "getRevenueEstData": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        result = await handleGetRevenueEstData(filters);
+        cacheSeconds = 30;
+        break;
+      }
 
       case "getKeHoachData": {
         const filters = url.searchParams.get("filters") || bodyPayload?.filters;

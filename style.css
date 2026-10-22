@@ -105,13 +105,15 @@
     /* Nhóm 2 nút Đặt lại / Tải dữ liệu - dính liền, căn đáy cùng hàng filter */
     .fld-btns{display:flex;align-items:flex-end;gap:8px;margin-left:auto;}
     .fld-btns .btn{white-space:nowrap;}
-        /* Filter Doanh thu & SACN: 2 hàng cân đối */
+        /* Filter Doanh thu, SACN & Doanh thu ước tính: 2 hàng cân đối */
     #fbarRev,
-    #fbarSacn {
+    #fbarSacn,
+    #fbarEst {
       overflow: visible;
     }
     #fbarRev .fbar-2rows,
-    #fbarSacn .fbar-2rows {
+    #fbarSacn .fbar-2rows,
+    #fbarEst .fbar-2rows {
       display: flex;
       flex-direction: column;
       gap: 7px;
@@ -120,6 +122,121 @@
       margin: 0 auto;
       padding: 8px 16px;
       overflow: visible;
+    }
+    .fbar-est-grid {
+      display: grid;
+      grid-template-columns: 200px repeat(3, minmax(0, 1fr));
+      align-items: flex-end;
+      gap: 10px;
+      width: 100%;
+    }
+    .fbar-est-grid .fld {
+      min-width: 0;
+      position: relative;
+    }
+    .fbar-est-grid .fld.ms {
+      position: relative;
+      z-index: 5;
+    }
+    .fbar-est-grid .fld.ms:focus-within,
+    .fbar-est-grid .fld.ms:has(.ms-pop.open) {
+      z-index: 60;
+    }
+    .fbar-est-grid .fld input[type="date"],
+    .fbar-est-grid .fld select,
+    .fbar-est-grid .fld button.sel {
+      width: 100%;
+      min-width: 0;
+      height: 30px;
+      padding: 3px 8px;
+      font-size: 11.5px;
+      border-radius: 6px;
+      box-sizing: border-box;
+      line-height: 18px;
+    }
+    .fbar-est-grid .fld button.sel {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .fbar-est-grid .fld button.sel span:first-child {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .fbar-est-grid .fld label {
+      white-space: nowrap;
+      font-size: 10.5px;
+      margin-bottom: 3px;
+      display: block;
+      font-weight: 600;
+      color: var(--muted);
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .fbar-est-grid .fld-btns {
+      display: flex;
+      gap: 6px;
+      align-items: flex-end;
+      width: 100%;
+    }
+    .fbar-est-grid .fld-btns .btn {
+      flex: 1;
+      height: 30px;
+      padding: 3px 6px;
+      font-size: 11px;
+      border-radius: 6px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      box-sizing: border-box;
+    }
+    #estGran {
+      display: flex;
+      gap: 2px;
+      background: #F2F2F2;
+      border-radius: 6px;
+      padding: 2px;
+      height: 30px;
+      box-sizing: border-box;
+      align-items: stretch;
+      width: 100%;
+    }
+    #estGran button {
+      flex: 1;
+      min-width: 0;
+      border: 0;
+      background: transparent;
+      padding: 0 4px;
+      border-radius: 5px;
+      font-size: 11px;
+      font-weight: 600;
+      color: #555;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      white-space: nowrap;
+      transition: .15s;
+    }
+    #estGran button.on {
+      background: #fff;
+      color: var(--brand);
+      box-shadow: 0 1px 3px rgba(0,0,0,.12);
+    }
+    @media (max-width: 1100px) {
+      .fbar-est-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+      }
+    }
+    @media (max-width: 600px) {
+      .fbar-est-grid {
+        grid-template-columns: 1fr;
+      }
     }
     .fbar-row {
       display: grid;
@@ -209,7 +326,8 @@
       box-sizing: border-box;
     }
     #fbarRev .ms-pop,
-    #fbarSacn .ms-pop {
+    #fbarSacn .ms-pop,
+    #fbarEst .ms-pop {
       z-index: 70;
       left: 0;
       right: auto;
@@ -306,6 +424,9 @@
     .dbar-v{font-variant-numeric:tabular-nums;font-weight:600;min-width:30px;text-align:right;}
     .dbar-p{font-size:10px;color:#A8A8A8;min-width:34px;text-align:right;}
     .tag{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;white-space:nowrap;}
+    .tag-ok{background:#E7F6EC;color:#15803D;}
+    .tag-warn{background:#FEF6E0;color:#A16207;}
+    .tag-bad{background:#FDECEC;color:#C0342C;}
     .bold-brand{font-weight:700;color:var(--brand);}
 
     /* heatmap */
