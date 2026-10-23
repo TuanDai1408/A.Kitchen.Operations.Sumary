@@ -29,22 +29,39 @@ jobs:
           API_TOKEN: ${{ secrets.API_TOKEN || 'TRANTUANDAISIBAFOOD' }}
           SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY || '' }}
         run: |
-          if [ -z "$SUPABASE_ACCESS_TOKEN" ]; then
-            echo "::warning::SUPABASE_ACCESS_TOKEN chưa được cài đặt trong GitHub Secrets."
-            echo "Vui lòng vào GitHub Repo > Settings > Secrets and variables > Actions > Thêm SUPABASE_ACCESS_TOKEN."
-            echo "Xem hướng dẫn lấy token tại: https://supabase.com/dashboard/account/tokens"
-            exit 0
+          # Xóa khoảng trắng thừa nếu có
+          TOKEN=$(echo "$SUPABASE_ACCESS_TOKEN" | xargs)
+          
+          if [ -z "$TOKEN" ]; then
+            echo "::error::SUPABASE_ACCESS_TOKEN chưa được cài đặt trong GitHub Secrets."
+            echo "👉 Vui lòng vào GitHub Repo > Settings > Secrets and variables > Actions > Tạo Secret 'SUPABASE_ACCESS_TOKEN'."
+            echo "👉 Lấy token tại: https://supabase.com/dashboard/account/tokens (Token phải bắt đầu bằng 'sbp_')"
+            exit 1
           fi
 
+          # Kiểm tra nếu người dùng vô tình dán anon key hoặc service_role key (JWT bắt đầu bằng eyJ...)
+          if [[ "$TOKEN" == eyJ* ]]; then
+            echo "::error::Phát hiện lỗi cấu hình: SUPABASE_ACCESS_TOKEN bạn nhập đang là JWT Key (bắt đầu bằng 'eyJ...'), thường là Anon Key hoặc Service Role Key."
+            echo "::error::Supabase CLI bắt buộc phải dùng 'Personal Access Token' (bắt đầu bằng 'sbp_...'), không dùng Project API Key."
+            echo "👉 HƯỚNG DẪN KHẮC PHỤC:"
+            echo "1. Đăng nhập Supabase: https://supabase.com/dashboard/account/tokens"
+            echo "2. Bấm 'Generate new token', đặt tên (ví dụ: github-deploy)"
+            echo "3. Copy token vừa tạo (có dạng: sbp_xxxxxxxxxxxxxxxxxxxxxxxx)"
+            echo "4. Vào GitHub Repo > Settings > Secrets and variables > Actions"
+            echo "5. Cập nhật secret 'SUPABASE_ACCESS_TOKEN' với token 'sbp_...' vừa copy."
+            exit 1
+          fi
+
+          export SUPABASE_ACCESS_TOKEN="$TOKEN"
           echo "🚀 Đang triển khai Edge Function 'api' lên dự án Supabase: $PROJECT_ID"
 
           # Cài đặt secrets trên Supabase nếu có
           if [ -n "$SERVICE_ROLE_KEY" ]; then
-            supabase secrets set API_TOKEN="$API_TOKEN" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" --project-ref "$PROJECT_ID"
+            supabase secrets set API_TOKEN="$API_TOKEN" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" --project-ref "$PROJECT_ID" || true
           else
-            supabase secrets set API_TOKEN="$API_TOKEN" --project-ref "$PROJECT_ID"
+            supabase secrets set API_TOKEN="$API_TOKEN" --project-ref "$PROJECT_ID" || true
           fi
 
-          # Deploy Edge Function mà không cần bước supabase link
+          # Deploy Edge Function
           supabase functions deploy api --no-verify-jwt --project-ref "$PROJECT_ID"
-          echo "✅ Đã deploy thành công function 'api'!"
+          echo "✅ Đã deploy thành công Edge Function 'api'!"

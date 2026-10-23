@@ -10131,7 +10131,7 @@ return {
 
 /* ---------- BOOT ---------- */
 // Logo loaded from local file - no API call needed
-document.getElementById('logoBox').innerHTML = '<img src="logo_akitchen_2.jpg" alt="A.Kitchen">';
+document.getElementById('logoBox').innerHTML = '<img src="logo_akitchen-removebg-preview.png" alt="A.Kitchen">';
 
 initTooltip();
 // === SIDEBAR EVENTS ===
