@@ -8,6 +8,9 @@
   <meta name="description" content="Dashboard vận hành, doanh thu, food cost và quản lý kho A.Kitchen - Tân Long Group.">
   <meta property="og:title" content="A.Kitchen • Dashboard Vận Hành">
   <meta property="og:description" content="Dashboard vận hành, doanh thu, food cost và quản lý kho A.Kitchen - Tân Long Group.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   <link rel="stylesheet" href="style.css">
 </head>
@@ -97,6 +100,37 @@
   </div>
 </aside>
 <div class="main-wrap">
+<!-- ================= MODERN SAAS APP TOPBAR ================= -->
+<div class="app-topbar">
+  <div class="topbar-left">
+    <div class="page-title-wrap">
+      <h1 class="page-title" id="pageTitle">Báo cáo vận hành</h1>
+      <div class="page-meta">
+        <span class="meta-tag">A.Kitchen</span>
+        <span class="meta-sep">•</span>
+        <span>Tân Long Group</span>
+      </div>
+    </div>
+  </div>
+  <div class="topbar-right">
+    <div class="live-pill" id="liveBadge">
+      <span class="live-dot" id="liveDot"></span>
+      <span class="live-label" id="liveTxt">Đang kết nối...</span>
+    </div>
+    <button class="topbar-btn" id="topbarRefreshBtn" type="button" title="Làm mới dữ liệu" onclick="refreshAllTabs(true)">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M23 4v6h-6M1 20v-6h6"/><path d="M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+    </button>
+    <div class="user-chip">
+      <div class="user-avatar">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2"/><circle cx="12" cy="7" r="4"/></svg>
+      </div>
+      <div class="user-info">
+        <div class="user-name">Thiết lập vận hành</div>
+        <div class="user-role">A.Kitchen - Tân Long</div>
+      </div>
+    </div>
+  </div>
+</div>
 <!-- ================= FILTER BAR ================= -->
 <div class="fbar" >
   <div class="fbar-in">
@@ -186,7 +220,7 @@
         <label>Cửa hàng</label>
         <button class="sel" id="rMsBtn"><span id="rMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="rMsPop">
-          <button class="ms-all" id="rMsAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="rMsAll">Chọn tất cả</button>
           <div id="rMsList"></div>
         </div>
       </div>
@@ -194,7 +228,7 @@
         <label>Vùng miền</label>
         <button class="sel" id="rVungBtn"><span id="rVungLabel">Tất cả vùng miền</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="rVungPop">
-          <button class="ms-all" id="rVungAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="rVungAll">Chọn tất cả</button>
           <div id="rVungList"></div>
         </div>
       </div>
@@ -202,7 +236,7 @@
         <label>Loại cửa hàng</label>
         <button class="sel" id="rLoaiBtn"><span id="rLoaiLabel">Tất cả loại cửa hàng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="rLoaiPop">
-          <button class="ms-all" id="rLoaiAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="rLoaiAll">Chọn tất cả</button>
           <div id="rLoaiList"></div>
         </div>
       </div>
@@ -224,7 +258,7 @@
         <label>Khách hàng</label>
         <button class="sel" id="rKhBtn"><span id="rKhLabel">Tất cả khách hàng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="rKhPop">
-          <button class="ms-all" id="rKhAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="rKhAll">Chọn tất cả</button>
           <div id="rKhList"></div>
         </div>
       </div>
@@ -244,7 +278,7 @@
         <label>Cửa hàng</label>
         <button class="sel" id="sMsBtn"><span id="sMsLabel">Tất cả cửa hàng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="sMsPop">
-          <button class="ms-all" id="sMsAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="sMsAll">Chọn tất cả</button>
           <div id="sMsList"></div>
         </div>
       </div>
@@ -252,7 +286,7 @@
         <label>Vùng miền</label>
         <button class="sel" id="sVungBtn"><span id="sVungLabel">Tất cả vùng miền</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="sVungPop">
-          <button class="ms-all" id="sVungAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="sVungAll">Chọn tất cả</button>
           <div id="sVungList"></div>
         </div>
       </div>
@@ -260,7 +294,7 @@
         <label>Loại cửa hàng</label>
         <button class="sel" id="sLoaiBtn"><span id="sLoaiLabel">Tất cả loại cửa hàng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="sLoaiPop">
-          <button class="ms-all" id="sLoaiAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="sLoaiAll">Chọn tất cả</button>
           <div id="sLoaiList"></div>
         </div>
       </div>
@@ -282,7 +316,7 @@
         <label>Khách hàng</label>
         <button class="sel" id="sKhBtn"><span id="sKhLabel">Tất cả khách hàng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="sKhPop">
-          <button class="ms-all" id="sKhAll">✓ Chọn tất cả</button>
+          <button class="ms-all" id="sKhAll">Chọn tất cả</button>
           <div id="sKhList"></div>
         </div>
       </div>
@@ -312,7 +346,7 @@
         <label id="estPeriodLabel">Chọn tháng</label>
         <button class="sel" id="estPeriodBtn" type="button"><span id="estPeriodBtnText">Tất cả các tháng</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="estPeriodPop">
-          <button class="ms-all" id="estPeriodAll" type="button">✓ Chọn tất cả</button>
+          <button class="ms-all" id="estPeriodAll" type="button">Chọn tất cả</button>
           <div id="estPeriodList"></div>
         </div>
       </div>
@@ -320,7 +354,7 @@
         <label>Site</label>
         <button class="sel" id="estMsBtn" type="button"><span id="estMsLabel">Tất cả site</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="estMsPop">
-          <button class="ms-all" id="estMsAll" type="button">✓ Chọn tất cả</button>
+          <button class="ms-all" id="estMsAll" type="button">Chọn tất cả</button>
           <div id="estMsList"></div>
         </div>
       </div>
@@ -328,7 +362,7 @@
         <label>Vùng miền</label>
         <button class="sel" id="estVungBtn" type="button"><span id="estVungLabel">Tất cả vùng miền</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="estVungPop">
-          <button class="ms-all" id="estVungAll" type="button">✓ Chọn tất cả</button>
+          <button class="ms-all" id="estVungAll" type="button">Chọn tất cả</button>
           <div id="estVungList"></div>
         </div>
       </div>
@@ -339,7 +373,7 @@
         <label>Loại cửa hàng</label>
         <button class="sel" id="estLoaiBtn" type="button"><span id="estLoaiLabel">Tất cả loại CH</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="estLoaiPop">
-          <button class="ms-all" id="estLoaiAll" type="button">✓ Chọn tất cả</button>
+          <button class="ms-all" id="estLoaiAll" type="button">Chọn tất cả</button>
           <div id="estLoaiList"></div>
         </div>
       </div>
