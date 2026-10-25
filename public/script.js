@@ -261,8 +261,7 @@ var VERSION = '';        // dấu hiệu dữ liệu mới
 var NGUOI = [];          // danh sách người báo cáo (cho dropdown)
 var KHACH = [];   // danh sách khách hàng từ backend
 var F = { from:'', to:'', sites:[], nguoi:[], khach:[], q:'' };  // nguoi/khach = multi-select arrays
-// var UI = { lineMode:'total', rankMetric:'tre', incLoai:'', incMucDo:'', expanded:'' };
-var UI = { lineMode:'total', rankMetric:'thatthoat', incLoai:'', incMucDo:'', expanded:'' };
+var UI = { lineMode:'total', rankMetric:'huy', incLoai:'', incMucDo:'', expanded:'' };
 
 /* ---- STATE RIÊNG CHO TAB DOANH THU & FOOD COST ---- */
 var REV = null;                 // payload từ getRevenueFoodCostData()
@@ -387,11 +386,11 @@ var MUCDO_COLOR = {
 var MUCDO_RANK  = { 'Thấp':1, 'Trung bình':2, 'Cao':3, 'Nghiêm trọng':4, 'Chưa phân loại':0 };
 var LOAI_SU_CO  = ['Thiết bị','Nhân sự','NVL','Khiếu nại','Chi phí','Giao trễ'];
 
-// Thang màu heatmap 4 bậc (xanh pastel nhạt theo brand, không xanh đậm).
+// Thang màu heatmap 4 bậc (xanh mint nhạt theo brand, không xanh đậm).
 var HEAT = [
-  { ten:'Bình thường',  moc:'0đ',   bg:'#A7D7B5', bd:'#8DC79E', fg:'#1A2E24' },
+  { ten:'Bình thường',  moc:'0đ',   bg:'#B8DCC6', bd:'#9EC7AE', fg:'#1A2E24' },
   { ten:'Cần lưu ý',    moc:'1-2đ', bg:'#F5E6A3', bd:'#E5D27C', fg:'#1A2E24' },
-  { ten:'Có vấn đề',    moc:'3-5đ', bg:'#FFD0B0', bd:'#F5B48B', fg:'#1A2E24' },
+  { ten:'Có vấn đề',    moc:'3-5đ', bg:'#FFD4B8', bd:'#F5BA96', fg:'#1A2E24' },
   { ten:'Nghiêm trọng', moc:'≥6đ',  bg:'#F5B5B0', bd:'#E5948E', fg:'#8A1F1B' }
 ];
 
@@ -848,6 +847,7 @@ function renderOverview(){
 
   html += '<div class="card chart-rank">'+cardHead(IC.bars,'Xếp hạng site',
       '<div class="tg" id="tgRank">'+
+        '<button data-v="huy" class="'+(UI.rankMetric==='huy'?'on':'')+'">% suất hủy</button>'+
         '<button data-v="tre" class="'+(UI.rankMetric==='tre'?'on':'')+'">% giao trễ</button>'+
         '<button data-v="thatthoat" class="'+(UI.rankMetric==='thatthoat'?'on':'')+'">% thất thoát</button>'+
       '</div>')+
@@ -932,12 +932,27 @@ function fmtPvtPct(v) {
   return (Math.round(v * 10) / 10).toFixed(1).replace('.', ',') + '%';
 }
 
-function fmtPvtMoM(v) {
+function fmtPvtDelta(v, isLowerBetter) {
   if (v === null || v === undefined || isNaN(v)) return '<span class="pvt-mom-pill pvt-mom-flat">—</span>';
-  var up = v > 0;
-  var cls = up ? 'pvt-mom-up' : (v < 0 ? 'pvt-mom-down' : 'pvt-mom-flat');
-  var sym = up ? '▲ +' : (v < 0 ? '▼ ' : '');
-  return '<span class="pvt-mom-pill ' + cls + '">' + sym + Math.abs(r1(v)).toFixed(1).replace('.', ',') + '%</span>';
+  var num = Math.round(v * 10) / 10;
+  var formatted = Math.abs(num).toFixed(1).replace('.', ',') + '%';
+  if (Math.abs(num) < 0.05) {
+    return '<span class="pvt-mom-pill pvt-mom-flat">0,0%</span>';
+  }
+  var up = num > 0;
+  var isGood = isLowerBetter ? (!up) : up;
+  var cls = '';
+  if (isLowerBetter) {
+    cls = up ? 'cf-up-bad cf-bad pvt-mom-down' : 'cf-down-good cf-ok pvt-mom-up';
+  } else {
+    cls = up ? 'cf-up-good cf-ok pvt-mom-up' : 'cf-down-bad cf-bad pvt-mom-down';
+  }
+  var sym = up ? '▲ +' : '▼ ';
+  return '<span class="pvt-mom-pill ' + cls + '">' + sym + formatted + '</span>';
+}
+
+function fmtPvtMoM(v, isLowerBetter) {
+  return fmtPvtDelta(v, isLowerBetter);
 }
 
 function fmtPvtMonth(m) {
@@ -1081,8 +1096,14 @@ function computePivotAnalysisData(reportRows, siteList) {
     var monthsData = {};
     var totalTongSuat = 0, totalSuatTinhTien = 0, totalDoanhThu = 0, totalFoodCost = 0, totalSuatHuy = 0;
     var prevMonthRevenue = null;
+    var prevMonthTongSuat = null;
     var prevMonthSuat = null;
+    var prevMonthHuyPct = null;
+    var prevMonthFcPct = null;
     var latestMoM = null;
+    var latestSuatMoM = null;
+    var latestHuyMoM = null;
+    var latestFcMoM = null;
 
     allMonths.forEach(function(m){
       var rep = null;
@@ -1132,14 +1153,33 @@ function computePivotAnalysisData(reportRows, siteList) {
       if (prevMonthRevenue !== null && prevMonthRevenue > 0) {
         momRevenuePct = ((netRev - prevMonthRevenue) / prevMonthRevenue) * 100;
       }
+      var momTongSuatPct = null;
+      if (prevMonthTongSuat !== null && prevMonthTongSuat > 0) {
+        momTongSuatPct = ((tongSuat - prevMonthTongSuat) / prevMonthTongSuat) * 100;
+      }
       var momSuatPct = null;
       if (prevMonthSuat !== null && prevMonthSuat > 0) {
         momSuatPct = ((suatTinhTien - prevMonthSuat) / prevMonthSuat) * 100;
       }
+      var momHuyPct = null;
+      if (prevMonthHuyPct !== null) {
+        momHuyPct = tyLeHuyPct - prevMonthHuyPct;
+      }
+      var momFcPct = null;
+      if (prevMonthFcPct !== null) {
+        momFcPct = foodCostPct - prevMonthFcPct;
+      }
 
       if (netRev > 0) prevMonthRevenue = netRev;
+      if (tongSuat > 0) prevMonthTongSuat = tongSuat;
       if (suatTinhTien > 0) prevMonthSuat = suatTinhTien;
+      if (tongSuat > 0) prevMonthHuyPct = tyLeHuyPct;
+      if (netRev > 0) prevMonthFcPct = foodCostPct;
+
       if (momRevenuePct !== null) latestMoM = momRevenuePct;
+      if (momTongSuatPct !== null) latestSuatMoM = momTongSuatPct;
+      if (momHuyPct !== null) latestHuyMoM = momHuyPct;
+      if (momFcPct !== null) latestFcMoM = momFcPct;
 
       monthsData[m] = {
         tongSuat: tongSuat,
@@ -1150,7 +1190,10 @@ function computePivotAnalysisData(reportRows, siteList) {
         foodCost: fCost,
         foodCostPct: foodCostPct,
         momRevenuePct: momRevenuePct,
-        momSuatPct: momSuatPct
+        momTongSuatPct: momTongSuatPct,
+        momSuatPct: momSuatPct,
+        momHuyPct: momHuyPct,
+        momFcPct: momFcPct
       };
 
       totalTongSuat += tongSuat;
@@ -1173,7 +1216,10 @@ function computePivotAnalysisData(reportRows, siteList) {
       totalSuatHuy: totalSuatHuy,
       avgTyLeHuyPct: avgTyLeHuyPct,
       avgFoodCostPct: avgFoodCostPct,
-      latestMoM: latestMoM
+      latestMoM: latestMoM,
+      latestSuatMoM: latestSuatMoM,
+      latestHuyMoM: latestHuyMoM,
+      latestFcMoM: latestFcMoM
     });
   });
 
@@ -1183,6 +1229,15 @@ function computePivotAnalysisData(reportRows, siteList) {
     totalTongSuat: 0, totalSuatTinhTien: 0, totalDoanhThu: 0, totalFoodCost: 0, totalSuatHuy: 0
   };
   var prevSysRev = null;
+  var prevSysTong = null;
+  var prevSysTinh = null;
+  var prevSysHuyPct = null;
+  var prevSysFcPct = null;
+  var latestSysMoM = null;
+  var latestSysSuatMoM = null;
+  var latestSysHuyMoM = null;
+  var latestSysFcMoM = null;
+
   allMonths.forEach(function(m){
     var sysTong = 0, sysTinh = 0, sysHuy = 0, sysRev = 0, sysFc = 0;
     siteRows.forEach(function(s){
@@ -1195,8 +1250,23 @@ function computePivotAnalysisData(reportRows, siteList) {
     });
     var sysHuyPct = sysTong > 0 ? (sysHuy / sysTong) * 100 : 0;
     var sysFcPct = sysRev > 0 ? (sysFc / sysRev) * 100 : 0;
+
     var sysMoM = (prevSysRev !== null && prevSysRev > 0) ? ((sysRev - prevSysRev) / prevSysRev) * 100 : null;
+    var sysMoMTongSuat = (prevSysTong !== null && prevSysTong > 0) ? ((sysTong - prevSysTong) / prevSysTong) * 100 : null;
+    var sysMoMSuat = (prevSysTinh !== null && prevSysTinh > 0) ? ((sysTinh - prevSysTinh) / prevSysTinh) * 100 : null;
+    var sysMoMHuyPct = (prevSysHuyPct !== null) ? (sysHuyPct - prevSysHuyPct) : null;
+    var sysMoMFcPct = (prevSysFcPct !== null) ? (sysFcPct - prevSysFcPct) : null;
+
     if (sysRev > 0) prevSysRev = sysRev;
+    if (sysTong > 0) prevSysTong = sysTong;
+    if (sysTinh > 0) prevSysTinh = sysTinh;
+    if (sysTong > 0) prevSysHuyPct = sysHuyPct;
+    if (sysRev > 0) prevSysFcPct = sysFcPct;
+
+    if (sysMoM !== null) latestSysMoM = sysMoM;
+    if (sysMoMTongSuat !== null) latestSysSuatMoM = sysMoMTongSuat;
+    if (sysMoMHuyPct !== null) latestSysHuyMoM = sysMoMHuyPct;
+    if (sysMoMFcPct !== null) latestSysFcMoM = sysMoMFcPct;
 
     systemTotals.months[m] = {
       tongSuat: sysTong,
@@ -1206,7 +1276,11 @@ function computePivotAnalysisData(reportRows, siteList) {
       netRevenue: sysRev,
       foodCost: sysFc,
       foodCostPct: sysFcPct,
-      momRevenuePct: sysMoM
+      momRevenuePct: sysMoM,
+      momTongSuatPct: sysMoMTongSuat,
+      momSuatPct: sysMoMSuat,
+      momHuyPct: sysMoMHuyPct,
+      momFcPct: sysMoMFcPct
     };
 
     systemTotals.totalTongSuat += sysTong;
@@ -1217,6 +1291,10 @@ function computePivotAnalysisData(reportRows, siteList) {
   });
   systemTotals.avgTyLeHuyPct = systemTotals.totalTongSuat > 0 ? (systemTotals.totalSuatHuy / systemTotals.totalTongSuat) * 100 : 0;
   systemTotals.avgFoodCostPct = systemTotals.totalDoanhThu > 0 ? (systemTotals.totalFoodCost / systemTotals.totalDoanhThu) * 100 : 0;
+  systemTotals.latestMoM = latestSysMoM;
+  systemTotals.latestSuatMoM = latestSysSuatMoM;
+  systemTotals.latestHuyMoM = latestSysHuyMoM;
+  systemTotals.latestFcMoM = latestSysFcMoM;
 
   // Filter site rows by search
   var filteredSiteRows = siteRows;
@@ -1369,27 +1447,32 @@ function pivotInnerContentHtml(reportRows, siteList) {
       h += '  </td>';
 
       months.forEach(function(m){
-        var md = s.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null };
+        var md = s.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null, momTongSuatPct:null, momSuatPct:null, momHuyPct:null, momFcPct:null };
         h += '<td>';
         if (curMetric === 'revenue') {
           h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
           h += '  <span class="pvt-num" style="font-weight:700;color:#0F172A;">' + fmtPvtMoney(md.netRevenue, unit) + '</span>';
-          h += '  ' + fmtPvtMoM(md.momRevenuePct);
+          h += '  ' + fmtPvtMoM(md.momRevenuePct, false);
           h += '</div>';
         } else if (curMetric === 'tongSuat') {
-          h += '<div class="pvt-num" style="font-weight:700;color:#0F172A;">' + fmt(md.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+          h += '  <span style="font-weight:700;color:#0F172A;">' + fmt(md.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
+          if (md.momTongSuatPct !== null) h += '  ' + fmtPvtMoM(md.momTongSuatPct, false);
+          h += '</div>';
         } else if (curMetric === 'suatTinhTien') {
           var pctTinh = md.tongSuat > 0 ? (md.suatTinhTien / md.tongSuat * 100) : 0;
-          h += '<div class="pvt-num">';
+          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
           h += '  <span style="font-weight:700;color:#0284C7;">' + fmt(md.suatTinhTien) + '</span>';
-          h += '  <span style="font-size:12px;color:#64748B;margin-left:4px;">(' + fmtPvtPct(pctTinh) + ')</span>';
+          h += '  <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(pctTinh) + ')</span>';
+          if (md.momSuatPct !== null) h += '  ' + fmtPvtMoM(md.momSuatPct, false);
           h += '</div>';
         } else if (curMetric === 'mom') {
-          h += '<div style="text-align:right;">' + fmtPvtMoM(md.momRevenuePct) + '</div>';
+          h += '<div style="text-align:right;">' + fmtPvtMoM(md.momRevenuePct, false) + '</div>';
         } else if (curMetric === 'tyLeHuy') {
           var hCls = md.tyLeHuyPct <= 1.0 ? 'cf-ok' : (md.tyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
           h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
           h += '  <span class="pvt-badge ' + hCls + '">' + fmtPvtPct(md.tyLeHuyPct) + '</span>';
+          if (md.momHuyPct !== null) h += '  ' + fmtPvtMoM(md.momHuyPct, true);
           h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(md.suatHuy) + ' suất)</span>';
           h += '</div>';
         } else if (curMetric === 'foodCost') {
@@ -1397,6 +1480,7 @@ function pivotInnerContentHtml(reportRows, siteList) {
           h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
           h += '  <span style="font-weight:700;color:#0F172A;">' + fmtPvtMoney(md.foodCost, unit) + '</span>';
           h += '  <span class="pvt-badge ' + fCls + '">FC: ' + fmtPvtPct(md.foodCostPct) + '</span>';
+          if (md.momFcPct !== null) h += '  ' + fmtPvtMoM(md.momFcPct, true);
           h += '</div>';
         }
         h += '</td>';
@@ -1419,18 +1503,26 @@ function pivotInnerContentHtml(reportRows, siteList) {
       if (curMetric === 'revenue') {
         h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
         h += '  <span class="pvt-num" style="font-weight:800;color:#1E40AF;">' + fmtPvtMoney(rowDoanhThu, unit) + '</span>';
-        h += '  ' + fmtPvtMoM(s.latestMoM);
+        h += '  ' + fmtPvtMoM(s.latestMoM, false);
         h += '</div>';
       } else if (curMetric === 'tongSuat') {
-        h += '<div class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmt(rowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+        h += '  <span style="font-weight:800;color:#0F172A;">' + fmt(rowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
+        if (s.latestSuatMoM !== null) h += '  ' + fmtPvtMoM(s.latestSuatMoM, false);
+        h += '</div>';
       } else if (curMetric === 'suatTinhTien') {
-        h += '<div class="pvt-num" style="font-weight:800;color:#0284C7;">' + fmt(rowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+        var rowPctTinh = rowTongSuat > 0 ? (rowSuatTinhTien / rowTongSuat * 100) : 0;
+        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+        h += '  <span style="font-weight:800;color:#0284C7;">' + fmt(rowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
+        h += '  <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(rowPctTinh) + ')</span>';
+        h += '</div>';
       } else if (curMetric === 'mom') {
-        h += '<div style="text-align:right;">' + fmtPvtMoM(s.latestMoM) + '</div>';
+        h += '<div style="text-align:right;">' + fmtPvtMoM(s.latestMoM, false) + '</div>';
       } else if (curMetric === 'tyLeHuy') {
         var aHuyCls = rowHuyPct <= 1.0 ? 'cf-ok' : (rowHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
         h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
         h += '  <span class="pvt-badge ' + aHuyCls + '">' + fmtPvtPct(rowHuyPct) + '</span>';
+        if (s.latestHuyMoM !== null) h += '  ' + fmtPvtMoM(s.latestHuyMoM, true);
         h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(rowSuatHuy) + ' suất)</span>';
         h += '</div>';
       } else if (curMetric === 'foodCost') {
@@ -1438,6 +1530,7 @@ function pivotInnerContentHtml(reportRows, siteList) {
         h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
         h += '  <span style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(rowFoodCost, unit) + '</span>';
         h += '  <span class="pvt-badge ' + aFcCls + '">FC: ' + fmtPvtPct(rowFcPct) + '</span>';
+        if (s.latestFcMoM !== null) h += '  ' + fmtPvtMoM(s.latestFcMoM, true);
         h += '</div>';
       }
       h += '</td>';
@@ -1462,23 +1555,32 @@ function pivotInnerContentHtml(reportRows, siteList) {
   h += '<tr class="total-row">';
   h += '  <td class="site-col" style="font-size:15px;font-weight:800;">TỔNG CỘNG TOÀN HỆ THỐNG</td>';
   months.forEach(function(m){
-    var tm = tot.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null };
+    var tm = tot.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null, momTongSuatPct:null, momSuatPct:null, momHuyPct:null, momFcPct:null };
     h += '<td>';
     if (curMetric === 'revenue') {
       h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
       h += '  <span class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(tm.netRevenue, unit) + '</span>';
-      h += '  ' + fmtPvtMoM(tm.momRevenuePct);
+      h += '  ' + fmtPvtMoM(tm.momRevenuePct, false);
       h += '</div>';
     } else if (curMetric === 'tongSuat') {
-      h += '<div class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmt(tm.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+      h += '  <span style="font-weight:800;color:#0F172A;">' + fmt(tm.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
+      if (tm.momTongSuatPct !== null) h += '  ' + fmtPvtMoM(tm.momTongSuatPct, false);
+      h += '</div>';
     } else if (curMetric === 'suatTinhTien') {
-      h += '<div class="pvt-num" style="font-weight:800;color:#0284C7;">' + fmt(tm.suatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+      var sysMonthPctTinh = tm.tongSuat > 0 ? (tm.suatTinhTien / tm.tongSuat * 100) : 0;
+      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
+      h += '  <span style="font-weight:800;color:#0284C7;">' + fmt(tm.suatTinhTien) + '</span>';
+      h += '  <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(sysMonthPctTinh) + ')</span>';
+      if (tm.momSuatPct !== null) h += '  ' + fmtPvtMoM(tm.momSuatPct, false);
+      h += '</div>';
     } else if (curMetric === 'mom') {
-      h += '<div style="text-align:right;">' + fmtPvtMoM(tm.momRevenuePct) + '</div>';
+      h += '<div style="text-align:right;">' + fmtPvtMoM(tm.momRevenuePct, false) + '</div>';
     } else if (curMetric === 'tyLeHuy') {
       var sHuyCls = tm.tyLeHuyPct <= 1.0 ? 'cf-ok' : (tm.tyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
       h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
       h += '  <span class="pvt-badge ' + sHuyCls + '">' + fmtPvtPct(tm.tyLeHuyPct) + '</span>';
+      if (tm.momHuyPct !== null) h += '  ' + fmtPvtMoM(tm.momHuyPct, true);
       h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(tm.suatHuy) + ' suất)</span>';
       h += '</div>';
     } else if (curMetric === 'foodCost') {
@@ -1486,6 +1588,7 @@ function pivotInnerContentHtml(reportRows, siteList) {
       h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
       h += '  <span style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(tm.foodCost, unit) + '</span>';
       h += '  <span class="pvt-badge ' + sFcCls + '">FC: ' + fmtPvtPct(tm.foodCostPct) + '</span>';
+      if (tm.momFcPct !== null) h += '  ' + fmtPvtMoM(tm.momFcPct, true);
       h += '</div>';
     }
     h += '</td>';
@@ -1494,17 +1597,19 @@ function pivotInnerContentHtml(reportRows, siteList) {
   // Grand Total for System
   h += '<td class="td-total">';
   if (curMetric === 'revenue') {
-    h += '<div class="pvt-num" style="font-weight:900;color:#1E40AF;font-size:15px;">' + fmtPvtMoney(sysRowDoanhThu, unit) + '</div>';
+    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;"><span style="font-weight:900;color:#1E40AF;font-size:15px;">' + fmtPvtMoney(sysRowDoanhThu, unit) + '</span>' + (tot.latestMoM !== null ? (' ' + fmtPvtMoM(tot.latestMoM, false)) : '') + '</div>';
   } else if (curMetric === 'tongSuat') {
-    h += '<div class="pvt-num" style="font-weight:900;color:#0F172A;font-size:15px;">' + fmt(sysRowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;"><span style="font-weight:900;color:#0F172A;font-size:15px;">' + fmt(sysRowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>' + (tot.latestSuatMoM !== null ? (' ' + fmtPvtMoM(tot.latestSuatMoM, false)) : '') + '</div>';
   } else if (curMetric === 'suatTinhTien') {
-    h += '<div class="pvt-num" style="font-weight:900;color:#0284C7;font-size:15px;">' + fmt(sysRowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></div>';
+    var sysTotalPctTinh = sysRowTongSuat > 0 ? (sysRowSuatTinhTien / sysRowTongSuat * 100) : 0;
+    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;"><span style="font-weight:900;color:#0284C7;font-size:15px;">' + fmt(sysRowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span> <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(sysTotalPctTinh) + ')</span></div>';
   } else if (curMetric === 'mom') {
-    h += '<div style="text-align:right;">—</div>';
+    h += '<div style="text-align:right;">' + (tot.latestMoM !== null ? fmtPvtMoM(tot.latestMoM, false) : '—') + '</div>';
   } else if (curMetric === 'tyLeHuy') {
     var totHuyCls = sysRowHuyPct <= 1.0 ? 'cf-ok' : (sysRowHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
     h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
     h += '  <span class="pvt-badge ' + totHuyCls + '">' + fmtPvtPct(sysRowHuyPct) + '</span>';
+    if (tot.latestHuyMoM !== null) h += '  ' + fmtPvtMoM(tot.latestHuyMoM, true);
     h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(sysRowSuatHuy) + ' suất)</span>';
     h += '</div>';
   } else if (curMetric === 'foodCost') {
@@ -1512,6 +1617,7 @@ function pivotInnerContentHtml(reportRows, siteList) {
     h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
     h += '  <span style="font-weight:900;color:#0F172A;font-size:15px;">' + fmtPvtMoney(sysRowFoodCost, unit) + '</span>';
     h += '  <span class="pvt-badge ' + totFcCls + '">FC: ' + fmtPvtPct(sysRowFcPct) + '</span>';
+    if (tot.latestFcMoM !== null) h += '  ' + fmtPvtMoM(tot.latestFcMoM, true);
     h += '</div>';
   }
   h += '</td>';
@@ -1876,16 +1982,33 @@ function drawStruct(rows, sl){
 function drawRank(rows, sl){
   destroyChart('chRank');
   var ctx = ctxOf('chRank'); if (!ctx) return;
+  var metric = UI.rankMetric || 'huy';
   var data = sl.map(function(s){
     var sr = rows.filter(function(r){return r.tenSite===s;});
     var soTre = sr.filter(function(r){return r.giaoTre;}).length;
     var ttSuat = sr.reduce(function(a,r){return a+r.soThatThoat;},0);
     var tongSuat = sr.reduce(function(a,r){return a + (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);},0);
-    return { site:s, tre:r1(pct(soTre, sr.length)), thatthoat:r1(pct(ttSuat, tongSuat)),
-             soTre:soTre, soNgay:sr.length, tt:ttSuat, tong:tongSuat };  // số liệu thô cho tooltip
-  }).sort(function(a,b){ return b[UI.rankMetric]-a[UI.rankMetric]; });
+    var suatHuy = sr.reduce(function(a,r){return a + (r.suatHuy || 0);},0);
+    var huyPct = tongSuat > 0 ? r1((suatHuy / tongSuat) * 100) : 0;
+    var trePct = r1(pct(soTre, sr.length));
+    var thatthoatPct = r1(pct(ttSuat, tongSuat));
+    return {
+      site: s,
+      huy: huyPct,
+      tre: trePct,
+      thatthoat: thatthoatPct,
+      suatHuy: suatHuy,
+      soTre: soTre,
+      soNgay: sr.length,
+      tt: ttSuat,
+      tong: tongSuat
+    };
+  }).sort(function(a,b){ return (b[metric] || 0) - (a[metric] || 0); });
 
-  var lim = UI.rankMetric==='tre' ? 20 : NGUONG.thatThoatPct;
+  var lim = 1.5;
+  if (metric === 'tre') lim = 20;
+  else if (metric === 'thatthoat') lim = NGUONG.thatThoatPct;
+
   var o = cloneOpt({ indexAxis:'y' });
   o.plugins.legend.display = false;
   o.scales.x.grid = { color:'#F0F0F0' }; o.scales.x.beginAtZero = true;
@@ -1897,19 +2020,44 @@ function drawRank(rows, sl){
     title: function(items){ return items[0].label; },
     label: function(it){
       var d = data[it.dataIndex];
-      var nhan = UI.rankMetric==='tre' ? 'Tỷ lệ giao trễ' : 'Tỷ lệ thất thoát';
-      var extra = UI.rankMetric==='tre'
-        ? d.soTre + '/' + d.soNgay + ' ngày giao trễ'
-        : fmt(d.tt) + '/' + fmt(d.tong) + ' suất';
-      return ['  ' + nhan + ': ' + it.parsed.x + '%', '  ' + extra,
-              '  Ngưỡng cảnh báo: ' + lim + '%'];
+      var nhan = 'Tỷ lệ suất hủy';
+      var extra = fmt(d.suatHuy) + '/' + fmt(d.tong) + ' suất hủy';
+      if (metric === 'tre') {
+        nhan = 'Tỷ lệ giao trễ';
+        extra = d.soTre + '/' + d.soNgay + ' ngày giao trễ';
+      } else if (metric === 'thatthoat') {
+        nhan = 'Tỷ lệ thất thoát';
+        extra = fmt(d.tt) + '/' + fmt(d.tong) + ' suất thất thoát';
+      }
+      return [
+        '  ' + nhan + ': ' + it.parsed.x + '%',
+        '  ' + extra,
+        '  Ngưỡng cảnh báo: ' + lim + '%'
+      ];
     }
   };
-  CHARTS.chRank = new Chart(ctx, { type:'bar',
-    data:{ labels:data.map(function(d){return d.site;}),
-           datasets:[{ data:data.map(function(d){return d[UI.rankMetric];}), borderRadius:3,
-             backgroundColor:data.map(function(d, i){ return d[UI.rankMetric] > lim ? '#DC2626' : PALETTE[i % PALETTE.length]; }) }] },
-    options:o });
+
+  // Màu bar: #FF6720 hoặc #C0342C nếu trên ngưỡng (hủy > 1,5%); dưới ngưỡng #046A38. Không nhiều xanh lá trong một chart.
+  var barColors = data.map(function(d){
+    var v = d[metric] || 0;
+    if (v > lim) {
+      return (metric === 'huy' && v > 2.5) ? '#C0342C' : '#FF6720';
+    }
+    return '#046A38';
+  });
+
+  CHARTS.chRank = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: data.map(function(d){ return d.site; }),
+      datasets: [{
+        data: data.map(function(d){ return d[metric] || 0; }),
+        borderRadius: 4,
+        backgroundColor: barColors
+      }]
+    },
+    options: o
+  });
 }
 
 // Chuẩn hóa mức độ nghiêm trọng về 1 trong 4 bậc.
@@ -2555,6 +2703,21 @@ function fcCls(p, ng){
   if (p <= ng.foodCostMin) return 'fc-ok';
   if (p <= ng.foodCostMax) return 'fc-mid';
   return 'fc-hi';
+}
+/* Conditional formatting pills cho bảng Top sản phẩm & Food cost cao nhất */
+function getFcPill(p){
+  if (p === null || p === undefined || isNaN(p)) return '—';
+  var cls = 'cf-bad';
+  if (p <= 55) cls = 'cf-ok';
+  else if (p <= 62) cls = 'cf-warn';
+  return '<span class="' + cls + '">' + fmtPct1(p) + '%</span>';
+}
+function getDtPill(val, isTop3){
+  var formatted = fmtMoney(val || 0);
+  if (isTop3 && val > 0) {
+    return '<span class="cf-ok">' + formatted + '</span>';
+  }
+  return formatted;
 }
 function computeAndDrawRevenueSacn(){
   if (!REV_RAW || !REV_RAW.rows) return;
@@ -4613,20 +4776,23 @@ function renderRevDrillSacn(site){
     cardHead(IC.meal,'Top sản phẩm theo doanh thu','')+
     '<div class="tw" style="max-height:330px"><table><thead><tr><th>Sản phẩm</th><th class="num">SL</th>'+
       '<th class="num">DT thuần</th><th class="num">Food cost %</th></tr></thead><tbody>'+
-    sd.topSanPham.map(function(x){
+    sd.topSanPham.map(function(x, idx){
+      var isTop3 = idx < 3;
       return '<tr><td>'+esc(x.key)+'</td><td class="num">'+fmt(x.salesQty)+'</td>'+
-        '<td class="num">'+fmtMoney(x.netRevenue)+'</td><td class="num '+fcCls(x.foodCostPct,ng)+'">'+fmtPct(x.foodCostPct)+'</td></tr>';
+        '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
   h += '</div>';
 
   if (sd.topFoodCost.length){
+    var top3FcRevThreshold = sd.topFoodCost.slice().map(function(r){ return r.netRevenue || 0; }).sort(function(a,b){ return b-a; })[2] || 0;
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
       cardHead(IC.trash,'Sản phẩm có food cost % cao nhất','')+
       '<div class="tw"><table><thead><tr><th>Sản phẩm</th><th class="num">Food cost %</th><th class="num">DT thuần</th>'+
         '<th class="num">Giá vốn</th><th class="num">Lãi gộp</th><th class="num">SL</th></tr></thead><tbody>'+
       sd.topFoodCost.map(function(x){
-        return '<tr><td>'+esc(x.key)+'</td><td class="num '+fcCls(x.foodCostPct,ng)+'">'+fmtPct(x.foodCostPct)+'</td>'+
-          '<td class="num">'+fmtMoney(x.netRevenue)+'</td><td class="num">'+fmtMoney(x.foodCost)+'</td>'+
+        var isTop3Dt = (top3FcRevThreshold > 0 && (x.netRevenue || 0) >= top3FcRevThreshold);
+        return '<tr><td>'+esc(x.key)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
+          '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td><td class="num">'+fmtMoney(x.foodCost)+'</td>'+
           '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+fmtMoney(x.grossProfit)+'</td>'+
           '<td class="num">'+fmt(x.salesQty)+'</td></tr>';
       }).join('')+'</tbody></table></div></div>';
@@ -5411,11 +5577,12 @@ function renderRevDrill(site){
       '<th>Sản phẩm</th><th class="num">SL</th><th class="num">DT thuần</th>'+
       '<th class="num">Food cost %</th>'+
     '</tr></thead><tbody>'+
-    sd.topSanPham.map(function(x){
+    sd.topSanPham.map(function(x, idx){
+      var isTop3 = idx < 3;
       return '<tr><td>'+esc(x.key)+'</td>'+
         '<td class="num">'+fmt(x.salesQty)+'</td>'+
-        '<td class="num">'+fmtMoney(x.netRevenue)+'</td>'+
-        '<td class="num '+fcCls(x.foodCostPct,ng)+'">'+fmtPct(x.foodCostPct)+'</td></tr>';
+        '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td>'+
+        '<td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
     }).join('')+
     '</tbody></table></div></div>';
 
@@ -5423,6 +5590,7 @@ function renderRevDrill(site){
 
   /* Sản phẩm ăn mòn biên lợi nhuận */
   if (sd.topFoodCost.length){
+    var top3FcRevThreshold = sd.topFoodCost.slice().map(function(r){ return r.netRevenue || 0; }).sort(function(a,b){ return b-a; })[2] || 0;
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
       cardHead(IC.trash,'Sản phẩm có food cost % cao nhất','')+
       '<div class="tw"><table><thead><tr>'+
@@ -5430,9 +5598,10 @@ function renderRevDrill(site){
         '<th class="num">Giá vốn</th><th class="num">Lãi gộp</th><th class="num">SL</th>'+
       '</tr></thead><tbody>'+
       sd.topFoodCost.map(function(x){
+        var isTop3Dt = (top3FcRevThreshold > 0 && (x.netRevenue || 0) >= top3FcRevThreshold);
         return '<tr><td>'+esc(x.key)+'</td>'+
-          '<td class="num '+fcCls(x.foodCostPct,ng)+'">'+fmtPct(x.foodCostPct)+'</td>'+
-          '<td class="num">'+fmtMoney(x.netRevenue)+'</td>'+
+          '<td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
+          '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td>'+
           '<td class="num">'+fmtMoney(x.foodCost)+'</td>'+
           '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+
             fmtMoney(x.grossProfit)+'</td>'+
@@ -6039,21 +6208,21 @@ function updateEstPeriodDropdown(isDefaultInit) {
   var periodMap = {};
 
   if (gran === 'week') {
-    if (pLbl) pLbl.textContent = 'Chọn tuần';
+    if (pLbl) pLbl.textContent = 'CHỌN TUẦN';
     allRows.forEach(function(r) {
       if (!r.ngay) return;
       var w = est_getWeekInfo(r.ngay);
       if (!periodMap[w.key]) periodMap[w.key] = w.label;
     });
   } else if (gran === 'quarter') {
-    if (pLbl) pLbl.textContent = 'Chọn quý';
+    if (pLbl) pLbl.textContent = 'CHỌN QUÝ';
     allRows.forEach(function(r) {
       if (!r.ngay) return;
       var q = est_getQuarterInfo(r.ngay);
       if (!periodMap[q.key]) periodMap[q.key] = q.label;
     });
   } else if (gran === 'year') {
-    if (pLbl) pLbl.textContent = 'Chọn năm';
+    if (pLbl) pLbl.textContent = 'CHỌN NĂM';
     allRows.forEach(function(r) {
       if (!r.ngay) return;
       var y = r.ngay.substring(0, 4);
@@ -6061,7 +6230,7 @@ function updateEstPeriodDropdown(isDefaultInit) {
     });
   } else {
     // month
-    if (pLbl) pLbl.textContent = 'Chọn tháng';
+    if (pLbl) pLbl.textContent = 'CHỌN THÁNG';
     allRows.forEach(function(r) {
       var k = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
       if (!k) return;
@@ -6859,6 +7028,13 @@ function computeAndDrawRevenueEst(){
   html += '<div class="grid g5">';
 
   // KPI 1: Doanh thu ước tính
+  var uniqueDays = new Set();
+  rows.forEach(function(r){
+    if (r.ngay) uniqueDays.add(String(r.ngay).substring(0, 10));
+  });
+  var numDays = uniqueDays.size || 1;
+  var avgDailyDT = Math.round(totDT / numDays);
+
   var achDT = totPctKH;
   var achDTClamped = achDT === null ? 0 : Math.max(0, Math.min(100, achDT));
   var barColorDT = achDT === null ? '#64748B' : (achDT >= 100 ? '#046A38' : (achDT >= 95 ? '#FF6720' : '#C0342C'));
@@ -6869,13 +7045,13 @@ function computeAndDrawRevenueEst(){
       '<div>' +
         '<div class="kpi-lb">Doanh thu ước tính</div>' +
         '<div class="kpi-v" style="color:var(--text);">' + fmtMoney(totDT) + '</div>' +
-        '<div class="kpi-sub">KH: ' + (totPlanDT > 0 ? fmtMoney(totPlanDT) : 'Chưa có KH') + '</div>' +
+        '<div class="kpi-sub" title="Doanh thu trung bình mỗi ngày trong kỳ lọc (tính trên ' + numDays + ' ngày)">Doanh thu TB / ngày: ' + fmtMoney(avgDailyDT) + '</div>' +
       '</div>' +
       '<div class="kpi-ic" style="background:var(--brand-soft);color:var(--brand);"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg></div>' +
     '</div>' +
     '<div class="kh-ach-track"><div class="kh-ach-fill" style="width:' + achDTClamped + '%;background:' + barColorDT + '"></div></div>' +
     '<div class="thr" style="margin-top:6px;background:' + bgDT + ';color:' + fgDT + '">' +
-      (achDT === null ? 'Chưa đủ dữ liệu kế hoạch' : ((achDT >= 100 ? '✓ Đạt ' : '▲ Đạt ') + fmtPct1(achDT) + '% kế hoạch DT')) +
+      (achDT === null ? 'Chưa đủ dữ liệu kế hoạch dự tính' : ((achDT >= 100 ? '✓ Đạt ' : '▲ Đạt ') + fmtPct1(achDT) + '% kế hoạch dự tính' + (totPlanDT > 0 ? ' (' + fmtMoney(totPlanDT) + ')' : ''))) +
     '</div>' +
   '</div>';
 
@@ -7060,10 +7236,10 @@ function computeAndDrawRevenueEst(){
         '<span style="font-size:11px;color:var(--muted);" id="estSiteMetricSub">Trục X: Thời gian theo kỳ lọc · Grouped bar tiền (trục trái VNĐ) & Line số lượng suất (trục phải)</span>' +
       '</div>' +
       '<div class="tg" id="estSiteMetricGran">' +
-        '<button type="button" data-v="week" class="' + (siteMetricGran === 'week' ? 'on' : '') + '">Tuần</button>' +
-        '<button type="button" data-v="month" class="' + (siteMetricGran === 'month' ? 'on' : '') + '">Tháng</button>' +
-        '<button type="button" data-v="quarter" class="' + (siteMetricGran === 'quarter' ? 'on' : '') + '">Quý</button>' +
-        '<button type="button" data-v="year" class="' + (siteMetricGran === 'year' ? 'on' : '') + '">Năm</button>' +
+        '<button type="button" data-v="week" class="' + (siteMetricGran === 'week' ? 'on' : '') + '">TUẦN</button>' +
+        '<button type="button" data-v="month" class="' + (siteMetricGran === 'month' ? 'on' : '') + '">THÁNG</button>' +
+        '<button type="button" data-v="quarter" class="' + (siteMetricGran === 'quarter' ? 'on' : '') + '">QUÝ</button>' +
+        '<button type="button" data-v="year" class="' + (siteMetricGran === 'year' ? 'on' : '') + '">NĂM</button>' +
       '</div>' +
     '</div>' +
     '<div class="cbox" style="height:320px"><canvas id="chEstSiteMetrics"></canvas></div>' +
@@ -7090,7 +7266,7 @@ function computeAndDrawRevenueEst(){
     '<div class="card-t">' +
       '<div>' +
         '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3h18v18H3zM3 9h18M9 21V9"/></svg> Bảng Chi Tiết Doanh Thu, Kế Hoạch & Lợi Nhuận Theo Site</h3>' +
-        '<span style="font-size:11px;color:var(--muted);">Giao ban tuần/tháng: Bấm tiêu đề cột để sắp xếp ▲▼. AM1/AM2 xanh (#046A38) khi > 0, đỏ (#C0342C) khi < 0, format % 1 chữ số thập phân</span>' +
+        '<span style="font-size:11px;color:var(--muted);">Bấm tiêu đề cột để sắp xếp ▲▼. AM1/AM2 xanh khi > 0, đỏ khi < 0, format % 1 chữ số thập phân</span>' +
       '</div>' +
     '</div>' +
     '<div class="tw">' +

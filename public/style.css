@@ -1478,39 +1478,84 @@ table.hm td .cell-none {
 
 /* Conditional Formatting Rules (.cf-ok, .cf-warn, .cf-bad) */
 .cf-ok, .pvt-badge-ok {
-  background-color: #E8F5EE !important;
+  background: #E8F5EE !important;
   color: #046A38 !important;
-  font-weight: 700 !important;
-  padding: 3px 8px;
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .cf-warn, .pvt-badge-warn {
-  background-color: #FFF0E8 !important;
-  color: #FF6720 !important;
-  font-weight: 700 !important;
-  padding: 3px 8px;
-  border-radius: 6px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
+  background: #FFF0E8 !important;
+  color: #C2410C !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  display: inline-block;
+  white-space: nowrap;
 }
 
 .cf-bad, .pvt-badge-bad {
-  background-color: #FFEAEA !important;
-  color: #E11D48 !important;
-  font-weight: 700 !important;
-  padding: 3px 8px;
+  background: #FEE2E2 !important;
+  color: #C0342C !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+/* Conditional Formatting for Delta / % Change (.cf-up-good, .cf-down-bad, .cf-up-bad, .cf-down-good) */
+.cf-up-good,
+.cf-down-good,
+.pvt-mom-up {
+  background: #E8F5EE !important;
+  color: #046A38 !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  white-space: nowrap !important;
+  font-size: 11.5px !important;
+}
+
+.cf-down-bad,
+.cf-up-bad,
+.pvt-mom-down {
+  background: #FEE2E2 !important;
+  color: #C0342C !important;
+  font-weight: 600 !important;
+  border-radius: 6px !important;
+  padding: 2px 6px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  gap: 2px !important;
+  white-space: nowrap !important;
+  font-size: 11.5px !important;
+}
+
+.pvt-mom-flat {
+  color: var(--muted) !important;
+  font-weight: 500 !important;
+  padding: 2px 6px !important;
+  font-size: 11.5px !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  white-space: nowrap !important;
+}
+
+.pvt-mom-pill {
   border-radius: 6px;
+  font-size: 11.5px;
+  font-weight: 600;
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  gap: 4px;
+  gap: 2px;
+  white-space: nowrap;
 }
 
 /* KPI Gauge Scale Bar (.kpi-gauge) */
