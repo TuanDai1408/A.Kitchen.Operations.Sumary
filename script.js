@@ -386,12 +386,12 @@ var MUCDO_COLOR = {
 var MUCDO_RANK  = { 'Thấp':1, 'Trung bình':2, 'Cao':3, 'Nghiêm trọng':4, 'Chưa phân loại':0 };
 var LOAI_SU_CO  = ['Thiết bị','Nhân sự','NVL','Khiếu nại','Chi phí','Giao trễ'];
 
-// Thang màu heatmap 4 bậc (xanh mint nhạt theo brand, không xanh đậm).
+// Thang màu heatmap 4 bậc (chuẩn brand: #4F9B6A, #E6C84A, #FF8A3D, #E85A52).
 var HEAT = [
-  { ten:'Bình thường',  moc:'0đ',   bg:'#B8DCC6', bd:'#9EC7AE', fg:'#1A2E24' },
-  { ten:'Cần lưu ý',    moc:'1-2đ', bg:'#F5E6A3', bd:'#E5D27C', fg:'#1A2E24' },
-  { ten:'Có vấn đề',    moc:'3-5đ', bg:'#FFD4B8', bd:'#F5BA96', fg:'#1A2E24' },
-  { ten:'Nghiêm trọng', moc:'≥6đ',  bg:'#F5B5B0', bd:'#E5948E', fg:'#8A1F1B' }
+  { ten:'Bình thường',  moc:'0đ',   bg:'#4F9B6A', bd:'#43855B', fg:'#FFFFFF' },
+  { ten:'Cần lưu ý',    moc:'1-2đ', bg:'#E6C84A', bd:'#CCAE39', fg:'#1A2E24' },
+  { ten:'Có vấn đề',    moc:'3-5đ', bg:'#FF8A3D', bd:'#E87529', fg:'#FFFFFF' },
+  { ten:'Nghiêm trọng', moc:'≥6đ',  bg:'#E85A52', bd:'#D1443C', fg:'#FFFFFF' }
 ];
 
 /* ---------- ICON (SVG inline, không phụ thuộc CDN) ---------- */
@@ -868,7 +868,7 @@ function renderOverview(){
         return '<span><i style="background:'+x.bg+';border:1px solid '+x.bd+'"></i>'+x.ten+
                ' <span style="color:var(--muted)">'+x.moc+'</span></span>';
       }).join('')+
-      '<span><i style="background:#E8ECE9;border:1px solid #D8E5DE"></i>Chưa báo cáo</span>'+
+      '<span><i style="background:#E5E7EB;border:1px solid #D1D5DB"></i>Chưa báo cáo</span>'+
       '<span style="color:var(--muted);margin-left:auto">hover để xem lý do • bấm để mở chi tiết site</span>'+
     '</div>'+
     // '<div class="tw">'+heatmapHtml(rows, sl)+'</div></div>';

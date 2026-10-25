@@ -1451,8 +1451,8 @@ table.hm tr:hover td.site-c {
 
 table.hm td button.cell,
 table.hm td span.cell {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 6px;
   border: 0;
   display: inline-flex;
@@ -1463,6 +1463,7 @@ table.hm td span.cell {
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   font-weight: 800;
   font-size: 11.5px;
+  opacity: 1 !important;
 }
 
 table.hm td button.cell:hover {
@@ -1471,9 +1472,10 @@ table.hm td button.cell:hover {
 }
 
 table.hm td .cell-none {
-  background: #E8ECE9 !important;
-  border: 1px solid #D8E5DE !important;
+  background: #E5E7EB !important;
+  border: 1px solid #D1D5DB !important;
   cursor: default;
+  opacity: 1 !important;
 }
 
 /* Conditional Formatting Rules (.cf-ok, .cf-warn, .cf-bad) */
