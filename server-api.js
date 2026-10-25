@@ -1065,12 +1065,13 @@ export async function getRevenueEstData(filtersParam) {
     kySet.add(k);
     const key = `${s}|${k}`;
     if (!planMap[key]) {
-      planMap[key] = { site: s, ky: k, doanhThu: 0, foodCost: 0, laiGop: 0, chiPhiNhanSu: 0 };
+      planMap[key] = { site: s, ky: k, doanhThu: 0, foodCost: 0, laiGop: 0, chiPhiNhanSu: 0, sanLuong: 0 };
     }
     const val = Number(p.gia_tri || 0);
     if (p.hang_muc === "DoanhThu") planMap[key].doanhThu = val;
     else if (p.hang_muc === "FoodCost") planMap[key].foodCost = val;
     else if (p.hang_muc === "LaiGop") planMap[key].laiGop = val;
+    else if (p.hang_muc === "SanLuongTong" || p.hang_muc === "SanLuong") planMap[key].sanLuong = val;
     else if (p.hang_muc === "ChiPhiNhanSu") {
       planMap[key].chiPhiNhanSu = val;
       personnelBySiteKy.push({ site: s, ky: k, amount: val });

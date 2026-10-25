@@ -1,57 +1,65 @@
 /* =========================================================================
    A.KITCHEN DASHBOARD - MODERN SAAS & FINTECH INVESTMENT REDESIGN
    Brand Guidelines: PANTONE 349 C (#046A38) & PANTONE 165 C (#FF6720)
-   Typography: Nunito (Google Fonts)
+   Typography: Roboto (Google Fonts)
    Layout: Clean light airy canvas, rounded soft cards, high whitespace
    ========================================================================= */
 
-@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700;800;900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700;900&display=swap');
 
 :root {
-  /* Brand Core Colors (Pantone 349 C & 165 C) */
-  --brand:         #046A38;   /* Xanh lá chính */
-  --brand-dark:    #03552D;   /* Xanh lá đậm */
-  --brand-light:   #16874E;   /* Xanh lá tươi */
-  --brand-soft:    #E8F5EE;   /* Nền mint nhạt */
-  --brand-surface: #F0F9F4;   /* Nền surface hơi xanh */
+  /* Nền & surface (A.Kitchen Brand Original - PANTONE 349 C & 165 C) */
+  --bg:            #F4F7F5;   /* nền sáng thoáng */
+  --bg-sidebar:    #FFFFFF;   /* sidebar trắng */
+  --card:          #FFFFFF;   /* thẻ trắng */
+  --card-subtle:   #F8FAF9;
+  --text:          #1A2E24;   /* chữ chính */
+  --text-dim:      #304338;
+  --text-secondary:#5C6F65;
+  --muted:         #5C6F65;   /* chữ phụ muted */
+  --line:          #D8E5DE;   /* đường phân cách nhạt */
+  --line-strong:   #C5D6CC;
   
-  --accent:        #FF6720;   /* Cam điểm nhấn */
-  --accent-dark:   #E05414;   /* Cam đậm */
-  --accent-soft:   #FFF0E8;   /* Nền cam nhạt (peach) */
+  /* Brand Guidelines: PANTONE 349 C (#046A38) & PANTONE 165 C (#FF6720) */
+  --brand:         #046A38;   /* điểm nhấn: nút primary, 1 series chính */
+  --brand-mid:     #046A38;
+  --brand-dark:    #046A38;   /* thống nhất thương hiệu #046A38 */
+  --brand-light:   #046A38;
+  --brand-soft:    #E8F5EE;   /* nền active / chip / hover — chủ yếu dùng cái này */
+  --brand-muted:   #5C6F65;
+  --brand-surface: #F4F7F5;
+
+  --accent:        #FF6720;   /* cam PANTONE 165 C */
+  --accent-dark:   #E05510;
+  --accent-soft:   #FFF0E8;
   
-  /* Status Semantics */
+  /* Semantics */
   --ok:            #046A38;
   --ok-soft:       #E8F5EE;
-  --warn:          #FF6720;
+  --warn:          #FF6720;   /* cam PANTONE 165 C */
   --warn-soft:     #FFF0E8;
-  --bad:           #E11D48;
+  --bad:           #C0342C;   /* Đỏ thương hiệu */
   --bad-soft:      #FDECEC;
-  
-  /* App Surface & Neutrals */
-  --bg:            #F5F7F6;   /* Nền app sáng, hơi xanh */
-  --card:          #FFFFFF;   /* Thẻ trắng */
-  --card-subtle:   #FAFBFB;
-  --text:          #0F1F17;   /* Chữ đậm xanh than */
-  --text-dim:      #2A3D33;
-  --muted:         #6B7C72;   /* Chữ phụ sage muted */
-  --line:          #E2EBE6;   /* Đường phân cách siêu nhẹ */
-  --line-strong:   #CBD9D1;
-  
-  /* Shadows (Fintech soft shadows) */
-  --shadow-sm:     0 1px 3px rgba(15, 31, 23, 0.04);
-  --shadow:        0 1px 2px rgba(15, 31, 23, 0.04), 0 8px 24px rgba(15, 31, 23, 0.06);
-  --shadow-hover:  0 4px 10px rgba(15, 31, 23, 0.04), 0 16px 36px rgba(15, 31, 23, 0.08);
-  --shadow-lg:     0 20px 40px -12px rgba(15, 31, 23, 0.12);
+  --info:          #5C6F65;
+
+  /* Shadow brand */
+  --shadow-sm:     0 1px 3px rgba(0,0,0,.04);
+  --shadow:        0 1px 3px rgba(0,0,0,.04), 0 4px 16px rgba(0,0,0,.03);
+  --shadow-hover:  0 4px 20px rgba(0,0,0,.07);
+  --shadow-lg:     0 20px 40px -12px rgba(0,0,0,.10);
   
   /* Radii */
-  --radius-sm:     8px;
+  --radius:        16px;      /* Card bo góc 16px */
+  --radius-sm:     10px;      /* Input / Button */
   --radius-md:     12px;
   --radius-lg:     16px;
   --radius-xl:     20px;
   --radius-full:   9999px;
   
   /* Typography */
-  --font:          "Nunito", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font:          "Roboto", system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-title:    "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-body:     "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   
   /* Sidebar Dimensions */
   --sidebar-w:          264px;
@@ -72,14 +80,21 @@ html {
   scroll-behavior: smooth;
 }
 
+body, html {
+  font-family: var(--font-body);
+}
+
 body {
-  font-family: var(--font);
   background: var(--bg);
   color: var(--text);
   line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   min-height: 100vh;
+}
+
+h1, h2, h3, h4, .kpi-v, .brand-t1, .card-t, button, input, select, textarea, table {
+  font-family: var(--font-title);
 }
 
 a {
@@ -250,7 +265,7 @@ button, input, select, textarea {
 }
 
 .sb-item:hover {
-  background: #F0F6F2;
+  background: var(--brand-soft);
   color: var(--brand);
 }
 
@@ -258,9 +273,10 @@ button, input, select, textarea {
   background: var(--brand-soft);
   color: var(--brand);
   font-weight: 700;
-  border-left: 3.5px solid var(--brand);
-  padding-left: 10.5px;
-  box-shadow: 0 1px 3px rgba(4, 106, 56, 0.08);
+  border-left: 3px solid var(--brand);
+  padding-left: 11px;
+  border-radius: var(--radius-md);
+  box-shadow: none;
 }
 
 .sb-item svg {
@@ -345,7 +361,7 @@ button, input, select, textarea {
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: #16A34A;
+  background: var(--brand);
   animation: akPulse 1.8s infinite;
   flex: 0 0 8px;
 }
@@ -450,7 +466,7 @@ body.sb-collapsed .main-wrap {
   width: 7px;
   height: 7px;
   border-radius: 50%;
-  background: #16A34A;
+  background: var(--brand);
   animation: akPulse 1.8s infinite;
 }
 
@@ -596,11 +612,19 @@ body.sb-collapsed .main-wrap {
   width: 100%;
 }
 
-/* Grid 2 hàng Tab Doanh thu Ước tính (fbarEst) */
+/* Grid 2 hàng Tab Doanh thu Ước tính (fbarEst) - Giảm 20% chiều cao */
+#fbarEst {
+  padding: 10px 14px;
+}
+
+#fbarEst .fbar-2rows {
+  gap: 8px;
+}
+
 .fbar-2rows > .fbar-est-grid:nth-child(1) {
   display: grid;
   grid-template-columns: auto 1.2fr 1.2fr 1fr;
-  gap: 12px 16px;
+  gap: 8px 10px;
   align-items: end;
   width: 100%;
 }
@@ -608,9 +632,53 @@ body.sb-collapsed .main-wrap {
 .fbar-2rows > .fbar-est-grid:nth-child(2) {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr auto;
-  gap: 12px 16px;
+  gap: 8px 10px;
   align-items: end;
   width: 100%;
+}
+
+#fbarEst .fld label {
+  font-size: 10.5px !important;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  margin-bottom: 2px !important;
+  height: 13px !important;
+  line-height: 13px !important;
+}
+
+#fbarEst .fld input,
+#fbarEst .fld select,
+#fbarEst .fld button.sel,
+#fbarEst .fld-btns .btn {
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  border-radius: 8px !important;
+  padding: 0 10px !important;
+  font-size: 12.5px !important;
+  line-height: 30px !important;
+}
+
+#fbarEst .tg {
+  height: 32px !important;
+  min-height: 32px !important;
+  max-height: 32px !important;
+  padding: 2px !important;
+  display: inline-flex;
+  align-items: center;
+  border-radius: 8px !important;
+}
+
+#fbarEst .tg button {
+  height: 28px !important;
+  min-height: 28px !important;
+  max-height: 28px !important;
+  line-height: 28px !important;
+  padding: 0 9px !important;
+  font-size: 11.5px !important;
+  border-radius: 6px !important;
 }
 
 .fld {
@@ -1150,10 +1218,14 @@ main {
   flex: 1 1 auto;
 }
 
-.cbox.cbox-ov-sm {
-  height: 230px !important;
-  min-height: 230px !important;
-  max-height: 230px !important;
+#tab-overview .chart-rank .cbox,
+#tab-overview .chart-complaint .cbox,
+#tab-overview .cbox-overview-sm,
+#tab-overview .cbox-ov-sm,
+#tab-overview #knBox {
+  height: 200px !important;
+  min-height: 200px !important;
+  max-height: 200px !important;
 }
 
 .cbox.tall {
@@ -1245,10 +1317,10 @@ main {
 }
 
 .chip.on {
-  background: var(--brand);
-  color: #FFFFFF;
+  background: var(--brand-soft);
+  color: var(--brand);
   border-color: var(--brand);
-  box-shadow: 0 2px 8px rgba(4, 106, 56, 0.25);
+  box-shadow: 0 1px 4px rgba(4, 106, 56, 0.15);
   font-weight: 700;
 }
 
@@ -1379,8 +1451,8 @@ table.hm tr:hover td.site-c {
 
 table.hm td button.cell,
 table.hm td span.cell {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 6px;
   border: 0;
   display: inline-flex;
@@ -1399,8 +1471,8 @@ table.hm td button.cell:hover {
 }
 
 table.hm td .cell-none {
-  background: #E5E7EB !important;
-  border: 1px solid #D1D5DB !important;
+  background: #E8ECE9 !important;
+  border: 1px solid #D8E5DE !important;
   cursor: default;
 }
 
@@ -1418,8 +1490,8 @@ table.hm td .cell-none {
 }
 
 .cf-warn, .pvt-badge-warn {
-  background-color: #FFF5EB !important;
-  color: #D97706 !important;
+  background-color: #FFF0E8 !important;
+  color: #FF6720 !important;
   font-weight: 700 !important;
   padding: 3px 8px;
   border-radius: 6px;
