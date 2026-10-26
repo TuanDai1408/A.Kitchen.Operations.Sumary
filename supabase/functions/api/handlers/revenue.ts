@@ -178,7 +178,7 @@ export async function handleGetRevenueEstData(filtersParam?: any): Promise<any> 
       ? String(r.ten_kenh_ban_hang).trim()
       : (r.kenh_ban_hang ? String(r.kenh_ban_hang).trim() : "");
     const ngay = formatDate(r.billing_date);
-    const ky = r.ky_uoc_tinh || (ngay ? ngay.substring(0, 7) : "");
+    const ky = (ngay ? ngay.substring(0, 7) : "") || r.ky_uoc_tinh || "";
 
     return {
       id: r.id,

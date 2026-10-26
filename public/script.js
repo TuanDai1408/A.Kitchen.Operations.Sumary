@@ -6232,7 +6232,7 @@ function updateEstPeriodDropdown(isDefaultInit) {
     // month
     if (pLbl) pLbl.textContent = 'CHỌN THÁNG';
     allRows.forEach(function(r) {
-      var k = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
+      var k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
       if (!k) return;
       if (!periodMap[k]) periodMap[k] = 'Tháng ' + k.substring(5, 7) + '/' + k.substring(0, 4);
     });
@@ -6740,7 +6740,7 @@ function computeAndDrawRevenueEst(){
         pKey = r.ngay ? r.ngay.substring(0, 4) : '';
       } else {
         // month
-        pKey = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
+        pKey = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
       }
       if (RF_EST.periods.indexOf(pKey) < 0) return false;
     }
@@ -7625,9 +7625,9 @@ function drawEstTrendCombined(rows, planMap, nsMap, planSites) {
       }
     } else {
       // month
-      k = r.ky;
-      lbl = 'T' + r.ky.substring(5, 7) + '/' + r.ky.substring(0, 4);
-      mArr = [r.ky];
+      k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
+      lbl = k ? ('T' + k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
+      mArr = [k];
     }
 
     if (!bucketMap[k]) {
@@ -8171,7 +8171,7 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
       }
     } else {
       // month
-      k = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
+      k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
       lbl = k ? ('T' + k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
       mArr = [k];
     }
