@@ -7692,7 +7692,7 @@ function drawEstTrendCombined(rows, planMap, nsMap, planSites) {
       tooltip: Object.assign({}, TIP_STYLE, {
         callbacks: {
           label: function(c) {
-            if (c.dataset.yAxisID === 'y1') return c.dataset.label + ': ' + c.parsed.y + '%';
+            if (c.dataset.yAxisID === 'y1') return c.dataset.label + ': ' + fmtPct1(c.parsed.y) + '%';
             return c.dataset.label + ': ' + fmtMoney(c.parsed.y);
           }
         }
@@ -7718,7 +7718,8 @@ function drawEstTrendCombined(rows, planMap, nsMap, planSites) {
         grid: { drawOnChartArea: false },
         ticks: {
           font: { family: "'Roboto', sans-serif", size: 10.5, weight: '600' },
-          callback: function(v) { return v + '%'; }
+          precision: 1,
+          callback: function(v) { return fmtPct1(v) + '%'; }
         }
       }
     }
@@ -7951,7 +7952,8 @@ function drawEstComboSite(siteList, nguong){
           suggestedMax: 100,
           ticks: {
             font: { size: 10.5 },
-            callback: function(v){ return v + '%'; }
+            precision: 1,
+            callback: function(v){ return fmtPct1(v) + '%'; }
           }
         }
       }
