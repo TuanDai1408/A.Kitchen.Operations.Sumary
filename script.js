@@ -6690,6 +6690,7 @@ function est_renderSiteTableRows(sortedList) {
     var am2Color = s.am2 > 0 ? '#046A38' : (s.am2 < 0 ? '#C0342C' : 'var(--text)');
     var am2PctColor = s.bienAM2 > 0 ? '#046A38' : (s.bienAM2 < 0 ? '#C0342C' : 'var(--text)');
     var pctKhColor = s.pctKH >= 100 ? '#046A38' : (s.pctKH >= 95 ? '#FF6720' : (s.pctKH ? '#C0342C' : 'var(--muted)'));
+    var pctKhSlColor = s.pctKH_SL >= 100 ? '#046A38' : (s.pctKH_SL >= 95 ? '#FF6720' : (s.pctKH_SL ? '#C0342C' : 'var(--muted)'));
 
     return '<tr class="hov">' +
       '<td>' +
@@ -6700,6 +6701,10 @@ function est_renderSiteTableRows(sortedList) {
       '<td class="num">' + (s.hasPlan ? fmtMoney(s.planDT) : '<span style="color:var(--muted);">Chưa có KH</span>') + '</td>' +
       '<td class="ctr font-bold" style="color:' + pctKhColor + ';">' +
         (s.pctKH !== null ? fmtPct1(s.pctKH) + '%' : '—') +
+      '</td>' +
+      '<td class="num font-bold">' + (s.suat ? Math.round(s.suat).toLocaleString('vi-VN') : '0') + '</td>' +
+      '<td class="ctr font-bold" style="color:' + pctKhSlColor + ';">' +
+        (s.pctKH_SL !== null ? fmtPct1(s.pctKH_SL) + '%' : '—') +
       '</td>' +
       '<td class="num">' + fmtMoney(s.fc) + '</td>' +
       '<td class="num ' + fcCls + '">' + fmtPct1(s.fc_pct) + '%</td>' +
@@ -6954,6 +6959,7 @@ function computeAndDrawRevenueEst(){
     s.am2 = s.am1 - (hasNS ? nsVal : 0);
     s.bienAM2 = s.dt > 0 ? (s.am2 / s.dt * 100) : 0;
     s.pctKH = (s.hasPlan && s.planDT > 0) ? (s.dt / s.planDT * 100) : null;
+    s.pctKH_SL = (s.planSL > 0) ? (s.suat / s.planSL * 100) : null;
     if (hasNS) totNS += nsVal;
   });
 
@@ -7276,7 +7282,9 @@ function computeAndDrawRevenueEst(){
             estTh('site', 'Site / Điểm bán', '') +
             estTh('dt', 'DT Ước tính', 'num') +
             estTh('planDT', 'DT Kế hoạch', 'num') +
-            estTh('pctKH', '% Đạt KH', 'ctr') +
+            estTh('pctKH', '% Đạt KH (DT)', 'ctr') +
+            estTh('suat', 'Sản lượng', 'num') +
+            estTh('pctKH_SL', '% Đạt kế hoạch', 'ctr') +
             estTh('fc', 'Giá vốn (FC)', 'num') +
             estTh('fc_pct', 'FC %', 'num') +
             estTh('am1', 'AM1 (Lãi gộp)', 'num') +
@@ -7296,6 +7304,10 @@ function computeAndDrawRevenueEst(){
             '<td class="num">' + (totPlanDT > 0 ? fmtMoney(totPlanDT) : '—') + '</td>' +
             '<td class="ctr" style="color:' + (totPctKH >= 100 ? '#046A38' : (totPctKH >= 95 ? '#FF6720' : '#C0342C')) + ';">' +
               (totPctKH !== null ? fmtPct1(totPctKH) + '%' : '—') +
+            '</td>' +
+            '<td class="num font-bold">' + Math.round(totSuat).toLocaleString('vi-VN') + '</td>' +
+            '<td class="ctr font-bold" style="color:' + (pctPlanSuat >= 100 ? '#046A38' : (pctPlanSuat >= 95 ? '#FF6720' : '#C0342C')) + ';">' +
+              (pctPlanSuat !== null ? fmtPct1(pctPlanSuat) + '%' : '—') +
             '</td>' +
             '<td class="num">' + fmtMoney(totFC) + '</td>' +
             '<td class="num ' + (totFC_pct > 62 ? 'fc-hi' : 'fc-ok') + '">' + fmtPct1(totFC_pct) + '%</td>' +
@@ -8377,7 +8389,7 @@ function est_exportCsv(){
   }
   var list = REV_EST.lastSiteList;
   var rows = [
-    ['Site / Điểm bán', 'Vùng miền', 'Loại cửa hàng', 'Doanh thu ước tính (VND)', 'Doanh thu KH (VND)', '% Đạt KH', 'Food cost (VND)', 'Food cost %', 'AM1 Lãi gộp (VND)', 'CP Nhân sự KH (VND)', 'Lãi AM2 (VND)', 'Biên AM2 %']
+    ['Site / Điểm bán', 'Vùng miền', 'Loại cửa hàng', 'Doanh thu ước tính (VND)', 'Doanh thu KH (VND)', '% Đạt KH DT', 'Sản lượng (suất)', '% Đạt KH SL', 'Food cost (VND)', 'Food cost %', 'AM1 Lãi gộp (VND)', 'CP Nhân sự KH (VND)', 'Lãi AM2 (VND)', 'Biên AM2 %']
   ];
 
   list.forEach(function(s){
@@ -8388,6 +8400,8 @@ function est_exportCsv(){
       Math.round(s.dt),
       s.hasPlan ? Math.round(s.planDT) : '',
       s.pctKH !== null ? s.pctKH.toFixed(1) + '%' : '',
+      Math.round(s.suat || 0),
+      s.pctKH_SL !== null ? s.pctKH_SL.toFixed(1) + '%' : '',
       Math.round(s.fc),
       s.fc_pct.toFixed(1) + '%',
       Math.round(s.am1),
