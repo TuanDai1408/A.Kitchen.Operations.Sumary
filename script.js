@@ -7061,7 +7061,8 @@ function computeAndDrawRevenueEst(){
     '</div>' +
   '</div>';
 
-  // KPI 2: Tổng số suất ăn (Thay thế % Đạt Kế hoạch)
+  // KPI 2: Tổng số suất ăn
+  var avgDailySuat = Math.round(totSuat / numDays);
   var achSuatClamped = pctPlanSuat === null ? 0 : Math.max(0, Math.min(100, pctPlanSuat));
   var barColorSuat = pctPlanSuat === null ? '#64748B' : (pctPlanSuat >= 100 ? '#046A38' : (pctPlanSuat >= 95 ? '#FF6720' : '#C0342C'));
   var bgSuat = pctPlanSuat === null ? '#F3F4F6' : (pctPlanSuat >= 100 ? '#E8F5EE' : (pctPlanSuat >= 95 ? '#FFF0E8' : '#FDECEC'));
@@ -7071,7 +7072,7 @@ function computeAndDrawRevenueEst(){
       '<div>' +
         '<div class="kpi-lb">Tổng số suất ăn</div>' +
         '<div class="kpi-v" style="color:var(--text);">' + Math.round(totSuat).toLocaleString('vi-VN') + '</div>' +
-        '<div class="kpi-sub">' + (pctPlanSuat !== null ? ('Đạt ' + pctPlanSuat.toFixed(1).replace('.', ',') + '% kế hoạch suất') : (totPlanSuat > 0 ? ('KH: ' + Math.round(totPlanSuat).toLocaleString('vi-VN') + ' suất') : 'Kế hoạch suất: —')) + '</div>' +
+        '<div class="kpi-sub" title="Số suất trung bình mỗi ngày trong kỳ lọc (tính trên ' + numDays + ' ngày)">Số suất TB / ngày: ' + avgDailySuat.toLocaleString('vi-VN') + ' suất</div>' +
       '</div>' +
       '<div class="kpi-ic" style="background:#EFF6FF;color:#2563EB;"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 2v7a3 3 0 006 0V2M6 12v10M15 2c-1.5 2-1.5 5 0 7 1 1.3 2 1.7 2 3v10"/></svg></div>' +
     '</div>' +
