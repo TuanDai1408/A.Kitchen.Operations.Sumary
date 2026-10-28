@@ -273,7 +273,7 @@ var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week',
 // barDim: 'khachHang' (default) | 'site'
 
 /* ---- STATE RIÊNG CHO TAB DOANH THU & FOOD COST (SACN) ---- */
-var SACN_EXCLUDE_MASITE = ['K502','K003','K800']; // Mã site bị loại khỏi tab SACN
+var SACN_EXCLUDE_MASITE = ['K502','K003','K800','D007']; // Mã site bị loại khỏi tab SACN
 var REV_SACN = null;
 var REV_SACN_INIT = false;
 var RF_SACN = { from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
@@ -347,7 +347,11 @@ function rev_aggDisposal(disposalRows, f, allowedSites) {
 function sacn_baseRows(){
   if (!REV_RAW || !REV_RAW.rows) return [];
   return REV_RAW.rows.filter(function(r){
-    return SACN_EXCLUDE_MASITE.indexOf(r.maSite) < 0;
+    if (SACN_EXCLUDE_MASITE.indexOf(r.maSite) >= 0) return false;
+    if (r.maSite === 'D007') return false;
+    var sName = r.site || r.tenSite || r.ten_cua_hang || '';
+    if (/megafar/i.test(sName)) return false;
+    return true;
   });
 }
 
@@ -6051,8 +6055,9 @@ var REV_EST_LOADING = false;
 var REV_EST_INIT = false;
 var REV_EST_RENDERED = false;
 var RF_EST = {
-  gran: 'month', // 'week' | 'month' | 'quarter' | 'year'
-  periods: [], // array of selected period keys e.g. ['2026-09'], empty means all
+  gran: 'week', // 'week' | 'month' | 'quarter' | 'year'
+  scope: '4', // '4' (4 kỳ gần nhất) | 'all' (Tất cả)
+  periods: [], // array of selected period keys e.g. ['2026-W38'], empty means all
   sites: [],
   vungMien: [],
   loaiCuaHang: [],
@@ -6183,12 +6188,14 @@ function est_getQuarterInfo(dateStr) {
 var EST_EXCLUDED_SITES = [
   'A.Kitchen - Miền Nam',
   'MN Bếp Ăn Đại Học Hùng Vương',
-  'MB A.Kitchen - Hub An Khánh'
+  'MB A.Kitchen - Hub An Khánh',
+  'MN Kho Megafarrm'
 ];
 
 function est_isExcludedSite(siteName) {
   if (!siteName) return false;
   var sClean = String(siteName).trim().toLowerCase();
+  if (/megafar/i.test(sClean)) return true;
   for (var i = 0; i < EST_EXCLUDED_SITES.length; i++) {
     var exClean = EST_EXCLUDED_SITES[i].trim().toLowerCase();
     if (sClean === exClean || sClean.indexOf(exClean) >= 0 || exClean.indexOf(sClean) >= 0) {
@@ -6204,7 +6211,7 @@ function updateEstPeriodDropdown(isDefaultInit) {
   if (!REV_EST_RAW) return;
 
   var allRows = REV_EST_RAW.rows || [];
-  var gran = RF_EST.gran || 'month';
+  var gran = RF_EST.gran || 'week';
   var periodMap = {};
 
   if (gran === 'week') {
@@ -6240,20 +6247,29 @@ function updateEstPeriodDropdown(isDefaultInit) {
 
   var sortedKeys = Object.keys(periodMap).sort().reverse();
 
-  // Mặc định chọn 3 Tháng gần nhất nếu chưa chọn hoặc khi khởi tạo/đặt lại
-  if (isDefaultInit || !Array.isArray(RF_EST.periods) || RF_EST.periods.length === 0) {
-    if (gran === 'month') {
-      RF_EST.periods = sortedKeys.slice(0, Math.min(3, sortedKeys.length));
-    } else {
-      RF_EST.periods = sortedKeys.length > 0 ? [sortedKeys[0]] : [];
-    }
+  // Cập nhật label và trạng thái cho nút phạm vi kỳ [ 4 kỳ gần nhất ] [ Tất cả ]
+  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
+  var btnScope4 = document.getElementById('btnEstScope4');
+  var btnScopeAll = document.getElementById('btnEstScopeAll');
+  if (btnScope4) {
+    btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+  }
+  var isAllScope = (RF_EST.scope === 'all');
+  if (btnScope4 && btnScopeAll) {
+    btnScope4.classList.toggle('on', !isAllScope);
+    btnScopeAll.classList.toggle('on', isAllScope);
+  }
+
+  if (isAllScope) {
+    RF_EST.periods = [];
   } else {
-    RF_EST.periods = RF_EST.periods.filter(function(k){ return sortedKeys.indexOf(k) >= 0; });
+    // Mặc định: 4 kỳ gần nhất
+    RF_EST.periods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
   }
 
   if (pList) {
     pList.innerHTML = sortedKeys.map(function(k) {
-      var checked = RF_EST.periods.indexOf(k) >= 0 ? ' checked' : '';
+      var checked = (isAllScope || RF_EST.periods.indexOf(k) >= 0) ? ' checked' : '';
       return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(periodMap[k]) + '</span></label>';
     }).join('');
   }
@@ -6264,12 +6280,15 @@ function updateEstPeriodDropdown(isDefaultInit) {
 function updateEstPeriodLabel(periodMap) {
   var el = document.getElementById('estPeriodBtnText');
   if (!el) return;
-  var gran = RF_EST.gran || 'month';
+  var gran = RF_EST.gran || 'week';
   var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
   var allLabel = gran === 'week' ? 'Tất cả các tuần' : (gran === 'quarter' ? 'Tất cả các quý' : (gran === 'year' ? 'Tất cả các năm' : 'Tất cả các tháng'));
 
+  var pList = document.getElementById('estPeriodList');
+  var total = pList ? pList.querySelectorAll('input[type="checkbox"]').length : 0;
   var n = RF_EST.periods ? RF_EST.periods.length : 0;
-  if (n === 0) {
+
+  if (RF_EST.scope === 'all' || n === 0 || (total > 0 && n === total)) {
     el.textContent = allLabel;
   } else if (n === 1) {
     var k = RF_EST.periods[0];
@@ -6284,10 +6303,8 @@ function updateEstPeriodLabel(periodMap) {
   }
 
   var pAll = document.getElementById('estPeriodAll');
-  var pList = document.getElementById('estPeriodList');
   if (pAll && pList) {
-    var total = pList.querySelectorAll('input[type="checkbox"]').length;
-    pAll.classList.toggle('checked', total > 0 && n === total);
+    pAll.classList.toggle('checked', total > 0 && (RF_EST.scope === 'all' || n === total));
   }
 }
 
@@ -6396,9 +6413,22 @@ function bindRevEstFilters(){
       var btn = e.target.closest('button');
       if (!btn) return;
       granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
-      RF_EST.gran = btn.dataset.v || 'month';
-      RF_EST.periods = [];
-      updateEstPeriodDropdown();
+      RF_EST.gran = btn.dataset.v || 'week';
+      updateEstPeriodDropdown(false);
+      computeAndDrawRevenueEst();
+    });
+  }
+
+  // Segmented phạm vi kỳ: [ 4 kỳ gần nhất ] [ Tất cả ]
+  var scopeBox = document.getElementById('estScope');
+  if (scopeBox){
+    scopeBox.addEventListener('click', function(e){
+      var btn = e.target.closest('button');
+      if (!btn) return;
+      var scopeVal = btn.dataset.scope || '4';
+      RF_EST.scope = scopeVal;
+      scopeBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
+      updateEstPeriodDropdown(false);
       computeAndDrawRevenueEst();
     });
   }
@@ -6421,12 +6451,21 @@ function bindRevEstFilters(){
     pAll.addEventListener('click', function(e){
       e.stopPropagation();
       var cbs = pList.querySelectorAll('input[type="checkbox"]');
-      var allChecked = RF_EST.periods.length === cbs.length;
+      var allChecked = (RF_EST.periods.length === cbs.length) || (RF_EST.scope === 'all');
       RF_EST.periods = [];
-      cbs.forEach(function(cb){
-        cb.checked = !allChecked;
-        if (!allChecked) RF_EST.periods.push(cb.value);
-      });
+      if (allChecked) {
+        cbs.forEach(function(cb){ cb.checked = false; });
+        RF_EST.scope = 'custom';
+      } else {
+        cbs.forEach(function(cb){ cb.checked = true; });
+        RF_EST.scope = 'all';
+      }
+      var btnScope4 = document.getElementById('btnEstScope4');
+      var btnScopeAll = document.getElementById('btnEstScopeAll');
+      if (btnScope4 && btnScopeAll) {
+        btnScope4.classList.toggle('on', false);
+        btnScopeAll.classList.toggle('on', RF_EST.scope === 'all');
+      }
       updateEstPeriodLabel();
       computeAndDrawRevenueEst();
     });
@@ -6435,6 +6474,18 @@ function bindRevEstFilters(){
     pList.addEventListener('change', function(){
       var cbs = pList.querySelectorAll('input[type="checkbox"]:checked');
       RF_EST.periods = Array.from(cbs).map(function(cb){ return cb.value; });
+      var totalCbs = pList.querySelectorAll('input[type="checkbox"]').length;
+      if (RF_EST.periods.length === totalCbs) {
+        RF_EST.scope = 'all';
+      } else {
+        RF_EST.scope = 'custom';
+      }
+      var btnScope4 = document.getElementById('btnEstScope4');
+      var btnScopeAll = document.getElementById('btnEstScopeAll');
+      if (btnScope4 && btnScopeAll) {
+        btnScope4.classList.toggle('on', false);
+        btnScopeAll.classList.toggle('on', RF_EST.scope === 'all');
+      }
       updateEstPeriodLabel();
       computeAndDrawRevenueEst();
     });
@@ -6580,7 +6631,8 @@ function bindRevEstFilters(){
   if (resetBtn){
     resetBtn.addEventListener('click', function(){
       RF_EST = {
-        gran: 'month',
+        gran: 'week',
+        scope: '4',
         periods: [],
         sites: [],
         vungMien: [],
@@ -6592,7 +6644,7 @@ function bindRevEstFilters(){
         trendView: 'am2'
       };
       if (granBox){
-        granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.dataset.v === 'month'); });
+        granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b.dataset.v === 'week'); });
       }
       buildRevEstFilters(true);
       computeAndDrawRevenueEst();
@@ -6744,7 +6796,12 @@ function computeAndDrawRevenueEst(){
       }
       if (RF_EST.periods.indexOf(pKey) < 0) return false;
     }
-    if (RF_EST.sites.length && RF_EST.sites.indexOf(r.site) < 0) return false;
+    if (RF_EST.sites && RF_EST.sites.length > 0) {
+      if (RF_EST.sites.indexOf(r.site) < 0) return false;
+    } else {
+      // Khi "Tất cả site" (mặc định không chọn site cụ thể): không tính Megafarrm
+      if (/megafar/i.test(r.site || '') || r.maSite === 'D007') return false;
+    }
     if (RF_EST.vungMien.length && RF_EST.vungMien.indexOf(r.vungMien || '(Chưa phân loại)') < 0) return false;
     if (RF_EST.loaiCuaHang.length && RF_EST.loaiCuaHang.indexOf(r.loaiCuaHang || '(Chưa phân loại)') < 0) return false;
     if (RF_EST.kenh && (r.tenKenhBanHang !== RF_EST.kenh && r.kenhBanHang !== RF_EST.kenh)) return false;
@@ -8134,7 +8191,11 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
   var dataRows = rows;
   if (currentGran !== RF_EST.gran && allRows.length) {
     dataRows = allRows.filter(function(r){
-      if (RF_EST.sites && RF_EST.sites.length && RF_EST.sites.indexOf(r.site) < 0) return false;
+      if (RF_EST.sites && RF_EST.sites.length > 0) {
+        if (RF_EST.sites.indexOf(r.site) < 0) return false;
+      } else {
+        if (/megafar/i.test(r.site || '') || r.maSite === 'D007') return false;
+      }
       if (RF_EST.vungMien && RF_EST.vungMien.length && RF_EST.vungMien.indexOf(r.vungMien || '(Chưa phân loại)') < 0) return false;
       if (RF_EST.loaiCuaHang && RF_EST.loaiCuaHang.length && RF_EST.loaiCuaHang.indexOf(r.loaiCuaHang || '(Chưa phân loại)') < 0) return false;
       if (RF_EST.kenh && (r.tenKenhBanHang !== RF_EST.kenh && r.kenhBanHang !== RF_EST.kenh)) return false;

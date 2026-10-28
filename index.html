@@ -331,20 +331,27 @@
 <!-- ================= FILTER BAR RIÊNG CHO TAB DOANH THU ƯỚC TÍNH ================= -->
 <div class="fbar hide" id="fbarEst">
   <div class="fbar-in fbar-2rows">
-    <!-- Hàng 1: Kỳ phân tích (Tuần/Tháng/Quý/Năm) | Chọn thời gian (checkbox multi-select) | Site | Vùng miền -->
+    <!-- Hàng 1: Kỳ phân tích (Tuần/Tháng/Quý/Năm) | Phạm vi (4 kỳ gần nhất / Tất cả) | Chọn thời gian | Site | Vùng miền -->
     <div class="fbar-est-grid">
       <div class="fld">
         <label>KỲ PHÂN TÍCH</label>
         <div class="tg" id="estGran">
-          <button data-v="week">TUẦN</button>
-          <button data-v="month" class="on">THÁNG</button>
-          <button data-v="quarter">QUÝ</button>
-          <button data-v="year">NĂM</button>
+          <button type="button" data-v="week" class="on">TUẦN</button>
+          <button type="button" data-v="month">THÁNG</button>
+          <button type="button" data-v="quarter">QUÝ</button>
+          <button type="button" data-v="year">NĂM</button>
+        </div>
+      </div>
+      <div class="fld" id="estScopeWrap">
+        <label>PHẠM VI</label>
+        <div class="tg" id="estScope">
+          <button type="button" data-scope="4" class="on" id="btnEstScope4">4 tuần gần nhất</button>
+          <button type="button" data-scope="all" id="btnEstScopeAll">Tất cả</button>
         </div>
       </div>
       <div class="fld ms" id="estPeriodWrap">
-        <label id="estPeriodLabel">CHỌN THÁNG</label>
-        <button class="sel" id="estPeriodBtn" type="button"><span id="estPeriodBtnText">Tất cả các tháng</span><span style="color:#AAA">▾</span></button>
+        <label id="estPeriodLabel">CHỌN TUẦN</label>
+        <button class="sel" id="estPeriodBtn" type="button"><span id="estPeriodBtnText">4 tuần đã chọn</span><span style="color:#AAA">▾</span></button>
         <div class="ms-pop" id="estPeriodPop">
           <button class="ms-all" id="estPeriodAll" type="button">Chọn tất cả</button>
           <div id="estPeriodList"></div>
