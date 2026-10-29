@@ -91,15 +91,19 @@ Deno.serve(async (req: Request) => {
         cacheSeconds = 15;
         break;
 
-      case "getRevenueRawData":
-        result = await handleGetRevenueRawData();
+      case "getRevenueRawData": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        result = await handleGetRevenueRawData(filters);
         cacheSeconds = 30;
         break;
+      }
 
-      case "getRevenueFoodCostData":
+      case "getRevenueFoodCostData": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
         result = await handleGetRevenueFoodCostData();
         cacheSeconds = 30;
         break;
+      }
 
       case "getRevenueEstData": {
         const filters = url.searchParams.get("filters") || bodyPayload?.filters;

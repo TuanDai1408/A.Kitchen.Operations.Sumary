@@ -397,6 +397,46 @@ export async function getDashboardData() {
   };
 }
 
+/**
+ * Lấy dữ liệu tiêu hủy từ mb51_goods_issue (thay thế disposal_of_goods)
+ * Tối ưu hóa:
+ * - Mặc định chỉ lấy theo kỳ phân tích (posting_date)
+ * - Lọc site trực tiếp nếu có filter
+ * - Tận dụng index (posting_date) và (site, posting_date)
+ */
+async function fetchMb51GoodsIssue(fromDate = null, toDate = null, siteFilter = null) {
+  const selectCols = "mat_doc,doc_item,mat_doc_year,posting_date,doc_date,entry_date,site,site_name,stor_loc,user_name,mov_type,mov_type_text,material,material_desc,doc_header_text,quantity,entry_unit,amount_lc,ext_amount_lc,qty_stock_unit,stock_unit,nganh_hang,nhom_hang,row_hash";
+  let q = supabase.from("mb51_goods_issue").select(selectCols);
+
+  if (fromDate) q = q.gte("posting_date", fromDate);
+  if (toDate) q = q.lte("posting_date", toDate);
+
+  if (siteFilter) {
+    if (Array.isArray(siteFilter) && siteFilter.length > 0) {
+      const isCodes = siteFilter.every(s => /^[A-Z0-9_-]{3,6}$/i.test(s));
+      if (isCodes) {
+        q = q.in("site", siteFilter);
+      } else {
+        q = q.in("site_name", siteFilter);
+      }
+    } else if (typeof siteFilter === "string" && siteFilter.trim()) {
+      if (/^[A-Z0-9_-]{3,6}$/i.test(siteFilter.trim())) {
+        q = q.eq("site", siteFilter.trim());
+      } else {
+        q = q.eq("site_name", siteFilter.trim());
+      }
+    }
+  }
+
+  q = q.order("posting_date", { ascending: true });
+  const { data, error } = await q;
+  if (error) {
+    console.warn("fetchMb51GoodsIssue error:", error.message);
+    return [];
+  }
+  return data || [];
+}
+
 export async function getRevenueRawData(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
@@ -430,11 +470,11 @@ export async function getRevenueRawData(filtersParam) {
     reqTo = reqTo || maxDateStr;
   }
 
-  const [rawTx, opexRes, reportRes, disposalRes] = await Promise.all([
+  const [rawTx, opexRes, reportRes, rawMb51] = await Promise.all([
     fetchAllRows("transactions", "*", "billing_date", reqFrom || null, reqTo || null, "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
-    supabase.from("disposal_of_goods").select("*").order("ngay_lap", { ascending: true })
+    fetchMb51GoodsIssue(reqFrom || null, reqTo || null, filters.site || filters.sites || null)
   ]);
 
   const rows = rawTx.map(mapTransactionRow);
@@ -453,6 +493,9 @@ export async function getRevenueRawData(filtersParam) {
     if (r.ngay) dateSet.add(r.ngay);
     if (r.vungMien) vungSet.add(r.vungMien);
     if (r.loaiCuaHang) loaiSet.add(r.loaiCuaHang);
+  });
+  (rawMb51 || []).forEach(r => {
+    if (r.site_name) siteSet.add(r.site_name);
   });
   const viSort = (a, b) => a.localeCompare(b, "vi");
 
@@ -487,21 +530,80 @@ export async function getRevenueRawData(filtersParam) {
     nguoiBaoCao: h.nguoi_bao_cao || ""
   }));
 
-  const disposalRows = (disposalRes.data || []).map(d => {
-    const qtyKg = Number(d.qty_kg || 0);
-    const donGia = Number(d.don_gia || 0);
-    const value = d.value !== undefined && d.value !== null && Number(d.value) > 0 ? Number(d.value) : (qtyKg * donGia);
-    return {
-      ngay: formatDate(d.ngay_lap),
-      tenSite: d.ten_site || "",
-      maSite: d.ma_site || "",
-      maCode: d.ma_code || "",
-      tenSP: d.ten_san_pham || d.ten_sp || "",
-      loaiHang: d.loai_hang || "",
-      qtyKg, donGia, value,
-      lyDo: d.ly_do || ""
+  // Xử lý mb51_goods_issue: deduplicate theo row_hash hoặc (mat_doc, doc_item, mat_doc_year)
+  const seenMb51 = new Set();
+  const mb51Rows = [];
+  const mb51PhaRows = [];
+  const disposalRows = [];
+
+  for (const d of (rawMb51 || [])) {
+    const rowKey = d.row_hash || `${d.mat_doc}_${d.doc_item}_${d.mat_doc_year}`;
+    if (seenMb51.has(rowKey)) continue;
+    seenMb51.add(rowKey);
+
+    const ngay = formatDate(d.posting_date || d.doc_date || d.entry_date);
+    const tenSite = d.site_name || "";
+    const maSite = d.site || "";
+    const maCode = d.material || "";
+    const tenSP = d.material_desc || "";
+    const entryUnit = String(d.entry_unit || "").trim().toUpperCase();
+    const qty = Math.abs(Number(d.quantity || 0));
+    const value = Math.abs(Number(d.amount_lc !== undefined && d.amount_lc !== null ? d.amount_lc : (d.ext_amount_lc || 0)));
+    const donGia = qty > 0 ? value / qty : 0;
+    const lyDo = d.doc_header_text || d.mov_type_text || "";
+    const userName = d.user_name || "";
+    const storLoc = d.stor_loc || "";
+    const loaiHang = d.nhom_hang || d.nganh_hang || "";
+
+    const rowObj = {
+      ngay,
+      tenSite,
+      maSite,
+      maCode,
+      tenSP,
+      loaiHang,
+      entryUnit,
+      dvt: entryUnit,
+      quantity: qty,
+      qtyKg: entryUnit === "KG" ? qty : 0, // CHỈ tổng số lượng hủy có đơn vị tính = KG
+      donGia,
+      value,
+      lyDo,
+      userName,
+      storLoc,
+      nganhHang: d.nganh_hang || "",
+      nhomHang: d.nhom_hang || "",
+      matDoc: d.mat_doc || "",
+      rowKey
     };
-  });
+
+    mb51Rows.push(rowObj);
+    disposalRows.push(rowObj);
+
+    if (entryUnit === "PHA") {
+      mb51PhaRows.push({
+        ngay,
+        tenSite,
+        maSite,
+        suatHuy: qty,
+        quantity: qty,
+        tongSuat: 0,
+        entryUnit: "PHA",
+        dvt: "PHA",
+        amount: value,
+        value,
+        maCode,
+        tenSP,
+        lyDo,
+        userName,
+        storLoc,
+        nganhHang: d.nganh_hang || "",
+        nhomHang: d.nhom_hang || "",
+        matDoc: d.mat_doc || "",
+        rowKey
+      });
+    }
+  }
 
   return {
     ok: true,
@@ -509,6 +611,8 @@ export async function getRevenueRawData(filtersParam) {
     dims,
     opexItems,
     huyRows,
+    mb51Rows,
+    mb51PhaRows,
     disposalRows,
     nguong: {
       huyPct: DEFAULT_NGUONG.huyPct,

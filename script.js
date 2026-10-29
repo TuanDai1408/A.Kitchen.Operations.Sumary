@@ -280,12 +280,64 @@ var RF_SACN = { from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', 
 var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', huyMode:'suat', huyDim:'site', mixChartMode:'fcNhom', geoMode:'loai' };
 // huyMode: 'suat' (mặc định ngưỡng 1,50%) | 'nvl'   huyDim: 'site' | 'day'
 
-/** Gom sheet Disposal of goods theo filter SACN (ngày + site) */
+/** Pipeline helper 1: Tổng số lượng hủy theo đơn vị xác định (chỉ nhận đúng đơn vị được chỉ định, ví dụ KG) */
+function sumQtyByUnit(rows, unit) {
+  if (!rows || !rows.length) return 0;
+  var target = String(unit || 'KG').trim().toUpperCase();
+  var sum = 0;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var u = String(r.entryUnit || r.dvt || '').trim().toUpperCase();
+    if (u === target) {
+      sum += Number(r.quantity !== undefined && r.quantity !== null ? r.quantity : (r.qtyKg || 0));
+    }
+  }
+  return sum;
+}
+
+/** Pipeline helper 2: Top N đơn vị hủy khác đơn vị loại trừ (mặc định loại trừ KG và PHA) */
+function topUnitsExcluding(rows, excludeUnits, limit) {
+  if (!rows || !rows.length) return '';
+  var exList = [];
+  if (Array.isArray(excludeUnits)) {
+    exList = excludeUnits.map(function (x) { return String(x || '').trim().toUpperCase(); });
+  } else if (typeof excludeUnits === 'string' && excludeUnits) {
+    exList = [String(excludeUnits).trim().toUpperCase()];
+  } else {
+    exList = ['KG'];
+  }
+  // Loại trừ cả PHA vì PHA là suất ăn hủy, không hiển thị số lượng PHA ở card Tiêu hủy NVL-BTP
+  if (exList.indexOf('PHA') < 0) exList.push('PHA');
+  if (exList.indexOf('KG') < 0) exList.push('KG');
+
+  limit = limit || 3;
+  var map = {};
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    var u = String(r.entryUnit || r.dvt || '').trim().toUpperCase();
+    if (!u || exList.indexOf(u) >= 0) continue;
+    var q = Number(r.quantity !== undefined && r.quantity !== null ? r.quantity : (r.qtyKg || 0));
+    if (q > 0) {
+      map[u] = (map[u] || 0) + q;
+    }
+  }
+  var keys = Object.keys(map);
+  if (!keys.length) return '';
+  keys.sort(function (a, b) { return map[b] - map[a]; });
+  var top = keys.slice(0, limit);
+  return top.map(function (k) {
+    var val = map[k];
+    var valStr = (Math.round(val * 10) / 10).toLocaleString('vi-VN');
+    return valStr + ' ' + k;
+  }).join(' · ');
+}
+
+/** Gom MB51 Goods Issue (NVL-BTP tiêu hủy) theo filter SACN (ngày + site) */
 function rev_aggDisposal(disposalRows, f, allowedSites) {
   var out = {
     qtyKg: 0, value: 0, rows: 0,
+    topUnitsText: '',
     bySite: {}, byDate: {},
-    // prev filled by caller if needed
   };
   if (!disposalRows || !disposalRows.length) return out;
   var from = (f && f.from) || '', to = (f && f.to) || '';
@@ -299,7 +351,6 @@ function rev_aggDisposal(disposalRows, f, allowedSites) {
       var norm = function(x){ return String(x||'').toLowerCase().replace(/\s+/g,' ').trim(); };
       var t = norm(name);
       for (var i=0;i<allow.length;i++) if (norm(allow[i]) === t) return true;
-      // partial: site name contains allow or vice versa
       for (var j=0;j<allow.length;j++) {
         var a = norm(allow[j]);
         if (t.indexOf(a) >= 0 || a.indexOf(t) >= 0) return true;
@@ -319,28 +370,50 @@ function rev_aggDisposal(disposalRows, f, allowedSites) {
     return true;
   }
 
+  var filtered = [];
   disposalRows.forEach(function(r){
     var ngay = r.ngay || '';
     if (from && ngay < from) return;
     if (to && ngay > to) return;
     if (!siteOk(r.tenSite)) return;
-    var qty = Number(r.qtyKg) || 0;
+    filtered.push(r);
+  });
+
+  // Rule 1: Số lớn chính CHỈ tổng số lượng hủy có đơn vị tính = KG
+  out.qtyKg = sumQtyByUnit(filtered, 'KG');
+  // Rule 2: Phần phụ dưới card: Top 3 đơn vị KHÁC KG và KHÁC PHA (không hiển thị đơn vị PHA ở card Tiêu hủy NVL-BTP)
+  out.topUnitsText = topUnitsExcluding(filtered, ['KG', 'PHA'], 3);
+
+  filtered.forEach(function(r){
+    var ngay = r.ngay || '';
+    var u = String(r.entryUnit || r.dvt || '').trim().toUpperCase();
+    var isKg = (u === 'KG');
+    var rawQty = Number(r.quantity !== undefined && r.quantity !== null ? r.quantity : (r.qtyKg || 0));
     var val = Number(r.value) || 0;
-    out.qtyKg += qty;
+
     out.value += val;
     out.rows++;
+
     var sk = r.tenSite || '(Không tên)';
-    if (!out.bySite[sk]) out.bySite[sk] = { qtyKg:0, value:0, rows:0 };
-    out.bySite[sk].qtyKg += qty;
+    if (!out.bySite[sk]) out.bySite[sk] = { qtyKg:0, value:0, rows:0, topUnitsText:'', rowsList:[] };
+    out.bySite[sk].rowsList.push(r);
+    if (isKg) out.bySite[sk].qtyKg += rawQty;
     out.bySite[sk].value += val;
     out.bySite[sk].rows++;
+
     if (ngay) {
-      if (!out.byDate[ngay]) out.byDate[ngay] = { qtyKg:0, value:0, rows:0 };
-      out.byDate[ngay].qtyKg += qty;
+      if (!out.byDate[ngay]) out.byDate[ngay] = { qtyKg:0, value:0, rows:0, rowsList:[] };
+      out.byDate[ngay].rowsList.push(r);
+      if (isKg) out.byDate[ngay].qtyKg += rawQty;
       out.byDate[ngay].value += val;
       out.byDate[ngay].rows++;
     }
   });
+
+  Object.keys(out.bySite).forEach(function(sk){
+    out.bySite[sk].topUnitsText = topUnitsExcluding(out.bySite[sk].rowsList, ['KG', 'PHA'], 3);
+  });
+
   return out;
 }
 
@@ -2774,10 +2847,25 @@ function computeAndDrawRevenueSacn(){
   kpi.ebitdaPct = (kpi.hasOpex && kpi.netRevenue > 0)
     ? ((kpi.grossProfit - opex.amount) / kpi.netRevenue) * 100 : null;
 
+  var sacnSiteMatch = function(name) {
+    if (!name) return false;
+    if (sacnSiteNames.indexOf(name) >= 0) return true;
+    var norm = function(x){ return String(x||'').toLowerCase().replace(/\s+/g,' ').trim(); };
+    var t = norm(name);
+    for (var i=0; i<sacnSiteNames.length; i++) {
+      var a = norm(sacnSiteNames[i]);
+      if (a === t || t.indexOf(a) >= 0 || a.indexOf(t) >= 0) return true;
+    }
+    return false;
+  };
+
   var huyRowsSacn = (REV_RAW.huyRows || []).filter(function(r){
-    return sacnSiteNames.indexOf(r.tenSite) >= 0;
+    return sacnSiteMatch(r.tenSite);
   });
-  var huy = rev_huyFromReport(huyRowsSacn, f);
+  var mb51PhaSacn = (REV_RAW.mb51PhaRows || []).filter(function(r){
+    return sacnSiteMatch(r.tenSite);
+  });
+  var huy = rev_huyFromReport(huyRowsSacn, f, mb51PhaSacn);
   kpi.huyReportPct = huy.total.pct;
   kpi.huySuatHuy = huy.total.suatHuy;
   kpi.huyTongSuat = huy.total.tongSuat;
@@ -2808,8 +2896,13 @@ function computeAndDrawRevenueSacn(){
 
   var bySite = rev_groupBy(cur, function (r) { return r.site; }, 'netRevenue');
   bySite.forEach(function (s) {
-    var h = (huy.bySite && huy.bySite[s.key]) || null;
-    if (h) { s.huyReportPct = h.pct; s.huyQtyPct = h.pct; }
+    var h = rev_matchHuySite(huy, s.key);
+    if (h) {
+      s.huyReportPct = h.pct;
+      s.huyQtyPct = h.pct;
+      s.huySuatHuy = h.suatHuy;
+      s.huyTongSuat = h.tongSuat;
+    }
   });
 
   var byNhom  = rev_groupBy(cur, function (r) { return r.nhomSP; }, 'netRevenue');
@@ -2850,20 +2943,25 @@ function computeAndDrawRevenueSacn(){
   var siteDetail = rev_buildSiteDetail(dims, cur, f, opexItems, huy);
 
 
-  // ===== Tiêu hủy NVL-BTP từ sheet Disposal of goods =====
-  var disp = rev_aggDisposal(REV_RAW.disposalRows || [], f, sacnSiteNames);
+  // ===== Tiêu hủy NVL-BTP từ MB51 Goods Issue =====
+  var allMb51Sacn = (REV_RAW.mb51Rows && REV_RAW.mb51Rows.length)
+    ? REV_RAW.mb51Rows
+    : (REV_RAW.disposalRows || []).concat(REV_RAW.mb51PhaRows || []);
+  var disp = rev_aggDisposal(allMb51Sacn, f, sacnSiteNames);
   kpi.dispQtyKg = disp.qtyKg;
   kpi.dispValue = disp.value;
   kpi.dispPctRev = (kpi.netRevenue > 0) ? (disp.value / kpi.netRevenue) * 100 : 0;
   kpi.dispRows = disp.rows;
+  kpi.dispTopUnitsText = disp.topUnitsText;
 
-  var dispPrev = { qtyKg:0, value:0, pctRev:0 };
+  var dispPrev = { qtyKg:0, value:0, pctRev:0, topUnitsText: '' };
   if (pr) {
-    var dispP = rev_aggDisposal(REV_RAW.disposalRows || [], {
+    var dispP = rev_aggDisposal(allMb51Sacn, {
       from: pr.from, to: pr.to, sites: f.sites
     }, sacnSiteNames);
     dispPrev.qtyKg = dispP.qtyKg;
     dispPrev.value = dispP.value;
+    dispPrev.topUnitsText = dispP.topUnitsText;
     // dùng net revenue kỳ trước nếu có
     var prevNet = (kpiPrev && kpiPrev.netRevenue) || 0;
     dispPrev.pctRev = prevNet > 0 ? (dispP.value / prevNet) * 100 : 0;
@@ -2871,6 +2969,7 @@ function computeAndDrawRevenueSacn(){
   kpiPrev.dispQtyKg = dispPrev.qtyKg;
   kpiPrev.dispValue = dispPrev.value;
   kpiPrev.dispPctRev = dispPrev.pctRev;
+  kpiPrev.dispTopUnitsText = dispPrev.topUnitsText;
 
   // Gắn tiêu hủy theo site (khớp mềm tên site)
   bySite.forEach(function (s) {
@@ -2948,8 +3047,8 @@ function computeAndDrawRevenue() {
   kpi.ebitdaPct = (kpi.hasOpex && kpi.netRevenue > 0)
     ? ((kpi.grossProfit - opexAmt) / kpi.netRevenue) * 100 : null;
 
-  // Hủy từ Report — TÍNH LẠI CÓ LỌC theo ngày/site mỗi lần filter đổi
-  var huy = rev_huyFromReport(REV_RAW.huyRows, f);
+  // Hủy từ Report + MB51 Goods Issue (PHA) — TÍNH LẠI CÓ LỌC theo ngày/site mỗi lần filter đổi
+  var huy = rev_huyFromReport(REV_RAW.huyRows, f, REV_RAW.mb51PhaRows);
   kpi.huyReportPct = huy.total.pct;
   kpi.huySuatHuy = huy.total.suatHuy;
   kpi.huyTongSuat = huy.total.tongSuat;
@@ -2963,8 +3062,13 @@ function computeAndDrawRevenue() {
 
   var bySite = rev_groupBy(cur, function (r) { return r.site; }, 'netRevenue');
   bySite.forEach(function (s) {
-    var h = (huy.bySite && huy.bySite[s.key]) || null;
-    if (h) { s.huyReportPct = h.pct; s.huyQtyPct = h.pct; }
+    var h = rev_matchHuySite(huy, s.key);
+    if (h) {
+      s.huyReportPct = h.pct;
+      s.huyQtyPct = h.pct;
+      s.huySuatHuy = h.suatHuy;
+      s.huyTongSuat = h.tongSuat;
+    }
   });
 
   var byNhom = rev_groupBy(cur, function (r) { return r.nhomSP; }, 'netRevenue');
@@ -3621,43 +3725,179 @@ function rev_matchHuySite(huyReport, siteName) {
   return null;
 }
 
-// Tính tỷ lệ suất hủy CÓ LỌC theo ngày/site, từ dữ liệu thô huyRows.
-// Port lại logic của revenue_huyFromReport_(f) trong Code.gs nhưng chạy client-side
-// để card/bảng/chart suất hủy ăn theo filter giống mọi KPI khác.
-function rev_huyFromReport(huyRows, f) {
+// Tính tỷ lệ suất hủy CÓ LỌC theo ngày/site với rule ưu tiên:
+// 1. Với mỗi cặp (site, ngày):
+//    - Nếu Report có số lượng suất hủy > 0 -> lấy từ Report (tử số suất hủy)
+//    - Nếu Report = 0 hoặc không có dòng ngày đó -> mới lấy từ mb51_goods_issue (chỉ đơn vị PHA)
+// 2. Mẫu số "Tổng suất" (tổng suất trong ngày): LUÔN lấy từ sheet Report (không lấy từ MB51, không fallback, không cộng)
+// 3. Aggregate KPI theo kỳ: Tổng suất hủy = sum suất hủy từng ngày sau khi đã áp rule ưu tiên từng ngày.
+function rev_huyFromReport(huyRows, f, mb51PhaRows) {
   var out = { total: { suatHuy: 0, tongSuat: 0, pct: 0 }, bySite: {} };
-  if (!huyRows || !huyRows.length) return out;
+  if ((!huyRows || !huyRows.length) && (!mb51PhaRows || !mb51PhaRows.length)) return out;
 
   var from = (f && f.from) || '', to = (f && f.to) || '';
   var sites = (f && f.sites && f.sites.length) ? f.sites : null;
 
-  huyRows.forEach(function (r) {
-    if (from && r.ngay < from) return;
-    if (to && r.ngay > to) return;
-    if (sites && sites.indexOf(r.tenSite) < 0) return;
+  var norm = function (s) {
+    return String(s || '').toLowerCase().replace(/\s+/g, ' ').trim();
+  };
 
-    out.total.suatHuy += r.suatHuy;
-    out.total.tongSuat += r.tongSuat;
-
-    var key = r.tenSite;
-    if (!out.bySite[key]) out.bySite[key] = { suatHuy: 0, tongSuat: 0, pct: 0, chiTiet: [] };
-    out.bySite[key].suatHuy += r.suatHuy;
-    out.bySite[key].tongSuat += r.tongSuat;
-    if (r.suatHuy > 0) {
-      out.bySite[key].chiTiet.push({
-        ngay: r.ngay, suatHuy: r.suatHuy, tongSuat: r.tongSuat,
-        pct: r.tongSuat > 0 ? (r.suatHuy / r.tongSuat) * 100 : 0,
-        nguoiBaoCao: r.nguoiBaoCao || ''
-      });
+  var siteMatches = function (siteName, list) {
+    if (!list || !list.length) return true;
+    if (list.indexOf(siteName) >= 0) return true;
+    var t = norm(siteName);
+    for (var i = 0; i < list.length; i++) {
+      var a = norm(list[i]);
+      if (a === t || t.indexOf(a) >= 0 || a.indexOf(t) >= 0) return true;
     }
+    return false;
+  };
+
+  var siteKeyCanonical = {};
+  var resolveCanonicalKey = function (siteName) {
+    if (!siteName) return '(Không tên)';
+    var t = norm(siteName);
+    var keys = Object.keys(siteKeyCanonical);
+    for (var i = 0; i < keys.length; i++) {
+      if (norm(keys[i]) === t) return siteKeyCanonical[keys[i]];
+    }
+    siteKeyCanonical[siteName] = siteName;
+    return siteName;
+  };
+
+  // Group Report theo (siteKey, ngay)
+  // reportBySiteDay[siteKey][ngay] = { suatHuy, tongSuat, nguoiBaoCao }
+  var reportBySiteDay = {};
+
+  if (huyRows && huyRows.length) {
+    huyRows.forEach(function (r) {
+      if (from && r.ngay < from) return;
+      if (to && r.ngay > to) return;
+      if (sites && !siteMatches(r.tenSite, sites)) return;
+
+      var sk = resolveCanonicalKey(r.tenSite);
+      var ngay = r.ngay || '';
+      if (!ngay) return;
+
+      if (!reportBySiteDay[sk]) reportBySiteDay[sk] = {};
+      if (!reportBySiteDay[sk][ngay]) {
+        reportBySiteDay[sk][ngay] = { suatHuy: 0, tongSuat: 0, nguoiBaoCao: r.nguoiBaoCao || '' };
+      }
+      reportBySiteDay[sk][ngay].suatHuy += Number(r.suatHuy || 0);
+      reportBySiteDay[sk][ngay].tongSuat += Number(r.tongSuat || 0);
+      if (r.nguoiBaoCao && !reportBySiteDay[sk][ngay].nguoiBaoCao) {
+        reportBySiteDay[sk][ngay].nguoiBaoCao = r.nguoiBaoCao;
+      }
+    });
+  }
+
+  // Group MB51 PHA theo (siteKey, ngay)
+  // mb51BySiteDay[siteKey][ngay] = { suatHuy, user, lyDo }
+  var mb51BySiteDay = {};
+  if (mb51PhaRows && mb51PhaRows.length) {
+    mb51PhaRows.forEach(function (p) {
+      if (from && p.ngay < from) return;
+      if (to && p.ngay > to) return;
+      if (sites && !siteMatches(p.tenSite, sites)) return;
+
+      var sk = resolveCanonicalKey(p.tenSite);
+      var ngay = p.ngay || '';
+      if (!ngay) return;
+
+      var suat = Number(p.suatHuy !== undefined && p.suatHuy !== null ? p.suatHuy : (p.quantity || 0));
+      if (suat <= 0) return;
+
+      if (!mb51BySiteDay[sk]) mb51BySiteDay[sk] = {};
+      if (!mb51BySiteDay[sk][ngay]) {
+        mb51BySiteDay[sk][ngay] = { suatHuy: 0, user: p.userName || p.user || 'MB51 SAP', lyDo: p.lyDo || '' };
+      }
+      mb51BySiteDay[sk][ngay].suatHuy += suat;
+      if (p.userName && !mb51BySiteDay[sk][ngay].user) {
+        mb51BySiteDay[sk][ngay].user = p.userName;
+      }
+    });
+  }
+
+  // Pipeline helper: Tổng suất theo (site, ngày) — LUÔN chỉ từ sheet Report
+  function getTotalPortionsByDay(siteKey, date) {
+    var rep = reportBySiteDay[siteKey] && reportBySiteDay[siteKey][date];
+    return rep ? Number(rep.tongSuat || 0) : 0;
+  }
+
+  // Pipeline helper: Suất hủy theo (site, ngày) — Rule ưu tiên Report > 0 ? Report : MB51(PHA)
+  function getPortionWasteByDay(siteKey, date) {
+    var rep = reportBySiteDay[siteKey] && reportBySiteDay[siteKey][date];
+    var repWaste = rep ? Number(rep.suatHuy || 0) : 0;
+    if (repWaste > 0) {
+      return {
+        suatHuy: repWaste,
+        nguoiBaoCao: (rep && rep.nguoiBaoCao) || 'Report',
+        source: 'Report'
+      };
+    }
+    var mb = mb51BySiteDay[siteKey] && mb51BySiteDay[siteKey][date];
+    var mbWaste = mb ? Number(mb.suatHuy || 0) : 0;
+    if (mbWaste > 0) {
+      return {
+        suatHuy: mbWaste,
+        nguoiBaoCao: (mb && mb.user) || 'MB51 SAP',
+        source: 'MB51'
+      };
+    }
+    return { suatHuy: 0, nguoiBaoCao: '', source: 'None' };
+  }
+
+  // Tập hợp danh sách tất cả các site
+  var allSitesSet = {};
+  Object.keys(reportBySiteDay).forEach(function (sk) { allSitesSet[sk] = 1; });
+  Object.keys(mb51BySiteDay).forEach(function (sk) { allSitesSet[sk] = 1; });
+
+  Object.keys(allSitesSet).forEach(function (sk) {
+    out.bySite[sk] = { suatHuy: 0, tongSuat: 0, pct: 0, chiTiet: [] };
+
+    // Tất cả ngày có dữ liệu Report hoặc MB51 cho site này
+    var dateSet = {};
+    if (reportBySiteDay[sk]) Object.keys(reportBySiteDay[sk]).forEach(function (d) { dateSet[d] = 1; });
+    if (mb51BySiteDay[sk]) Object.keys(mb51BySiteDay[sk]).forEach(function (d) { dateSet[d] = 1; });
+
+    var dates = Object.keys(dateSet).sort(function (a, b) { return a < b ? 1 : -1; }); // mới nhất trước
+
+    dates.forEach(function (date) {
+      var dayTotalPortions = getTotalPortionsByDay(sk, date);
+      var dayWasteInfo = getPortionWasteByDay(sk, date);
+      var dayWastePortions = dayWasteInfo.suatHuy;
+
+      // Cộng dồn theo ngày vào tổng của site
+      out.bySite[sk].suatHuy += dayWastePortions;
+      out.bySite[sk].tongSuat += dayTotalPortions;
+
+      // Cộng dồn theo ngày vào tổng toàn hệ thống
+      out.total.suatHuy += dayWastePortions;
+      out.total.tongSuat += dayTotalPortions;
+
+      // Thêm vào bảng chi tiết suất hủy theo ngày nếu ngày đó có suất hủy
+      if (dayWastePortions > 0) {
+        var dayPct = dayTotalPortions > 0 ? (dayWastePortions / dayTotalPortions) * 100 : 0;
+        out.bySite[sk].chiTiet.push({
+          ngay: date,
+          suatHuy: dayWastePortions,
+          tongSuat: dayTotalPortions, // LUÔN từ sheet Report
+          pct: dayPct,
+          nguoiBaoCao: dayWasteInfo.nguoiBaoCao || '—',
+          source: dayWasteInfo.source
+        });
+      }
+    });
+
+    out.bySite[sk].pct = out.bySite[sk].tongSuat > 0
+      ? (out.bySite[sk].suatHuy / out.bySite[sk].tongSuat) * 100
+      : 0;
   });
 
-  out.total.pct = out.total.tongSuat > 0 ? (out.total.suatHuy / out.total.tongSuat) * 100 : 0;
-  Object.keys(out.bySite).forEach(function (k) {
-    var s = out.bySite[k];
-    s.pct = s.tongSuat > 0 ? (s.suatHuy / s.tongSuat) * 100 : 0;
-    s.chiTiet.sort(function (a, b) { return a.ngay < b.ngay ? 1 : -1; });
-  });
+  out.total.pct = out.total.tongSuat > 0
+    ? (out.total.suatHuy / out.total.tongSuat) * 100
+    : 0;
+
   return out;
 }
 
@@ -3752,14 +3992,19 @@ function drawRevenueSacn(){
     d(k.grossProfit, p.grossProfit), true, k.grossProfit >= 0 ? '#16A34A' : '#C0342C');
 
   var huyColor = k.huyQtyPct <= ng.huyPct ? '#16A34A' : '#C0342C';
+  var aspHuy = k.asp || (k.salesQty > 0 ? k.netRevenue / k.salesQty : 0) || 0;
+  var huyGiaTri = Math.round((k.huySuatHuy || 0) * aspHuy);
   var huySub = k.huyHasReport
-    ? fmt(k.huySuatHuy)+' / '+fmt(k.huyTongSuat)+' suất (Report)'
-    : 'Report chưa có dữ liệu • billing: '+fmtPct(k.huyValuePct);
-  html += '<div class="kpi" style="border-left-color:'+huyColor+'">'+
-    '<div class="kpi-top"><div><div class="kpi-lb">Tỷ lệ suất hủy</div>'+
-    '<div class="kpi-v">'+fmtPct(k.huyQtyPct)+'</div><div class="kpi-sub">'+huySub+'</div></div>'+
-    '<div class="kpi-ic" style="background:'+huyColor+'14;color:'+huyColor+'">'+svg(IC.trash,19)+'</div></div>'+
-    thrBadge(k.huyQtyPct, ng.huyPct, '%', true)+'</div>';
+    ? '<div>' + fmt(k.huySuatHuy) + ' / ' + fmt(k.huyTongSuat) + ' suất</div>' +
+      '<div style="margin-top:3px;font-size:11.5px;color:#64748B;" title="Giá trị suất hủy = ' + fmt(k.huySuatHuy) + ' suất × ' + fmt(Math.round(aspHuy)) + '₫/suất = ' + fmt(huyGiaTri) + '₫">' +
+        'Giá trị hủy: <strong style="color:' + (huyGiaTri > 0 ? '#C0342C' : 'inherit') + '">' + fmtMoney(huyGiaTri) + '</strong>' +
+      '</div>'
+    : 'Chưa có dữ liệu suất ăn • billing: ' + fmtPct(k.huyValuePct);
+  html += '<div class="kpi" style="border-left-color:' + huyColor + '">' +
+    '<div class="kpi-top"><div><div class="kpi-lb">Tỷ lệ suất hủy</div>' +
+    '<div class="kpi-v">' + fmtPct(k.huyQtyPct) + '</div><div class="kpi-sub">' + huySub + '</div></div>' +
+    '<div class="kpi-ic" style="background:' + huyColor + '14;color:' + huyColor + '">' + svg(IC.trash, 19) + '</div></div>' +
+    thrBadge(k.huyQtyPct, ng.huyPct, '%', true) + '</div>';
 
   html += '<div class="kpi" style="border-left-color:'+C.light+'">'+
     '<div class="kpi-top"><div><div class="kpi-lb">EBITDA ước tính</div>'+
@@ -3839,14 +4084,15 @@ function drawRevenueSacn(){
   html += kpiCard(IC.meal, 'Đơn giá TB / Suất (PHA)', fmtMoney(k.asp),
     fmt(k.qtyPHA)+' suất PHA', d(k.asp, p.asp), true, C.gold);
 
-  // KPI tiêu hủy NVL-BTP (sheet Disposal of goods)
+  // KPI tiêu hủy NVL-BTP (MB51 Goods Issue)
   var dispKg = k.dispQtyKg || 0, dispKgPrev = (p && p.dispQtyKg) || 0;
   var dispVal = k.dispValue || 0, dispValPrev = (p && p.dispValue) || 0;
   var dispPct = k.dispPctRev || 0, dispPctPrev = (p && p.dispPctRev) || 0;
+  var dispSub = k.dispTopUnitsText || ((k.dispRows || 0) + ' chứng từ MB51');
   // KG: thấp hơn kỳ trước là tốt
   html += kpiCard(IC.trash, 'Tiêu hủy NVL-BTP (Kg)',
     (Math.round(dispKg*100)/100).toLocaleString('vi-VN') + ' Kg',
-    (k.dispRows||0) + ' dòng Disposal',
+    dispSub,
     d(dispKg, dispKgPrev), false, '#C0342C');
   // Giá trị + % DT (highlight % chiếm doanh thu)
   html += '<div class="kpi" style="border-left-color:#7C3AED">'+
@@ -3919,7 +4165,7 @@ function drawRevenueSacn(){
         '<button data-v="day" class="'+(RUI_SACN.huyDim==='day'?'on':'')+'">Theo ngày</button></div>')+
     '<div class="cbox"><canvas id="sChRevHuy"></canvas></div>'+
     (RUI_SACN.huyMode==='nvl'
-      ? '<div style="font-size:11px;color:#A8A8A8;margin-top:6px">Kg tiêu hủy · Giá trị · % trên doanh thu thuần (sheet Disposal of goods)</div>'
+      ? '<div style="font-size:11px;color:#A8A8A8;margin-top:6px">Kg tiêu hủy · Giá trị · % trên doanh thu thuần (MB51 Goods Issue)</div>'
       : '')+
     '</div>';
 
@@ -4052,18 +4298,23 @@ function drawRevenue(){
 
   // Tỷ lệ hủy - LẤY TỪ SHEET REPORT (cột "Số suất hủy") + so ngưỡng 1.50%
   var huyColor = k.huyQtyPct <= ng.huyPct ? '#16A34A' : '#C0342C';
+  var aspHuy = k.asp || (k.salesQty > 0 ? k.netRevenue / k.salesQty : 0) || 0;
+  var huyGiaTri = Math.round((k.huySuatHuy || 0) * aspHuy);
   var huySub = k.huyHasReport
-    ? fmt(k.huySuatHuy)+' / '+fmt(k.huyTongSuat)+' suất (Report)'
-    : 'Report chưa có dữ liệu • billing: '+fmtPct(k.huyValuePct);
-  html += '<div class="kpi" style="border-left-color:'+huyColor+'">'+
-    '<div class="kpi-top"><div>'+
-      '<div class="kpi-lb">Tỷ lệ suất hủy</div>'+
-      '<div class="kpi-v">'+fmtPct(k.huyQtyPct)+'</div>'+
-      '<div class="kpi-sub">'+huySub+'</div>'+
-    '</div>'+
-    '<div class="kpi-ic" style="background:'+huyColor+'14;color:'+huyColor+'">'+svg(IC.trash,19)+'</div>'+
-    '</div>'+
-    thrBadge(k.huyQtyPct, ng.huyPct, '%', true)+
+    ? '<div>' + fmt(k.huySuatHuy) + ' / ' + fmt(k.huyTongSuat) + ' suất</div>' +
+      '<div style="margin-top:3px;font-size:11.5px;color:#64748B;" title="Giá trị suất hủy = ' + fmt(k.huySuatHuy) + ' suất × ' + fmt(Math.round(aspHuy)) + '₫/suất = ' + fmt(huyGiaTri) + '₫">' +
+        'Giá trị hủy: <strong style="color:' + (huyGiaTri > 0 ? '#C0342C' : 'inherit') + '">' + fmtMoney(huyGiaTri) + '</strong>' +
+      '</div>'
+    : 'Chưa có dữ liệu suất ăn • billing: ' + fmtPct(k.huyValuePct);
+  html += '<div class="kpi" style="border-left-color:' + huyColor + '">' +
+    '<div class="kpi-top"><div>' +
+      '<div class="kpi-lb">Tỷ lệ suất hủy</div>' +
+      '<div class="kpi-v">' + fmtPct(k.huyQtyPct) + '</div>' +
+      '<div class="kpi-sub">' + huySub + '</div>' +
+    '</div>' +
+    '<div class="kpi-ic" style="background:' + huyColor + '14;color:' + huyColor + '">' + svg(IC.trash, 19) + '</div>' +
+    '</div>' +
+    thrBadge(k.huyQtyPct, ng.huyPct, '%', true) +
   '</div>';
 
   // EBITDA ước tính - chỉ hiện số khi đã nhập OPEX
@@ -4603,7 +4854,7 @@ function drawRevHuySacn(){
 
   if (!labels.length){
     var el2 = document.getElementById('sChRevHuy');
-    if (el2 && el2.parentNode) el2.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu tiêu hủy NVL-BTP (sheet Disposal of goods) trong kỳ / filter hiện tại</div>';
+    if (el2 && el2.parentNode) el2.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu tiêu hủy NVL-BTP (MB51 Goods Issue) trong kỳ / filter hiện tại</div>';
     return;
   }
 
@@ -4753,11 +5004,21 @@ function renderRevDrillSacn(site){
       k.foodCostPct <= ng.foodCostMax ? '#16A34A' : '#C0342C')+
     kpiCard(IC.bars,'Lãi gộp', fmtMoney(k.grossProfit), 'biên '+fmtPct(k.grossMarginPct), null, true,
       k.grossProfit >= 0 ? '#16A34A' : '#C0342C')+
-    '<div class="kpi" style="border-left-color:'+(k.huyQtyPct<=ng.huyPct?'#16A34A':'#C0342C')+'">'+
-      '<div class="kpi-top"><div><div class="kpi-lb">Tỷ lệ suất hủy</div>'+
-      '<div class="kpi-v">'+fmtPct(k.huyQtyPct)+'</div>'+
-      '<div class="kpi-sub">'+(k.huyHasReport ? fmt(k.huySuatHuy)+'/'+fmt(k.huyTongSuat)+' suất (Report)' : 'Report chưa có dữ liệu')+'</div></div></div>'+
-      thrBadge(k.huyQtyPct, ng.huyPct, '%', true)+'</div>'+
+    (function(){
+      var aspHuy = k.asp || (k.salesQty > 0 ? k.netRevenue / k.salesQty : 0) || 0;
+      var huyGiaTri = Math.round((k.huySuatHuy || 0) * aspHuy);
+      var sub = k.huyHasReport
+        ? '<div>' + fmt(k.huySuatHuy) + '/' + fmt(k.huyTongSuat) + ' suất</div>' +
+          '<div style="margin-top:3px;font-size:11px;color:#64748B;" title="Giá trị suất hủy = ' + fmt(k.huySuatHuy) + ' suất × ' + fmt(Math.round(aspHuy)) + '₫/suất = ' + fmt(huyGiaTri) + '₫">' +
+            'Giá trị: <strong style="color:' + (huyGiaTri > 0 ? '#C0342C' : 'inherit') + '">' + fmtMoney(huyGiaTri) + '</strong>' +
+          '</div>'
+        : 'Chưa có dữ liệu suất ăn';
+      return '<div class="kpi" style="border-left-color:' + (k.huyQtyPct <= ng.huyPct ? '#16A34A' : '#C0342C') + '">' +
+        '<div class="kpi-top"><div><div class="kpi-lb">Tỷ lệ suất hủy</div>' +
+        '<div class="kpi-v">' + fmtPct(k.huyQtyPct) + '</div>' +
+        '<div class="kpi-sub">' + sub + '</div></div></div>' +
+        thrBadge(k.huyQtyPct, ng.huyPct, '%', true) + '</div>';
+    })()+
     kpiCard(IC.meal,'ASP', fmt(k.asp)+'₫', fmt(k.salesQty)+' suất', null, true, C.gold)+
     kpiCard(IC.wallet,'EBITDA ước tính', k.hasOpex ? fmtMoney(k.ebitda) : '—',
       k.hasOpex ? 'OPEX '+fmtMoney(k.opex) : 'chưa nhập OPEX cho site', null, true, C.light)+
@@ -5542,13 +5803,21 @@ function renderRevDrill(site){
       k.foodCostPct <= ng.foodCostMax ? '#16A34A' : '#C0342C')+
     kpiCard(IC.bars,'Lãi gộp', fmtMoney(k.grossProfit), 'biên '+fmtPct(k.grossMarginPct), null, true,
       k.grossProfit >= 0 ? '#16A34A' : '#C0342C')+
-    '<div class="kpi" style="border-left-color:'+(k.huyQtyPct<=ng.huyPct?'#16A34A':'#C0342C')+'">'+
-      '<div class="kpi-top"><div><div class="kpi-lb">Tỷ lệ suất hủy</div>'+
-      '<div class="kpi-v">'+fmtPct(k.huyQtyPct)+'</div>'+
-      '<div class="kpi-sub">'+(k.huyHasReport
-        ? fmt(k.huySuatHuy)+'/'+fmt(k.huyTongSuat)+' suất (Report)'
-        : 'Report chưa có dữ liệu')+'</div></div></div>'+
-      thrBadge(k.huyQtyPct, ng.huyPct, '%', true)+'</div>'+
+    (function(){
+      var aspHuy = k.asp || (k.salesQty > 0 ? k.netRevenue / k.salesQty : 0) || 0;
+      var huyGiaTri = Math.round((k.huySuatHuy || 0) * aspHuy);
+      var sub = k.huyHasReport
+        ? '<div>' + fmt(k.huySuatHuy) + '/' + fmt(k.huyTongSuat) + ' suất</div>' +
+          '<div style="margin-top:3px;font-size:11px;color:#64748B;" title="Giá trị suất hủy = ' + fmt(k.huySuatHuy) + ' suất × ' + fmt(Math.round(aspHuy)) + '₫/suất = ' + fmt(huyGiaTri) + '₫">' +
+            'Giá trị: <strong style="color:' + (huyGiaTri > 0 ? '#C0342C' : 'inherit') + '">' + fmtMoney(huyGiaTri) + '</strong>' +
+          '</div>'
+        : 'Chưa có dữ liệu suất ăn';
+      return '<div class="kpi" style="border-left-color:' + (k.huyQtyPct <= ng.huyPct ? '#16A34A' : '#C0342C') + '">' +
+        '<div class="kpi-top"><div><div class="kpi-lb">Tỷ lệ suất hủy</div>' +
+        '<div class="kpi-v">' + fmtPct(k.huyQtyPct) + '</div>' +
+        '<div class="kpi-sub">' + sub + '</div></div></div>' +
+        thrBadge(k.huyQtyPct, ng.huyPct, '%', true) + '</div>';
+    })()+
     kpiCard(IC.meal,'ASP', fmt(k.asp)+'₫', fmt(k.salesQty)+' suất', null, true, C.gold)+
     kpiCard(IC.wallet,'EBITDA ước tính',
       k.hasOpex ? fmtMoney(k.ebitda) : '—',
@@ -5617,11 +5886,11 @@ function renderRevDrill(site){
       '</div></div>';
   }
 
-  /* Chi tiết suất hủy theo ngày - lấy từ sheet REPORT (cột "Số suất hủy") */
+  /* Chi tiết suất hủy theo ngày */
   var huyCt = sd.huyChiTiet || [];
   if (huyCt.length){
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
-      cardHead(IC.trash,'Chi tiết suất hủy theo ngày ('+huyCt.length+' ngày có hủy — nguồn: sheet Report)','')+
+      cardHead(IC.trash,'Chi tiết suất hủy theo ngày ('+huyCt.length+' ngày có hủy)','')+
       '<div class="tw" style="max-height:320px"><table><thead><tr>'+
         '<th>Ngày</th><th class="num">Số suất hủy</th><th class="num">Tổng suất</th>'+
         '<th class="num">Tỷ lệ hủy</th><th>So định mức '+ng.huyPct.toFixed(2).replace('.',',')+'%</th>'+
@@ -5644,7 +5913,7 @@ function renderRevDrill(site){
     '</div>';
   } else {
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
-      '<div class="empty">Sheet Report chưa có dữ liệu suất hủy cho cửa hàng này trong kỳ</div></div>';
+      '<div class="empty">Chưa có dữ liệu suất hủy cho cửa hàng này trong kỳ</div></div>';
   }
 
   box.innerHTML = h;
@@ -5757,19 +6026,11 @@ function bindRevenueFiltersSacn(){
 
   document.getElementById('sFrom').addEventListener('change', function(){
     RF_SACN.from = this.value;
-    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedFrom && RF_SACN.from < REV_RAW.dims.loadedFrom)) {
-      loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
-    } else {
-      reload();
-    }
+    loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
   });
   document.getElementById('sTo').addEventListener('change', function(){
     RF_SACN.to = this.value;
-    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedTo && RF_SACN.to > REV_RAW.dims.loadedTo)) {
-      loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
-    } else {
-      reload();
-    }
+    loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
   });
   document.getElementById('sKenh').addEventListener('change', function(){ RF_SACN.kenh = this.value; reload(); });
   document.getElementById('sNhom').addEventListener('change', function(){ RF_SACN.nhomSP = this.value; reload(); });
@@ -5894,19 +6155,11 @@ function bindRevenueFilters(){
 
   document.getElementById('rFrom').addEventListener('change', function(){
     RF.from = this.value;
-    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedFrom && RF.from < REV_RAW.dims.loadedFrom)) {
-      loadRevenue({ force: true, from: RF.from, to: RF.to });
-    } else {
-      reload();
-    }
+    loadRevenue({ force: true, from: RF.from, to: RF.to });
   });
   document.getElementById('rTo').addEventListener('change', function(){
     RF.to = this.value;
-    if (!REV_RAW || !REV_RAW.dims || (REV_RAW.dims.loadedTo && RF.to > REV_RAW.dims.loadedTo)) {
-      loadRevenue({ force: true, from: RF.from, to: RF.to });
-    } else {
-      reload();
-    }
+    loadRevenue({ force: true, from: RF.from, to: RF.to });
   });
   document.getElementById('rKenh').addEventListener('change', function(){ RF.kenh = this.value; reload(); });
   document.getElementById('rNhom').addEventListener('change', function(){ RF.nhomSP = this.value; reload(); });
@@ -6189,13 +6442,16 @@ var EST_EXCLUDED_SITES = [
   'A.Kitchen - Miền Nam',
   'MN Bếp Ăn Đại Học Hùng Vương',
   'MB A.Kitchen - Hub An Khánh',
-  'MN Kho Megafarrm'
+  'MN Kho Megafarrm',
+  'MB Bếp ăn canteen G – Group',
+  'MB Bếp ăn canteen G - Group'
 ];
 
 function est_isExcludedSite(siteName) {
   if (!siteName) return false;
   var sClean = String(siteName).trim().toLowerCase();
   if (/megafar/i.test(sClean)) return true;
+  if (/g[\s\-_–—]*group/i.test(sClean)) return true;
   for (var i = 0; i < EST_EXCLUDED_SITES.length; i++) {
     var exClean = EST_EXCLUDED_SITES[i].trim().toLowerCase();
     if (sClean === exClean || sClean.indexOf(exClean) >= 0 || exClean.indexOf(sClean) >= 0) {
@@ -6799,8 +7055,8 @@ function computeAndDrawRevenueEst(){
     if (RF_EST.sites && RF_EST.sites.length > 0) {
       if (RF_EST.sites.indexOf(r.site) < 0) return false;
     } else {
-      // Khi "Tất cả site" (mặc định không chọn site cụ thể): không tính Megafarrm
-      if (/megafar/i.test(r.site || '') || r.maSite === 'D007') return false;
+      // Khi "Tất cả site" (mặc định không chọn site cụ thể): không tính Megafarrm và G – Group
+      if (/megafar/i.test(r.site || '') || /g[\s\-_–—]*group/i.test(r.site || '') || r.maSite === 'D007') return false;
     }
     if (RF_EST.vungMien.length && RF_EST.vungMien.indexOf(r.vungMien || '(Chưa phân loại)') < 0) return false;
     if (RF_EST.loaiCuaHang.length && RF_EST.loaiCuaHang.indexOf(r.loaiCuaHang || '(Chưa phân loại)') < 0) return false;
@@ -8194,7 +8450,7 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
       if (RF_EST.sites && RF_EST.sites.length > 0) {
         if (RF_EST.sites.indexOf(r.site) < 0) return false;
       } else {
-        if (/megafar/i.test(r.site || '') || r.maSite === 'D007') return false;
+        if (/megafar/i.test(r.site || '') || /g[\s\-_–—]*group/i.test(r.site || '') || r.maSite === 'D007') return false;
       }
       if (RF_EST.vungMien && RF_EST.vungMien.length && RF_EST.vungMien.indexOf(r.vungMien || '(Chưa phân loại)') < 0) return false;
       if (RF_EST.loaiCuaHang && RF_EST.loaiCuaHang.length && RF_EST.loaiCuaHang.indexOf(r.loaiCuaHang || '(Chưa phân loại)') < 0) return false;

@@ -126,24 +126,48 @@ CREATE TABLE IF NOT EXISTS opex_input (
 
 CREATE INDEX IF NOT EXISTS idx_opex_site_period ON opex_input (site, period);
 
--- 5. DISPOSAL OF GOODS: Hủy hàng hóa NVL / BTP
-CREATE TABLE IF NOT EXISTS disposal_of_goods (
+-- 5. MB51 GOODS ISSUE: Xuất tiêu hủy NVL / BTP & Suất hủy PHA (thay thế disposal_of_goods)
+CREATE TABLE IF NOT EXISTS mb51_goods_issue (
   id BIGSERIAL PRIMARY KEY,
-  ngay_lap DATE NOT NULL,
-  ten_site TEXT NOT NULL,
-  ma_site TEXT,
-  ma_code TEXT,
-  ten_sp TEXT,
-  loai_hang TEXT,
-  qty_kg NUMERIC NOT NULL DEFAULT 0,
-  don_gia NUMERIC NOT NULL DEFAULT 0,
-  value NUMERIC GENERATED ALWAYS AS (qty_kg * don_gia) STORED,
-  ly_do TEXT,
+  nganh_hang TEXT,
+  nhom_hang TEXT,
+  user_name TEXT,
+  site TEXT,
+  site_name TEXT,
+  stor_loc TEXT,
+  mat_doc TEXT,
+  doc_item TEXT,
+  posting_date DATE,
+  mov_type TEXT,
+  material TEXT,
+  material_desc TEXT,
+  doc_header_text TEXT,
+  quantity NUMERIC NOT NULL DEFAULT 0,
+  entry_unit TEXT,
+  amount_lc NUMERIC NOT NULL DEFAULT 0,
+  ext_amount_lc NUMERIC,
+  doc_date DATE,
+  company_code TEXT,
+  entry_date DATE,
+  entry_time TEXT,
+  mov_type_text TEXT,
+  qty_stock_unit NUMERIC,
+  stock_unit TEXT,
+  sales_value NUMERIC,
+  mat_doc_year TEXT,
+  dc_ind TEXT,
+  transaction_type TEXT,
+  sv_inc_vat NUMERIC,
+  currency TEXT,
+  row_hash TEXT,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX IF NOT EXISTS idx_disposal_ngay_lap ON disposal_of_goods (ngay_lap DESC);
-CREATE INDEX IF NOT EXISTS idx_disposal_ten_site ON disposal_of_goods (ten_site);
+-- Tối ưu hóa truy vấn cho mb51_goods_issue
+CREATE INDEX IF NOT EXISTS idx_mb51_posting_date ON mb51_goods_issue (posting_date DESC);
+CREATE INDEX IF NOT EXISTS idx_mb51_site_posting_date ON mb51_goods_issue (site, posting_date DESC);
+CREATE INDEX IF NOT EXISTS idx_mb51_site_name_posting_date ON mb51_goods_issue (site_name, posting_date DESC);
+CREATE INDEX IF NOT EXISTS idx_mb51_entry_unit ON mb51_goods_issue (entry_unit);
 
 -- 6. KẾ HOẠCH DỰ ÁN, P&L VÀ THAM SỐ
 CREATE TABLE IF NOT EXISTS kehoach_duan (
