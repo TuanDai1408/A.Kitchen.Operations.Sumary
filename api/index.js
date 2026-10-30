@@ -54,6 +54,10 @@ export default async function handler(req, res) {
       case "getWarehouseDashboardData":
         data = await api.getWarehouseDashboardData(req.query.filters || payload?.filters);
         break;
+      case "getMb51GoodsIssue":
+      case "getDisposalDetails":
+        data = await api.getMb51GoodsIssue(req.query.filters || payload?.filters);
+        break;
       case "getNutritionDashboardData":
         data = await api.getNutritionDashboardData();
         break;

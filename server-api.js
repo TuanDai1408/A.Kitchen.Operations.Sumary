@@ -821,21 +821,34 @@ export async function getWarehouseDashboardData(filtersParam) {
     filters = filtersParam;
   }
 
-  // 1. Xác định ngày mới nhất trong stock_transactions
-  const { data: latestDateRow } = await supabase
-    .from("stock_transactions")
-    .select("pstng_date")
-    .order("pstng_date", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+  // 1. Xác định ngày mới nhất trong stock_transactions và mb51_goods_issue
+  const [latestDateRow, latestMbRow] = await Promise.all([
+    supabase.from("stock_transactions").select("pstng_date").order("pstng_date", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("mb51_goods_issue").select("posting_date").order("posting_date", { ascending: false }).limit(1).maybeSingle()
+  ]);
 
-  const maxDateStr = latestDateRow?.pstng_date || "2026-09-30";
+  const dKho = latestDateRow?.data?.pstng_date || "2026-09-30";
+  const dHuy = latestMbRow?.data?.posting_date || "";
+  const dMax = (dHuy && dHuy > dKho) ? dHuy : dKho;
 
-  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
-  const maxD = new Date(maxDateStr);
-  const oneMonthAgo = new Date(maxD);
-  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
-  const defaultFrom = oneMonthAgo.toISOString().slice(0, 10);
+  // Mặc định: 1 tháng tính từ D_max (D_max - 1 tháng)
+  function calcMinusOneMonth(dStr) {
+    if (!dStr) return "";
+    const p = dStr.split("-").map(Number);
+    if (p.length !== 3) return "";
+    let targetYear = p[0];
+    let targetMonth = p[1] - 1;
+    if (targetMonth === 0) {
+      targetMonth = 12;
+      targetYear--;
+    }
+    const daysInMonth = new Date(targetYear, targetMonth, 0).getDate();
+    const targetDay = Math.min(p[2], daysInMonth);
+    return `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
+  }
+
+  const defaultTo = dMax;
+  const defaultFrom = calcMinusOneMonth(dMax);
 
   let reqFrom = filters.from || "";
   let reqTo = filters.to || "";
@@ -843,7 +856,7 @@ export async function getWarehouseDashboardData(filtersParam) {
   // Nếu người dùng không chỉ định khoảng ngày hoặc không yêu cầu all:
   if (!reqFrom && !filters.all) {
     reqFrom = defaultFrom;
-    reqTo = maxDateStr;
+    reqTo = defaultTo;
   }
 
   // Lấy dữ liệu kho qua fetchAllRows (lọc theo khoảng ngày phát sinh để tối ưu tốc độ)
@@ -1004,11 +1017,14 @@ export async function getWarehouseDashboardData(filtersParam) {
       site: rawHeaders[0]?.site || "K500",
       site_name: rawHeaders[0]?.site_name || "MB A Kitchen Hòa Bình",
       period_from: reqFrom || minDate || defaultFrom,
-      period_to: reqTo || maxDate || maxDateStr,
-      max_date: maxDateStr,
+      period_to: reqTo || maxDate || defaultTo,
+      max_date: dMax,
+      d_kho: dKho,
+      d_huy: dHuy,
       default_from: defaultFrom,
+      default_to: defaultTo,
       loaded_from: reqFrom || defaultFrom,
-      loaded_to: reqTo || maxDateStr,
+      loaded_to: reqTo || defaultTo,
       days_in_period: daysInPeriod,
       generated_at: new Date().toISOString()
     },
@@ -1209,5 +1225,84 @@ export async function getRevenueEstData(filtersParam) {
       planPctMin: 95,
       huyPct: DEFAULT_NGUONG.huyPct || 1.5
     }
+  };
+}
+
+/**
+ * Lấy dữ liệu chi tiết hủy hàng từ mb51_goods_issue
+ * Phục vụ section Chi tiết hủy hàng trong tab Quản lý kho
+ */
+export async function getMb51GoodsIssue(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  const selectCols = "mat_doc,doc_item,mat_doc_year,posting_date,doc_date,entry_date,site,site_name,stor_loc,user_name,mov_type,mov_type_text,material,material_desc,doc_header_text,quantity,entry_unit,amount_lc,ext_amount_lc,qty_stock_unit,stock_unit,nganh_hang,nhom_hang";
+  let q = supabase.from("mb51_goods_issue").select(selectCols);
+
+  if (filters.from) q = q.gte("posting_date", filters.from);
+  if (filters.to) q = q.lte("posting_date", filters.to);
+
+  if (filters.sites && Array.isArray(filters.sites) && filters.sites.length > 0) {
+    const siteValues = filters.sites.map(s => String(s).trim()).filter(Boolean);
+    if (siteValues.length > 0) {
+      const isAllCodes = siteValues.every(s => /^[A-Z0-9_-]{3,6}$/i.test(s));
+      if (isAllCodes) {
+        q = q.in("site", siteValues);
+      } else {
+        const siteOr = siteValues.map(s => `site.eq."${s}",site_name.eq."${s}"`).join(",");
+        q = q.or(siteOr);
+      }
+    }
+  } else if (filters.site && typeof filters.site === "string" && filters.site.trim()) {
+    const s = filters.site.trim();
+    if (/^[A-Z0-9_-]{3,6}$/i.test(s)) {
+      q = q.eq("site", s);
+    } else {
+      q = q.or(`site.eq."${s}",site_name.eq."${s}"`);
+    }
+  }
+
+  if (filters.entry_unit && filters.entry_unit !== "ALL" && filters.entry_unit !== "") {
+    q = q.eq("entry_unit", filters.entry_unit.trim());
+  }
+
+  if (filters.mvt_type && filters.mvt_type !== "ALL" && filters.mvt_type !== "") {
+    q = q.eq("mov_type", filters.mvt_type.trim());
+  }
+
+  if (filters.stor_loc && filters.stor_loc !== "ALL" && filters.stor_loc !== "") {
+    q = q.eq("stor_loc", filters.stor_loc.trim());
+  }
+
+  if (filters.nhom_hang && filters.nhom_hang !== "ALL" && filters.nhom_hang !== "") {
+    q = q.eq("nhom_hang", filters.nhom_hang.trim());
+  }
+
+  if (filters.nganh_hang && filters.nganh_hang !== "ALL" && filters.nganh_hang !== "") {
+    q = q.eq("nganh_hang", filters.nganh_hang.trim());
+  }
+
+  if (filters.q && typeof filters.q === "string" && filters.q.trim()) {
+    const kw = filters.q.trim();
+    q = q.or(`material.ilike.%${kw}%,material_desc.ilike.%${kw}%,mat_doc.ilike.%${kw}%`);
+  }
+
+  q = q.order("posting_date", { ascending: false }).order("mat_doc", { ascending: false });
+  if (filters.limit) q = q.limit(filters.limit);
+
+  const { data, error } = await q;
+  if (error) {
+    console.error("getMb51GoodsIssue error:", error);
+    return { ok: false, error: error.message, rows: [] };
+  }
+
+  return {
+    ok: true,
+    total: (data || []).length,
+    rows: data || []
   };
 }

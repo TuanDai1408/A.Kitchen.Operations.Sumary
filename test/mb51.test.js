@@ -501,5 +501,42 @@ test("est_isExcludedSite excludes MB Bếp ăn canteen G – Group and Megafarrm
   assert.strictEqual(est_isExcludedSite("MB A Kitchen Hòa Bình"), false);
 });
 
+test("Revenue info banner content and target tab mapping for 3 tabs (Single Line)", () => {
+  function akRevInfoBanner(text, targetTab, linkText) {
+    return `<div class="ak-rev-info-banner"><span class="ak-rev-info-banner-text">${text}</span><span class="ak-rev-info-banner-arrow" data-switch-tab="${targetTab}">→</span><button class="ak-rev-info-banner-link" data-switch-tab="${targetTab}">${linkText}</button></div>`;
+  }
+
+  // 1) Tab "Doanh thu & Foodcost (ALL)"
+  const b1 = akRevInfoBanner(
+    'Số liệu theo hóa đơn đã xuất (mọi mô hình PKD SACN).',
+    'sacn',
+    'Doanh thu & Foodcost (SACN)'
+  );
+  assert.ok(b1.includes('Số liệu theo hóa đơn đã xuất (mọi mô hình PKD SACN).'));
+  assert.ok(b1.includes('data-switch-tab="sacn"'));
+  assert.ok(b1.includes('Doanh thu & Foodcost (SACN)'));
+
+  // 2) Tab "Doanh thu & Foodcost (SACN)"
+  const b2 = akRevInfoBanner(
+    'Số liệu theo hóa đơn đã xuất (các site mô hình SACN).',
+    'revenue-est',
+    'Doanh thu ước tính'
+  );
+  assert.ok(b2.includes('Số liệu theo hóa đơn đã xuất (các site mô hình SACN).'));
+  assert.ok(b2.includes('data-switch-tab="revenue-est"'));
+  assert.ok(b2.includes('Doanh thu ước tính'));
+
+  // 3) Tab "Doanh thu ước tính"
+  const b3 = akRevInfoBanner(
+    'Số liệu ước tính từ suất ăn báo cáo vận hành.',
+    'sacn',
+    'Doanh thu & Foodcost (SACN)'
+  );
+  assert.ok(b3.includes('Số liệu ước tính từ suất ăn báo cáo vận hành.'));
+  assert.ok(b3.includes('data-switch-tab="sacn"'));
+  assert.ok(b3.includes('Doanh thu & Foodcost (SACN)'));
+});
+
+
 
 
