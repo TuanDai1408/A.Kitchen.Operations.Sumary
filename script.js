@@ -2810,6 +2810,119 @@ function getDtPill(val, isTop3){
   }
   return formatted;
 }
+function est_calcAM2ForScope(opts) {
+  opts = opts || {};
+  var rows = opts.rows || [];
+  var personnel = (REV_RAW && REV_RAW.personnelBySiteKy) ||
+                  (REV_EST_RAW && REV_EST_RAW.personnelBySiteKy) ||
+                  [];
+  var khSites = (REV_RAW && REV_RAW.planSites) ||
+                (REV_EST_RAW && REV_EST_RAW.keHoach && REV_EST_RAW.keHoach.sites) ||
+                (typeof KH !== 'undefined' && KH && KH.sites) ||
+                [];
+  if (!khSites || !khSites.length) {
+    var khSet = {};
+    personnel.forEach(function(p){ if (p.site) khSet[p.site] = 1; });
+    khSites = Object.keys(khSet);
+  }
+
+  var nsMap = {};
+  personnel.forEach(function(pn){
+    var s = String(pn.site || '').trim();
+    var k = String(pn.ky || '').trim();
+    if (!s || !k) return;
+    nsMap[s + '|' + k] = (nsMap[s + '|' + k] || 0) + Number(pn.amount || 0);
+  });
+
+  var monthWeights = {};
+  var fFrom = opts.from || '', fTo = opts.to || '';
+  if (fFrom && fTo) {
+    var curD = new Date(fFrom + 'T00:00:00');
+    var endD = new Date(fTo + 'T00:00:00');
+    if (!isNaN(curD.getTime()) && !isNaN(endD.getTime()) && curD <= endD) {
+      while (curD <= endD) {
+        var y = curD.getFullYear();
+        var m = curD.getMonth();
+        var mKey = y + '-' + (m < 9 ? '0' : '') + (m + 1);
+        var firstDayOfMonth = new Date(y, m, 1);
+        var lastDayOfMonth = new Date(y, m + 1, 0);
+        var startSpan = curD > firstDayOfMonth ? curD : firstDayOfMonth;
+        var endSpan = endD < lastDayOfMonth ? endD : lastDayOfMonth;
+        var daysInSpan = Math.round((endSpan - startSpan) / 86400000) + 1;
+        var totalDaysInMonth = lastDayOfMonth.getDate();
+        var weight = Math.min(1, Math.max(0, daysInSpan / totalDaysInMonth));
+        monthWeights[mKey] = (monthWeights[mKey] || 0) + weight;
+        curD = new Date(y, m + 1, 1);
+      }
+    }
+  } else if (opts.periods && opts.periods.length) {
+    opts.periods.forEach(function(p){ monthWeights[p] = 1; });
+  } else {
+    rows.forEach(function(r){
+      var k = r.ky || (r.ngay ? r.ngay.substring(0, 7) : '');
+      if (k) monthWeights[k] = 1;
+    });
+  }
+
+  if (opts.siteName) {
+    var ps = est_matchPlanSite(opts.siteName, khSites);
+    var nsVal = 0, hasNS = false;
+    Object.keys(monthWeights).forEach(function(mKey){
+      var v = nsMap[ps + '|' + mKey];
+      if (v !== undefined && v > 0) {
+        nsVal += v * (monthWeights[mKey] || 1);
+        hasNS = true;
+      }
+    });
+    var dt = (opts.netRevenue !== undefined && opts.netRevenue !== null) ? opts.netRevenue : 0;
+    var fc = (opts.foodCost !== undefined && opts.foodCost !== null) ? opts.foodCost : 0;
+    var am1 = dt - fc;
+    var am2 = am1 - (hasNS ? nsVal : 0);
+    var am2Pct = dt > 0 ? (am2 / dt * 100) : 0;
+    return { am1: am1, am2: am2, am2Pct: am2Pct, ns: nsVal, hasNS: hasNS, netRevenue: dt, foodCost: fc };
+  }
+
+  var siteRowsMap = {};
+  var totDT = 0, totFC = 0;
+  rows.forEach(function(r){
+    var s = r.site;
+    if (!s) return;
+    if (!siteRowsMap[s]) siteRowsMap[s] = { dt: 0, fc: 0 };
+    var rev = Number(r.netRevenue !== undefined ? r.netRevenue : (r.thanhTien || 0));
+    var cost = Number(r.foodCost !== undefined ? r.foodCost : (r.giaVon || 0));
+    siteRowsMap[s].dt += rev;
+    siteRowsMap[s].fc += cost;
+    totDT += rev;
+    totFC += cost;
+  });
+
+  if (opts.netRevenue !== undefined && opts.netRevenue !== null) totDT = opts.netRevenue;
+  if (opts.foodCost !== undefined && opts.foodCost !== null) totFC = opts.foodCost;
+
+  var totAM1 = totDT - totFC;
+  var totNS = 0, hasAnyNS = false;
+  var targetSites = (opts.sites && opts.sites.length) ? opts.sites : Object.keys(siteRowsMap);
+  targetSites.forEach(function(sName){
+    var ps = est_matchPlanSite(sName, khSites);
+    var nsVal = 0, siteHasNS = false;
+    Object.keys(monthWeights).forEach(function(mKey){
+      var v = nsMap[ps + '|' + mKey];
+      if (v !== undefined && v > 0) {
+        nsVal += v * (monthWeights[mKey] || 1);
+        siteHasNS = true;
+      }
+    });
+    if (siteHasNS) {
+      totNS += nsVal;
+      hasAnyNS = true;
+    }
+  });
+
+  var totAM2 = totAM1 - totNS;
+  var totAM2_pct = totDT > 0 ? (totAM2 / totDT * 100) : 0;
+  return { am1: totAM1, am2: totAM2, am2Pct: totAM2_pct, ns: totNS, hasNS: hasAnyNS, netRevenue: totDT, foodCost: totFC };
+}
+
 function computeAndDrawRevenueSacn(){
   if (!REV_RAW || !REV_RAW.rows) return;
   var base = sacn_baseRows();
@@ -2849,6 +2962,35 @@ function computeAndDrawRevenueSacn(){
     khachHang: Object.keys(setKH).sort(viSort),
     dates: Object.keys(setDate).sort()
   };
+
+  var targetSitesSacn = (f.sites && f.sites.length) ? f.sites : sacnSiteNames;
+  var am2Cur = est_calcAM2ForScope({
+    rows: cur,
+    sites: targetSitesSacn,
+    from: f.from,
+    to: f.to,
+    netRevenue: kpi.netRevenue,
+    foodCost: kpi.foodCost
+  });
+  kpi.am1 = am2Cur.am1;
+  kpi.am2 = am2Cur.am2;
+  kpi.am2Pct = am2Cur.am2Pct;
+  kpi.ns = am2Cur.ns;
+  kpi.hasNS = am2Cur.hasNS;
+
+  var am2Prev = est_calcAM2ForScope({
+    rows: prev,
+    sites: targetSitesSacn,
+    from: pr ? pr.from : '',
+    to: pr ? pr.to : '',
+    netRevenue: kpiPrev.netRevenue,
+    foodCost: kpiPrev.foodCost
+  });
+  kpiPrev.am1 = am2Prev.am1;
+  kpiPrev.am2 = am2Prev.am2;
+  kpiPrev.am2Pct = am2Prev.am2Pct;
+  kpiPrev.ns = am2Prev.ns;
+  kpiPrev.hasNS = am2Prev.hasNS;
 
   var opexItems = (REV_RAW.opexItems || []).filter(function(o){
     return o.site === 'ALL' || sacnSiteNames.indexOf(o.site) >= 0;
@@ -3037,7 +3179,39 @@ function computeAndDrawRevenue() {
   var kpi = rev_finalize(aCur);
   var kpiPrev = rev_finalize(aPrev);
 
-  // OPEX (giống backend: khớp site + tháng trong khoảng)
+  var allSiteSet = {}; (REV_RAW.rows || []).forEach(function(r){ if (r.site) allSiteSet[r.site]=1; });
+  var allSiteNames = Object.keys(allSiteSet);
+  var targetSitesAll = (f.sites && f.sites.length) ? f.sites : allSiteNames;
+
+  var am2Cur = est_calcAM2ForScope({
+    rows: cur,
+    sites: targetSitesAll,
+    from: f.from,
+    to: f.to,
+    netRevenue: kpi.netRevenue,
+    foodCost: kpi.foodCost
+  });
+  kpi.am1 = am2Cur.am1;
+  kpi.am2 = am2Cur.am2;
+  kpi.am2Pct = am2Cur.am2Pct;
+  kpi.ns = am2Cur.ns;
+  kpi.hasNS = am2Cur.hasNS;
+
+  var am2Prev = est_calcAM2ForScope({
+    rows: prev,
+    sites: targetSitesAll,
+    from: pr ? pr.from : '',
+    to: pr ? pr.to : '',
+    netRevenue: kpiPrev.netRevenue,
+    foodCost: kpiPrev.foodCost
+  });
+  kpiPrev.am1 = am2Prev.am1;
+  kpiPrev.am2 = am2Prev.am2;
+  kpiPrev.am2Pct = am2Prev.am2Pct;
+  kpiPrev.ns = am2Prev.ns;
+  kpiPrev.hasNS = am2Prev.hasNS;
+
+  // OPEX
   var opexItems = REV_RAW.opexItems || [];
   var opexAmt = 0, opexMatched = 0;
   var months = {};
@@ -3057,9 +3231,6 @@ function computeAndDrawRevenue() {
   });
   kpi.opex = opexAmt;
   kpi.hasOpex = opexMatched > 0 && opexAmt > 0;
-  kpi.ebitda = kpi.hasOpex ? (kpi.grossProfit - opexAmt) : null;
-  kpi.ebitdaPct = (kpi.hasOpex && kpi.netRevenue > 0)
-    ? ((kpi.grossProfit - opexAmt) / kpi.netRevenue) * 100 : null;
 
   // Hủy từ Report + MB51 Goods Issue (PHA) — TÍNH LẠI CÓ LỌC theo ngày/site mỗi lần filter đổi
   var huy = rev_huyFromReport(REV_RAW.huyRows, f, REV_RAW.mb51PhaRows);
@@ -3929,6 +4100,19 @@ function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
     m.hasOpex = opexSite.matched > 0 && opexSite.amount > 0;
     m.ebitda = m.hasOpex ? (m.grossProfit - opexSite.amount) : null;
 
+    var am2Site = est_calcAM2ForScope({
+      siteName: s,
+      from: f ? f.from : '',
+      to: f ? f.to : '',
+      netRevenue: m.netRevenue,
+      foodCost: m.foodCost
+    });
+    m.am1 = am2Site.am1;
+    m.am2 = am2Site.am2;
+    m.am2Pct = am2Site.am2Pct;
+    m.ns = am2Site.ns;
+    m.hasNS = am2Site.hasNS;
+
     var hSite = rev_matchHuySite(huyReport, s);
     var huyChiTiet = [];
     if (hSite) {
@@ -4029,14 +4213,23 @@ function drawRevenueSacn(){
     '<div class="kpi-ic" style="background:' + huyColor + '14;color:' + huyColor + '">' + svg(IC.trash, 19) + '</div></div>' +
     thrBadge(k.huyQtyPct, ng.huyPct, '%', true) + '</div>';
 
-  html += '<div class="kpi" style="border-left-color:'+C.light+'">'+
-    '<div class="kpi-top"><div><div class="kpi-lb">EBITDA ước tính</div>'+
-    '<div class="kpi-v" style="'+(k.hasOpex?'':'font-size:15px;color:#B0B0B0')+'">'+
-      (k.hasOpex ? fmtPct(k.ebitdaPct) : 'Chưa đủ dữ liệu OPEX')+'</div>'+
-    (k.hasOpex ? '<div class="kpi-sub">'+fmtMoney(k.ebitda)+' • OPEX '+fmtMoney(k.opex)+'</div>'
-               : '<div class="kpi-sub">nhập OPEX vào sheet OPEX_Input</div>')+
-    '</div><div class="kpi-ic" style="background:'+C.light+'14;color:'+C.light+'">'+svg(IC.wallet,19)+'</div></div>'+
-    '<div class="kpi-warn">Ước tính = Lãi gộp − OPEX. Chưa gồm chi phí tài chính, thuế.</div></div>';
+  var am2Color = (k.am2 >= 0) ? '#046A38' : '#C0342C';
+  var am2Sub = fmtMoney(k.am2) + (k.hasNS ? ' • CP nhân sự ' + fmtMoney(k.ns) : ' • Chưa có KH nhân sự');
+  html += '<div class="kpi" style="border-left-color:' + am2Color + '">' +
+    '<div class="kpi-top"><div><div class="kpi-lb">Lãi AM2</div>' +
+    '<div class="kpi-v">' + fmtPct(k.am2Pct) + '</div>' +
+    '<div class="kpi-sub">' + am2Sub + '</div></div>' +
+    '<div class="kpi-ic" style="background:' + am2Color + '14;color:' + am2Color + '">' + svg(IC.wallet, 19) + '</div></div>' +
+    (function () {
+      var delta = d(k.am2, p.am2);
+      if (delta === null || isNaN(delta) || delta === 0) {
+        return '<div class="kpi-warn" style="margin-top:6px;font-size:11px;color:#64748B;">AM2 = AM1 (Lãi gộp) − Chi phí nhân sự KH</div>';
+      }
+      var up = delta > 0;
+      return '<div class="kpi-d ' + (up ? 'up' : 'down') + '">' +
+        svg(up ? IC.up : IC.down, 13) +
+        Math.abs(delta) + '% <span style="color:#B0B0B0;font-weight:400">so kỳ trước</span></div>';
+    })() + '</div>';
 
 
    // var avgSuatSub = 'ĐVT = PHA';
@@ -4140,20 +4333,6 @@ function drawRevenueSacn(){
   '</div>';
 
   html += '</div>';
-
-  /* OPEX */
-  html += '<div class="card" style="margin-top:13px">'+
-    cardHead(IC.wallet,'Chi phí vận hành (OPEX) — nhập trực tiếp vào sheet OPEX_Input','')+
-    '<div class="opex-note" style="margin-bottom:'+((REV_SACN.opexItems && REV_SACN.opexItems.length)?'11px':'0')+'">'+
-      'Chỉ tính OPEX của các site thuộc SACN.</div>'+
-    (REV_SACN.opexItems && REV_SACN.opexItems.length
-      ? '<div class="tw"><table><thead><tr><th>Cửa hàng</th><th>Kỳ</th><th class="num">Số tiền</th><th>Cập nhật lúc</th></tr></thead><tbody>'+
-        REV_SACN.opexItems.map(function(o){
-          return '<tr><td>'+esc(o.site)+'</td><td>'+esc(o.period)+'</td>'+
-                 '<td class="num">'+fmt(o.amount)+'₫</td><td style="color:#A0A0A0">'+esc(o.updatedAt)+'</td></tr>';
-        }).join('')+'</tbody></table></div>'
-      : '<div class="empty" style="padding:14px 0">Chưa có OPEX cho site SACN</div>')+
-  '</div>';
 
   /* CHARTS */
   html += '<div class="grid g2" style="margin-top:13px">';
@@ -4345,30 +4524,23 @@ function drawRevenue(){
     thrBadge(k.huyQtyPct, ng.huyPct, '%', true) +
   '</div>';
 
-  // EBITDA ước tính - chỉ hiện số khi đã nhập OPEX
-  // html += '<div class="kpi" style="border-left-color:'+C.light+'">'+
-  //   '<div class="kpi-top"><div>'+
-  //     '<div class="kpi-lb">EBITDA ước tính</div>'+
-  //     '<div class="kpi-v" style="'+(k.hasOpex?'':'font-size:15px;color:#B0B0B0')+'">'+
-  //       (k.hasOpex ? fmtMoney(k.ebitda) : 'Chưa đủ dữ liệu OPEX')+'</div>'+
-  //     (k.hasOpex
-  //       ? '<div class="kpi-sub">OPEX '+fmtMoney(k.opex)+' • biên '+fmtPct(k.ebitdaPct)+'</div>'
-  //       : '<div class="kpi-sub">nhập OPEX vào sheet OPEX_Input</div>')+
-  //   '</div>'+
-
-  html += '<div class="kpi" style="border-left-color:'+C.light+'">'+
-    '<div class="kpi-top"><div>'+
-      '<div class="kpi-lb">EBITDA ước tính</div>'+
-      '<div class="kpi-v" style="'+(k.hasOpex?'':'font-size:15px;color:#B0B0B0')+'">'+
-        (k.hasOpex ? fmtPct(k.ebitdaPct) : 'Chưa đủ dữ liệu OPEX')+'</div>'+
-      (k.hasOpex
-        ? '<div class="kpi-sub">'+fmtMoney(k.ebitda)+' • OPEX '+fmtMoney(k.opex)+'</div>'
-        : '<div class="kpi-sub">nhập OPEX vào sheet OPEX_Input</div>')+
-    '</div>'+  
-    '<div class="kpi-ic" style="background:'+C.light+'14;color:'+C.light+'">'+svg(IC.wallet,19)+'</div>'+
-    '</div>'+
-    '<div class="kpi-warn">Ước tính = Lãi gộp − OPEX (sheet OPEX_Input). Chưa gồm chi phí tài chính, thuế.</div>'+
-  '</div>';
+  var am2Color = (k.am2 >= 0) ? '#046A38' : '#C0342C';
+  var am2Sub = fmtMoney(k.am2) + (k.hasNS ? ' • CP nhân sự ' + fmtMoney(k.ns) : ' • Chưa có KH nhân sự');
+  html += '<div class="kpi" style="border-left-color:' + am2Color + '">' +
+    '<div class="kpi-top"><div><div class="kpi-lb">Lãi AM2</div>' +
+    '<div class="kpi-v">' + fmtPct(k.am2Pct) + '</div>' +
+    '<div class="kpi-sub">' + am2Sub + '</div></div>' +
+    '<div class="kpi-ic" style="background:' + am2Color + '14;color:' + am2Color + '">' + svg(IC.wallet, 19) + '</div></div>' +
+    (function () {
+      var delta = d(k.am2, p.am2);
+      if (delta === null || isNaN(delta) || delta === 0) {
+        return '<div class="kpi-warn" style="margin-top:6px;font-size:11px;color:#64748B;">AM2 = AM1 (Lãi gộp) − Chi phí nhân sự KH</div>';
+      }
+      var up = delta > 0;
+      return '<div class="kpi-d ' + (up ? 'up' : 'down') + '">' +
+        svg(up ? IC.up : IC.down, 13) +
+        Math.abs(delta) + '% <span style="color:#B0B0B0;font-weight:400">so kỳ trước</span></div>';
+    })() + '</div>';
 
   // Card thứ 6 của hàng 1: DT thuần / ngày vận hành
   html += kpiCard(IC.line, 'DT thuần / ngày vận hành', fmtMoney(k.netPerDay),
@@ -4427,26 +4599,6 @@ function drawRevenue(){
   }
 
   html += '</div>';
-
-
-  /* OPEX đọc từ sheet OPEX_Input (người dùng tự nhập trực tiếp vào sheet) */
-  html += '<div class="card" style="margin-top:13px">'+
-    cardHead(IC.wallet,'Chi phí vận hành (OPEX) — nhập trực tiếp vào sheet OPEX_Input','')+
-    '<div class="opex-note" style="margin-bottom:'+((REV.opexItems && REV.opexItems.length)?'11px':'0')+'">'+
-      'Nhập OPEX theo cột <b>Site</b> (hoặc <b>ALL</b>) · <b>Ky</b> (yyyy-MM hoặc <b>ALL</b>) · <b>SoTien</b> trong sheet '+
-      '<b>OPEX_Input</b>. Bao gồm lương, thuê mặt bằng, điện nước, khấu hao... '+
-      'Nếu chưa nhập, EBITDA hiển thị "Chưa đủ dữ liệu OPEX".'+
-    '</div>'+
-    (REV.opexItems && REV.opexItems.length
-      ? '<div class="tw"><table><thead><tr>'+
-        '<th>Cửa hàng</th><th>Kỳ</th><th class="num">Số tiền</th><th>Cập nhật lúc</th>'+
-        '</tr></thead><tbody>'+
-        REV.opexItems.map(function(o){
-          return '<tr><td>'+esc(o.site)+'</td><td>'+esc(o.period)+'</td>'+
-                 '<td class="num">'+fmt(o.amount)+'₫</td><td style="color:#A0A0A0">'+esc(o.updatedAt)+'</td></tr>';
-        }).join('')+'</tbody></table></div>'
-      : '<div class="empty" style="padding:14px 0">Sheet OPEX_Input chưa có dữ liệu</div>')+
-  '</div>';
 
   /* ===== KHỐI 4: CHARTS TỔNG QUAN (mục 5.2) ===== */
   html += '<div class="grid g2" style="margin-top:13px">';
@@ -5048,8 +5200,8 @@ function renderRevDrillSacn(site){
         thrBadge(k.huyQtyPct, ng.huyPct, '%', true) + '</div>';
     })()+
     kpiCard(IC.meal,'ASP', fmt(k.asp)+'₫', fmt(k.salesQty)+' suất', null, true, C.gold)+
-    kpiCard(IC.wallet,'EBITDA ước tính', k.hasOpex ? fmtMoney(k.ebitda) : '—',
-      k.hasOpex ? 'OPEX '+fmtMoney(k.opex) : 'chưa nhập OPEX cho site', null, true, C.light)+
+    kpiCard(IC.wallet,'Lãi AM2', fmtPct(k.am2Pct),
+      fmtMoney(k.am2) + (k.hasNS ? ' • CP NS ' + fmtMoney(k.ns) : ' • chưa có KH nhân sự'), null, true, (k.am2 >= 0 ? '#046A38' : '#C0342C'))+
   '</div>';
 
   var totNet = k.netRevenue;
@@ -5847,9 +5999,8 @@ function renderRevDrill(site){
         thrBadge(k.huyQtyPct, ng.huyPct, '%', true) + '</div>';
     })()+
     kpiCard(IC.meal,'ASP', fmt(k.asp)+'₫', fmt(k.salesQty)+' suất', null, true, C.gold)+
-    kpiCard(IC.wallet,'EBITDA ước tính',
-      k.hasOpex ? fmtMoney(k.ebitda) : '—',
-      k.hasOpex ? 'OPEX '+fmtMoney(k.opex) : 'chưa nhập OPEX cho site', null, true, C.light)+
+    kpiCard(IC.wallet,'Lãi AM2', fmtPct(k.am2Pct),
+      fmtMoney(k.am2) + (k.hasNS ? ' • CP NS ' + fmtMoney(k.ns) : ' • chưa có KH nhân sự'), null, true, (k.am2 >= 0 ? '#046A38' : '#C0342C'))+
   '</div>';
 
   /* Bảng khách hàng - đánh giá mức độ tập trung */
@@ -10204,6 +10355,75 @@ var QLK = (function(){
   var huyPageSize = 50;
   var userChangedDateRange = false;
   var lastDistinctLists = { units: [], nhoms: [], nganhs: [] };
+  var slocItems = [];
+
+  // Chuẩn hóa kho con (SLoc): gom nhóm RL và KL
+  var SLOC_GROUPS = [
+    { id: 'hang_hoa', name: 'Kho hàng hóa', codes: ['RL01', 'KL01'], primaryCodes: 'RL01, KL01' },
+    { id: 'vtth', name: 'Kho VTTH', codes: ['RL02', 'KL02'], primaryCodes: 'RL02, KL02' },
+    { id: 'ccdc_xd', name: 'Kho CCDC XD', codes: ['RL03', 'KL03'], primaryCodes: 'RL03, KL03' },
+    { id: 'cap_dong', name: 'Kho cấp đông', codes: ['RL04', 'KL04'], primaryCodes: 'RL04' },
+    { id: 'tra_hang', name: 'Kho trả hàng', codes: ['RL05', 'KL05'], primaryCodes: 'RL05' }
+  ];
+
+  var SLOC_MAP = {
+    'RL01': { id: 'hang_hoa', name: 'Kho hàng hóa', groupCodes: ['RL01', 'KL01'] },
+    'KL01': { id: 'hang_hoa', name: 'Kho hàng hóa', groupCodes: ['RL01', 'KL01'] },
+    'RL02': { id: 'vtth', name: 'Kho VTTH', groupCodes: ['RL02', 'KL02'] },
+    'KL02': { id: 'vtth', name: 'Kho VTTH', groupCodes: ['RL02', 'KL02'] },
+    'RL03': { id: 'ccdc_xd', name: 'Kho CCDC XD', groupCodes: ['RL03', 'KL03'] },
+    'KL03': { id: 'ccdc_xd', name: 'Kho CCDC XD', groupCodes: ['RL03', 'KL03'] },
+    'RL04': { id: 'cap_dong', name: 'Kho cấp đông', groupCodes: ['RL04', 'KL04'] },
+    'KL04': { id: 'cap_dong', name: 'Kho cấp đông', groupCodes: ['RL04', 'KL04'] },
+    'RL05': { id: 'tra_hang', name: 'Kho trả hàng', groupCodes: ['RL05', 'KL05'] },
+    'KL05': { id: 'tra_hang', name: 'Kho trả hàng', groupCodes: ['RL05', 'KL05'] }
+  };
+
+  function getSlocGroup(code) {
+    if (!code) return { id: 'other', name: 'Khác', groupCodes: [] };
+    var c = String(code).trim().toUpperCase();
+    return SLOC_MAP[c] || { id: c, name: c, groupCodes: [c] };
+  }
+
+  function getSlocName(code) {
+    if (!code) return '';
+    var c = String(code).trim().toUpperCase();
+    return SLOC_MAP[c] ? SLOC_MAP[c].name : c;
+  }
+
+  function getSlocDisplayName(code, withCode) {
+    if (!code) return '';
+    var c = String(code).trim().toUpperCase();
+    var info = SLOC_MAP[c];
+    if (!info) return c;
+    return (withCode !== false) ? (info.name + ' (' + c + ')') : info.name;
+  }
+
+  function getSlocItems(data) {
+    data = data || D || {};
+    var items = [];
+    (SLOC_GROUPS || []).forEach(function(g){
+      var hasInDb = g.codes.some(function(c){
+        return (data.by_sloc && data.by_sloc.some(function(s){ return s.sloc === c; })) ||
+               (data.sloc_meta && data.sloc_meta[c]);
+      });
+      if (hasInDb || (data.transactions && data.transactions.some(function(t){ return g.codes.indexOf(t.sloc) >= 0; }))) {
+        items.push({ val: g.codes.join(','), text: g.name + ' (' + (g.primaryCodes || g.codes.join(', ')) + ')' });
+      }
+    });
+    if (items.length === 0) {
+      (SLOC_GROUPS || []).forEach(function(g){
+        items.push({ val: g.codes.join(','), text: g.name + ' (' + (g.primaryCodes || g.codes.join(', ')) + ')' });
+      });
+    }
+    (data.by_sloc || []).forEach(function(s){
+      var mapped = SLOC_MAP[s.sloc];
+      if (!mapped) {
+        items.push({ val: s.sloc, text: s.sloc + ' - ' + (s.name || s.sloc) });
+      }
+    });
+    return items;
+  }
 
   function minusOneMonth(dStr) {
     if (!dStr) return '';
@@ -10327,9 +10547,11 @@ var QLK = (function(){
     '.qlk-mini{display:inline-block;padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;}'+
     '.qlk-mini-sl{background:#EAF0FB;color:#2554B0;}.qlk-mini-mvt{background:#F0F0F0;color:#555;}'+
     '.qlk-sloc-banner{background:#FBF6EE;border:1px solid #EAD9B8;border-radius:10px;padding:10px 14px;font-size:12.5px;color:#6b5320;margin-bottom:12px;line-height:1.6;}'+
+    '.qlk-sloc-row-cards{display:flex;flex-direction:row;align-items:stretch;gap:12px;overflow-x:auto;overflow-y:hidden;padding-bottom:6px;-webkit-overflow-scrolling:touch;scrollbar-width:thin;}'+
+    '.qlk-sloc-row-cards .qlk-sloc-card{flex:1 1 0px;min-width:190px;margin-bottom:0;}'+
     '.qlk-sloc-card{background:#fff;border:1px solid #F0F0F0;border-radius:12px;padding:13px 15px;box-shadow:0 1px 3px rgba(0,0,0,.05);cursor:pointer;transition:.15s;}'+
     '.qlk-sloc-card:hover{box-shadow:0 6px 18px rgba(122,31,43,.12);}'+
-    '.qlk-sloc-card.active{outline:2px solid var(--brand);outline-offset:-1px;}'+
+    '.qlk-sloc-card.active{outline:2px solid var(--brand);outline-offset:-1px;background:#FDF7F8;}'+
     '.qlk-sloc-code{font-size:11px;font-weight:800;letter-spacing:.5px;}'+
     '.qlk-sloc-name{font-size:15px;font-weight:800;color:#2E2E2E;margin:2px 0 9px;}'+
     '.qlk-sloc-row{display:flex;justify-content:space-between;align-items:center;font-size:12.5px;padding:3px 0;border-top:1px dashed #F0F0F0;}'+
@@ -10368,6 +10590,7 @@ var QLK = (function(){
     '.qlk-alert-card .qlk-alert-h{padding:12px 14px;margin:0;border-bottom:1px solid #F0F0F0;}'+
     '.qlk-alert-card .qlk-scroll{border:0;border-radius:0;}'+
     '.qlk-alert-h span:first-child{flex:1;}'+
+    '@media(max-width:768px){.qlk-sloc-row-cards{display:grid;grid-template-columns:repeat(2,1fr);overflow-x:visible;}.qlk-sloc-row-cards .qlk-sloc-card{min-width:0;}}'+
     '@media(max-width:1100px){.qlk-grid4{grid-template-columns:repeat(2,1fr);}.qlk-grid3,.qlk-grid2{grid-template-columns:1fr;}.qlk-mk{grid-template-columns:repeat(2,1fr);}}';
     var st=document.createElement('style'); st.id='qlkCss'; st.textContent=css; document.head.appendChild(st);
   }
@@ -10428,8 +10651,8 @@ var QLK = (function(){
 
   function showError(e){ var msg=(e&&e.message)?e.message:String(e);
     document.getElementById('tab-quanlykho').innerHTML='<div class="err"><h2>Không tải được dữ liệu kho</h2><p>'+esc(msg)+'</p>'+
-      '<p style="font-size:11.5px;color:#999;margin-top:8px">Kiểm tra tên 3 sheet trong quanlykho.gs: '+
-      'Stock_Header / Stock_Transactions / Stock_Price_category có khớp với Google Sheet không.</p></div>'; }
+      '<p style="font-size:11.5px;color:#999;margin-top:8px">Kiểm tra dữ liệu kho: '+
+      'Bảng mb51_material_docs có dữ liệu không.</p></div>'; }
 
   function buildChecklistHTML(idPrefix, title, defaultLabel, items){
     var listHtml = (items || []).map(function(item){
@@ -10463,6 +10686,10 @@ var QLK = (function(){
     if (!btn || !pop || !list) return;
 
     function updateLabel(){
+      if (idPrefix === 'qlkSloc') {
+        updateSlocLabel();
+        return;
+      }
       var lbl = document.getElementById(idPrefix + 'Label');
       if (!lbl) return;
       var n = f[arrKey].length;
@@ -10479,7 +10706,8 @@ var QLK = (function(){
 
     function syncCheckboxes(){
       list.querySelectorAll('input[type=checkbox]').forEach(function(c){
-        c.checked = f[arrKey].indexOf(c.value) >= 0;
+        var parts = String(c.value || '').split(',').map(function(x){ return x.trim(); });
+        c.checked = parts.length > 0 && parts.some(function(p){ return f[arrKey].indexOf(p) >= 0; });
       });
       if (onSync) onSync();
     }
@@ -10494,11 +10722,11 @@ var QLK = (function(){
 
     list.addEventListener('change', function(e){
       if (e.target.type !== 'checkbox') return;
-      var v = e.target.value;
+      var parts = String(e.target.value || '').split(',').map(function(x){ return x.trim(); });
       if (e.target.checked) {
-        if (f[arrKey].indexOf(v) < 0) f[arrKey].push(v);
+        parts.forEach(function(p){ if (f[arrKey].indexOf(p) < 0) f[arrKey].push(p); });
       } else {
-        f[arrKey] = f[arrKey].filter(function(x){ return x !== v; });
+        f[arrKey] = f[arrKey].filter(function(x){ return parts.indexOf(x) < 0; });
       }
       updateLabel();
       syncCheckboxes();
@@ -10507,7 +10735,14 @@ var QLK = (function(){
     });
 
     if (allBtn) allBtn.addEventListener('click', function(){
-      f[arrKey] = allValues.slice();
+      var allFlat = [];
+      allValues.forEach(function(v){
+        String(v || '').split(',').forEach(function(p){
+          var cp = p.trim();
+          if (cp && allFlat.indexOf(cp) < 0) allFlat.push(cp);
+        });
+      });
+      f[arrKey] = allFlat;
       syncCheckboxes();
       updateLabel();
       if (onChange) onChange();
@@ -10589,9 +10824,7 @@ var QLK = (function(){
     var m = D.meta;
 
     var siteItems = (D.sites || []).map(function(s){ return { val: s.name, text: s.name }; });
-    var slocItems = (D.by_sloc || []).map(function(s){
-      return { val: s.sloc, text: s.sloc + ' - ' + (s.name || slocName(s.sloc) || s.sloc) };
-    });
+    slocItems = getSlocItems(D);
     var catItems = (D.by_category || []).map(function(c){ return { val: c.category, text: c.category }; });
     var typeItems = (D.types || []).map(function(t){ return { val: t, text: t }; });
 
@@ -10602,7 +10835,7 @@ var QLK = (function(){
         '<div class="fld"><label class="qlk-fld-lbl">Từ ngày</label><input type="date" id="qlkFrom" value="'+esc(f.from)+'" min="2026-06-01" max="'+esc(m.max_date||'2026-12-31')+'"></div>'+
         '<div class="fld"><label class="qlk-fld-lbl">Đến ngày</label><input type="date" id="qlkTo" value="'+esc(f.to)+'" min="2026-06-01" max="'+esc(m.max_date||'2026-12-31')+'"></div>'+
         buildChecklistHTML('qlkSite', 'Site (Chi nhánh)', 'Tất cả site (' + siteItems.length + ' site)', siteItems)+
-        buildChecklistHTML('qlkSloc', 'Kho con (SLoc)', 'Tất cả kho con (' + slocItems.length + ' kho)', slocItems)+
+        buildChecklistHTML('qlkSloc', 'Kho con (SLoc)', 'Tất cả kho con (' + slocItems.length + ' nhóm)', slocItems)+
         buildChecklistHTML('qlkCat', 'Nhóm hàng', 'Tất cả nhóm hàng (' + catItems.length + ' nhóm)', catItems)+
         buildChecklistHTML('qlkType', 'Loại vật tư', 'Tất cả loại vật tư (' + typeItems.length + ' loại)', typeItems)+
         '<button class="btn btn-fill" id="qlkRefresh" type="button">⟳ Tải lại</button>';
@@ -10648,7 +10881,7 @@ var QLK = (function(){
           '⬇ Xuất Excel' +
         '</button>'+
       '</div>'+
-      '<div class="qlk-note" style="margin-top:0;margin-bottom:10px">Dữ liệu ghi nhận từ chứng từ xuất tiêu hủy kho (mb51 goods issue). Lọc theo Ngày ghi sổ và Site từ bộ lọc chung của tab.</div>'+
+      '<div class="qlk-note" style="margin-top:0;margin-bottom:10px">Dữ liệu ghi nhận từ chứng từ xuất tiêu hủy kho (mb51_material_docs, mvt 551, loại trừ 552). Lọc theo Ngày ghi sổ và Site từ bộ lọc chung của tab.</div>'+
       '<div class="qlk-huy-toolbar" id="qlkHuyToolbar">'+
         '<div class="qlk-huy-grid">'+
           '<div class="qlk-huy-fld">'+
@@ -10702,7 +10935,8 @@ var QLK = (function(){
     });
 
     var siteVals = (D.sites || []).map(function(s){ return s.name; });
-    var slocVals = (D.by_sloc || []).map(function(s){ return s.sloc; });
+    if (!slocItems || !slocItems.length) slocItems = getSlocItems(D);
+    var slocVals = (slocItems || []).map(function(s){ return s.val; });
     var catVals = (D.by_category || []).map(function(c){ return c.category; });
     var typeVals = (D.types || []).slice();
 
@@ -10719,10 +10953,8 @@ var QLK = (function(){
       }
       loadMb51Disposal({ from: f.from, to: f.to });
     });
-    bindChecklist('qlkSloc', 'slocs', 'Tất cả kho con (' + slocVals.length + ' kho)', 'kho', slocVals, function(){
-      document.querySelectorAll('#qlkSlocInfo [data-sloc]').forEach(function(b){
-        b.classList.toggle('active', f.slocs.indexOf(b.dataset.sloc) >= 0);
-      });
+    bindChecklist('qlkSloc', 'slocs', 'Tất cả kho con (' + slocVals.length + ' nhóm)', 'kho', slocVals, function(){
+      syncSlocUI();
     });
     bindChecklist('qlkCat', 'cats', 'Tất cả nhóm hàng (' + catVals.length + ' nhóm)', 'nhóm hàng', catVals);
     bindChecklist('qlkType', 'types', 'Tất cả loại vật tư (' + typeVals.length + ' loại)', 'loại', typeVals);
@@ -10734,11 +10966,12 @@ var QLK = (function(){
       }
     });
 
-    // SLoc Info card click
+    // SLoc Info card click (hỗ trợ nhóm kho gom RL/KL)
     document.getElementById('qlkSlocInfo').addEventListener('click', function(e){
-      var c = e.target.closest('[data-sloc]');
+      var c = e.target.closest('[data-group-codes]') || e.target.closest('[data-sloc]');
       if (!c) return;
-      toggleSloc(c.dataset.sloc);
+      var raw = c.dataset.groupCodes || c.dataset.sloc || '';
+      toggleSlocGroup(raw);
     });
 
     document.getElementById('qlkRefresh').addEventListener('click', function(){
@@ -10848,39 +11081,66 @@ var QLK = (function(){
   function updateSlocLabel(){
     var lbl = document.getElementById('qlkSlocLabel');
     if (!lbl) return;
-    var n = (f.slocs || []).length;
-    var total = (D && D.by_sloc) ? D.by_sloc.length : 3;
-    if (n === 0 || n === total) {
-      lbl.textContent = 'Tất cả kho con (' + total + ' kho)';
-    } else if (n === 1) {
-      var s = f.slocs[0];
-      lbl.textContent = s + ' - ' + (slocName(s) || s);
+    var selectedGroups = [];
+    SLOC_GROUPS.forEach(function(g){
+      if (g.codes.some(function(c){ return (f.slocs || []).indexOf(c) >= 0; })) {
+        selectedGroups.push(g.name);
+      }
+    });
+    (f.slocs || []).forEach(function(c){
+      var info = getSlocGroup(c);
+      if (info.id === c && selectedGroups.indexOf(c) < 0) {
+        selectedGroups.push(c);
+      }
+    });
+
+    if (selectedGroups.length === 0) {
+      lbl.textContent = 'Tất cả kho con';
+    } else if (selectedGroups.length === 1) {
+      lbl.textContent = selectedGroups[0];
     } else {
-      lbl.textContent = n + ' kho đã chọn: ' + f.slocs.join(', ');
+      lbl.textContent = selectedGroups.length + ' nhóm kho đã chọn';
     }
   }
 
-  function toggleSloc(s){
-    var i = f.slocs.indexOf(s);
-    if (i >= 0) f.slocs.splice(i, 1); else f.slocs.push(s);
-    updateSlocLabel();
+  function toggleSlocGroup(rawCodes){
+    var codes = String(rawCodes || '').split(',').map(function(x){ return x.trim(); }).filter(Boolean);
+    if (!codes.length) return;
+    var allSelected = codes.every(function(c){ return (f.slocs || []).indexOf(c) >= 0; });
+    if (allSelected) {
+      f.slocs = f.slocs.filter(function(x){ return codes.indexOf(x) < 0; });
+    } else {
+      codes.forEach(function(c){
+        if (f.slocs.indexOf(c) < 0) f.slocs.push(c);
+      });
+    }
     syncSlocUI();
     update();
+  }
+
+  function toggleSloc(s){
+    toggleSlocGroup(s);
   }
 
   function syncSlocUI(){
     var list = document.getElementById('qlkSlocList');
     if (list) {
       list.querySelectorAll('input[type=checkbox]').forEach(function(b){
-        b.checked = (f.slocs || []).indexOf(b.value) >= 0;
+        var bCodes = String(b.value || '').split(',').map(function(x){ return x.trim(); });
+        b.checked = bCodes.length > 0 && bCodes.some(function(c){ return (f.slocs || []).indexOf(c) >= 0; });
       });
     }
     updateSlocLabel();
+    document.querySelectorAll('#qlkSlocInfo [data-group-codes]').forEach(function(b){
+      var bCodes = String(b.dataset.groupCodes || '').split(',').map(function(x){ return x.trim(); });
+      b.classList.toggle('active', bCodes.some(function(c){ return (f.slocs || []).indexOf(c) >= 0; }));
+    });
     document.querySelectorAll('#qlkSlocInfo [data-sloc]').forEach(function(b){
-      b.classList.toggle('active', (f.slocs || []).indexOf(b.dataset.sloc) >= 0);
+      var s = b.dataset.sloc;
+      b.classList.toggle('active', (f.slocs || []).indexOf(s) >= 0);
     });
   }
-  function slocName(s){ return (D.sloc_meta && D.sloc_meta[s] && D.sloc_meta[s].name) || ''; }
+  function slocName(s){ return getSlocName(s) || (D.sloc_meta && D.sloc_meta[s] && D.sloc_meta[s].name) || s; }
 
   function filtered(){
     // 1) Lọc transactions theo 4 chiều checklist: ngày / sites / slocs / nhóm hàng / types
@@ -10957,10 +11217,25 @@ var QLK = (function(){
     });
     return Object.keys(map).map(function(k){ return map[k]; }).sort(function(a, b){ return b.count - a.count; });
   }
-  function groupSloc(tx){ var map={}; tx.forEach(function(t){ var key=t.sloc||'(không rõ)';
-    if(!map[key])map[key]={sloc:key,rq:0,iq:0,rv:0,iv:0};
-    if(t.qty>=0){map[key].rq+=t.qty;map[key].rv+=t.value;} else {map[key].iq+=Math.abs(t.qty);map[key].iv+=Math.abs(t.value);} });
-    return Object.keys(map).map(function(k){return map[k];}); }
+  function groupSloc(tx){
+    var map = {};
+    tx.forEach(function(t){
+      var raw = String(t.sloc || '').trim().toUpperCase();
+      var info = getSlocGroup(raw);
+      var key = info.name || raw || '(không rõ)';
+      if (!map[key]) {
+        map[key] = { sloc: key, name: key, codes: (info.groupCodes || [raw]).slice(), rq: 0, iq: 0, rv: 0, iv: 0 };
+      }
+      if (t.qty >= 0) {
+        map[key].rq += t.qty;
+        map[key].rv += t.value;
+      } else {
+        map[key].iq += Math.abs(t.qty);
+        map[key].iv += Math.abs(t.value);
+      }
+    });
+    return Object.keys(map).map(function(k){ return map[k]; });
+  }
   // value = giá trị XUẤT (tiêu thụ) theo nhóm hàng. Kho BTP thường tồn cuối = 0 nên
   // dùng giá trị xuất mới phản ánh được nhóm nào tiêu tốn nhiều vốn nhất.
   function groupCat(items){ var map={}; items.forEach(function(x){ var key=x.category||'(Chưa phân loại)';
@@ -11019,7 +11294,7 @@ var QLK = (function(){
       options:opt({indexAxis:'y',plugins:{legend:{display:false}},scales:{x:{ticks:{callback:function(v){return byV?money(v):n0(v);}}}}}) }); }
   function drawSloc(tx){ destroyChart('qlkChSloc'); var ctx=ctxOf('qlkChSloc'); if(!ctx)return;
     var g=groupSloc(tx), byV=(view==='value');
-    CHARTS.qlkChSloc=new Chart(ctx,{ type:'bar', data:{ labels:g.map(function(d){return slocName(d.sloc)||d.sloc;}), datasets:[
+    CHARTS.qlkChSloc=new Chart(ctx,{ type:'bar', data:{ labels:g.map(function(d){return d.name;}), datasets:[
       {label:'Nhập',data:g.map(function(d){return byV?d.rv:d.rq;}),backgroundColor:'#046A38',borderRadius:3},
       {label:'Xuất',data:g.map(function(d){return byV?d.iv:d.iq;}),backgroundColor:'#FF6720',borderRadius:3}
     ]}, options:opt({scales:{y:{ticks:{callback:function(v){return byV?money(v):n0(v);}}}}}) }); }
@@ -11029,9 +11304,12 @@ var QLK = (function(){
     g.forEach(function(d){ h+='<tr><td>'+esc(d.label)+'</td><td class="r">'+n0(d.count)+'</td><td class="r">'+n0(d.qty)+'</td><td class="r">'+money(d.value)+'</td><td class="r">'+n1(d.count/tot*100)+'%</td></tr>'; });
     h+='</tbody></table>'; document.getElementById('qlkMvtTbl').innerHTML=g.length?h:'<div class="qlk-empty">Không có chứng từ</div>'; }
   function renderSlocTbl(tx){ var g=groupSloc(tx), byV=(view==='value');
-    var h='<table class="qlk-tbl"><thead><tr><th>Kho con</th><th class="r">Nhập</th><th class="r">Xuất</th></tr></thead><tbody>';
-    g.forEach(function(d){ h+='<tr><td><b>'+esc(slocName(d.sloc)||d.sloc)+'</b> <span style="color:#B0B0B0;font-size:11px">'+esc(d.sloc)+'</span></td><td class="r qlk-pos">'+(byV?money(d.rv):n0(d.rq))+'</td><td class="r qlk-neg">'+(byV?money(d.iv):n0(d.iq))+'</td></tr>'; });
-    h+='</tbody></table><div class="qlk-note">Tồn kho theo từng kho con không có trong Header (chỉ có tồn tổng theo mã) → chỉ so sánh nhập/xuất.</div>';
+    var h='<table class="qlk-tbl"><thead><tr><th>Kho con (chuẩn hóa)</th><th class="r">Nhập</th><th class="r">Xuất</th></tr></thead><tbody>';
+    g.forEach(function(d){
+      var codeLabel = (d.codes && d.codes.length) ? d.codes.join(', ') : d.sloc;
+      h+='<tr><td><b>'+esc(d.name)+'</b> <span style="color:#B0B0B0;font-size:11px">('+esc(codeLabel)+')</span></td><td class="r qlk-pos">'+(byV?money(d.rv):n0(d.rq))+'</td><td class="r qlk-neg">'+(byV?money(d.iv):n0(d.iq))+'</td></tr>';
+    });
+    h+='</tbody></table><div class="qlk-note">Số liệu đã gộp chung các kho con cùng loại (RL và KL). Tồn kho chỉ có theo mã nên mục này so sánh Nhập / Xuất.</div>';
     document.getElementById('qlkSlocTbl').innerHTML=g.length?h:'<div class="qlk-empty">Không có dữ liệu</div>'; }
 
   function miniTop(title,items,valKey,color){
@@ -11082,35 +11360,83 @@ var QLK = (function(){
       box('🔍 Lệch số liệu cần đối chiếu',misH,mis.length,'#6D28D9')+'</div>';
   }
 
-  function groupSlocFull(tx){ var map={};
-    tx.forEach(function(t){ var k=t.sloc||'(không rõ)';
-      if(!map[k]) map[k]={sloc:k, tx:0, rv:0, iv:0, arts:{}};
-      map[k].tx++; map[k].arts[t.article]=1;
-      if(t.qty>=0) map[k].rv+=t.value; else map[k].iv+=Math.abs(t.value); });
-    return Object.keys(map).sort().map(function(k){ var o=map[k]; o.sku=Object.keys(o.arts).length; return o; }); }
+  function groupSlocFull(tx){
+    var groupMap = {};
+    SLOC_GROUPS.forEach(function(g){
+      groupMap[g.id] = {
+        id: g.id,
+        name: g.name,
+        codes: g.codes.slice(),
+        codeLabel: g.codeLabel || g.codes.join(', '),
+        tx: 0,
+        rv: 0,
+        iv: 0,
+        arts: {}
+      };
+    });
+    var otherMap = {};
+
+    tx.forEach(function(t){
+      var raw = String(t.sloc || '').trim().toUpperCase();
+      var info = getSlocGroup(raw);
+      var target;
+      if (groupMap[info.id]) {
+        target = groupMap[info.id];
+      } else {
+        if (!otherMap[info.id]) {
+          otherMap[info.id] = {
+            id: info.id,
+            name: info.name || raw || 'Kho khác',
+            codes: (info.groupCodes || [raw]).slice(),
+            codeLabel: raw,
+            tx: 0,
+            rv: 0,
+            iv: 0,
+            arts: {}
+          };
+        }
+        target = otherMap[info.id];
+      }
+      target.tx++;
+      target.arts[t.article] = 1;
+      if (t.qty >= 0) target.rv += t.value;
+      else target.iv += Math.abs(t.value);
+    });
+
+    var res = [];
+    SLOC_GROUPS.forEach(function(g){
+      var o = groupMap[g.id];
+      o.sku = Object.keys(o.arts).length;
+      res.push(o);
+    });
+    Object.keys(otherMap).sort().forEach(function(k){
+      var o = otherMap[k];
+      o.sku = Object.keys(o.arts).length;
+      res.push(o);
+    });
+    return res;
+  }
 
   function renderSlocInfo(tx){
-    var metaKeys = D.sloc_meta ? Object.keys(D.sloc_meta) : [];
-    var banner = 'Phân loại kho (SLoc): ' +
-      metaKeys.map(function(s){ return '<b>'+esc(s)+'</b> '+esc(slocName(s)); }).join(' · ') +
-      '. Chọn SLoc để lọc article/chứng từ theo kho. Bấm dòng bảng dưới để xem chi tiết GD.';
-    var g = groupSlocFull(tx); var byKey={}; g.forEach(function(o){ byKey[o.sloc]=o; });
-    var cols = metaKeys.length ? metaKeys : g.map(function(o){return o.sloc;});
-    var cards = cols.map(function(s,i){
-      var o = byKey[s] || {sku:0,tx:0,rv:0,iv:0};
+    var banner = 'Phân loại kho con: ' +
+      SLOC_GROUPS.map(function(g){ return '<b>' + esc(g.name) + '</b> (' + esc(g.codes.join(', ')) + ')'; }).join(' · ') +
+      '. Bấm thẻ kho để lọc nhanh theo nhóm kho con. Bấm dòng bảng dưới để xem chi tiết GD.';
+    var groups = groupSlocFull(tx);
+    var cards = groups.map(function(g, i){
       var color = PALETTE[i % PALETTE.length];
-      var active = f.slocs.indexOf(s)>=0;
-      return '<div class="qlk-sloc-card'+(active?' active':'')+'" data-sloc="'+esc(s)+'" style="border-top:3px solid '+color+'">'+
-        '<div class="qlk-sloc-code" style="color:'+color+'">'+esc(s)+'</div>'+
-        '<div class="qlk-sloc-name">'+esc(slocName(s)||s)+'</div>'+
-        '<div class="qlk-sloc-row"><span>SKU có GD</span><b>'+n0(o.sku)+'</b></div>'+
-        '<div class="qlk-sloc-row"><span>Chứng từ</span><b>'+n0(o.tx)+'</b></div>'+
-        '<div class="qlk-sloc-row"><span>GT nhập</span><b class="qlk-pos">'+money(o.rv)+'</b></div>'+
-        '<div class="qlk-sloc-row"><span>GT xuất</span><b class="qlk-neg">'+money(o.iv)+'</b></div>'+
+      var active = g.codes.some(function(c){ return (f.slocs || []).indexOf(c) >= 0; });
+      var codesStr = g.codes.join(',');
+      return '<div class="qlk-sloc-card' + (active ? ' active' : '') + '" data-group-codes="' + esc(codesStr) + '" data-sloc="' + esc(codesStr) + '" style="border-top:3px solid ' + color + '" title="Bấm để lọc theo ' + esc(g.name) + '">' +
+        '<div class="qlk-sloc-code" style="color:' + color + '">' + esc(g.codeLabel || g.codes.join(', ')) + '</div>' +
+        '<div class="qlk-sloc-name">' + esc(g.name) + '</div>' +
+        '<div class="qlk-sloc-row"><span>SKU có GD</span><b>' + n0(g.sku) + '</b></div>' +
+        '<div class="qlk-sloc-row"><span>Chứng từ</span><b>' + n0(g.tx) + '</b></div>' +
+        '<div class="qlk-sloc-row"><span>GT nhập</span><b class="qlk-pos">' + money(g.rv) + '</b></div>' +
+        '<div class="qlk-sloc-row"><span>GT xuất</span><b class="qlk-neg">' + money(g.iv) + '</b></div>' +
       '</div>';
     }).join('');
     document.getElementById('qlkSlocInfo').innerHTML =
-      '<div class="qlk-sloc-banner">'+banner+'</div><div class="qlk-grid3">'+cards+'</div>';
+      '<div class="qlk-sloc-banner">' + banner + '</div><div class="qlk-sloc-row-cards">' + cards + '</div>';
   }
 
   function txCountByArticle(tx){ var m={}; tx.forEach(function(t){ m[t.article]=(m[t.article]||0)+1; }); return m; }
@@ -11516,7 +11842,7 @@ var QLK = (function(){
           '<td class="r"><b style="color:#C0342C">' + (Number(qty.toFixed(2))).toLocaleString('vi-VN') + '</b></td>'+
           '<td class="r"><b style="color:#C0342C">' + money(amt) + '</b></td>'+
           '<td><span class="qlk-mini qlk-mini-mvt" title="' + esc(mvtLabel) + '">' + esc(mvtLabel) + '</span></td>'+
-          '<td class="c"><span class="qlk-mini qlk-mini-sl">' + esc(r.stor_loc || '—') + '</span></td>'+
+          '<td class="c"><span class="qlk-mini qlk-mini-sl" title="' + esc(getSlocDisplayName(r.stor_loc, true)) + '">' + esc(getSlocDisplayName(r.stor_loc, true)) + '</span></td>'+
           '<td style="max-width:180px;overflow:hidden;text-overflow:ellipsis" title="' + esc(r.nganh_hang || '') + '">' + esc(r.nganh_hang || '—') + '</td>'+
           '<td style="max-width:160px;overflow:hidden;text-overflow:ellipsis" title="' + esc(r.nhom_hang || '') + '">' + esc(r.nhom_hang || '—') + '</td>'+
           '<td>' + esc(r.user_name || '—') + '</td>'+
@@ -11591,7 +11917,7 @@ var QLK = (function(){
           amt,
           r.mov_type || '',
           r.mov_type_text || '',
-          r.stor_loc || '',
+          getSlocDisplayName(r.stor_loc, true) || r.stor_loc || '',
           r.nganh_hang || '',
           r.nhom_hang || '',
           r.user_name || '',
@@ -11634,7 +11960,7 @@ var QLK = (function(){
           qty,
           amt,
           (r.mov_type || '') + (r.mov_type_text ? ' - ' + r.mov_type_text : ''),
-          r.stor_loc || '',
+          getSlocDisplayName(r.stor_loc, true) || r.stor_loc || '',
           r.nganh_hang || '',
           r.nhom_hang || '',
           r.user_name || '',

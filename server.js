@@ -57,6 +57,7 @@ async function handleApiRequest(req, res) {
         data = await api.getWarehouseDashboardData(req.query.filters || payload?.filters);
         break;
       case 'getMb51GoodsIssue':
+      case 'getMb51MaterialDocsDisposal':
       case 'getDisposalDetails':
         data = await api.getMb51GoodsIssue(req.query.filters || payload?.filters);
         break;

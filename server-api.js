@@ -4,6 +4,21 @@
 // =========================================================================
 
 import { createClient } from "@supabase/supabase-js";
+import {
+  SLOC_GROUPS,
+  SLOC_MAP,
+  getSlocGroup,
+  getSlocName,
+  getSlocDisplayName
+} from "./shared/sloc-config.js";
+
+export {
+  SLOC_GROUPS,
+  SLOC_MAP,
+  getSlocGroup,
+  getSlocName,
+  getSlocDisplayName
+};
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://alqcojnxshfylheovdgw.supabase.co";
 const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFscWNvam54c2hmeWxoZW92ZGd3Iiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc5MDc3ODMwNSwiZXhwIjoyMTA2MzU0MzA1fQ.qO6NFbJWJuUDG1fArn47nvYBXVg4BhFDoho0Md4H1xk";
@@ -470,11 +485,12 @@ export async function getRevenueRawData(filtersParam) {
     reqTo = reqTo || maxDateStr;
   }
 
-  const [rawTx, opexRes, reportRes, rawMb51] = await Promise.all([
+  const [rawTx, opexRes, reportRes, rawMb51, plRows] = await Promise.all([
     fetchAllRows("transactions", "*", "billing_date", reqFrom || null, reqTo || null, "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
-    fetchMb51GoodsIssue(reqFrom || null, reqTo || null, filters.site || filters.sites || null)
+    fetchMb51GoodsIssue(reqFrom || null, reqTo || null, filters.site || filters.sites || null),
+    fetchAllRows("kehoach_pl_thang", "*", "ky")
   ]);
 
   const rows = rawTx.map(mapTransactionRow);
@@ -521,6 +537,18 @@ export async function getRevenueRawData(filtersParam) {
     amount: Number(o.so_tien || o.amount || 0),
     updatedAt: o.cap_nhat_luc || o.updated_at || new Date().toISOString()
   }));
+
+  const personnelBySiteKy = [];
+  const planSiteSet = new Set();
+  (plRows || []).forEach(p => {
+    const s = String(p.site || "").trim();
+    if (s) planSiteSet.add(s);
+    if (p.hang_muc === "ChiPhiNhanSu") {
+      const k = String(p.ky || "").trim();
+      const amount = Number(p.gia_tri || 0);
+      if (s && k) personnelBySiteKy.push({ site: s, ky: k, amount });
+    }
+  });
 
   const huyRows = (reportRes.data || []).map(h => ({
     tenSite: h.ten_site || "",
@@ -610,6 +638,8 @@ export async function getRevenueRawData(filtersParam) {
     rows,
     dims,
     opexItems,
+    personnelBySiteKy,
+    planSites: Array.from(planSiteSet).sort(viSort),
     huyRows,
     mb51Rows,
     mb51PhaRows,
@@ -813,6 +843,113 @@ export async function getKeHoachData(filtersParam) {
   };
 }
 
+export const MVT_RECEIPT_TYPES = new Set([
+  "101", "103", "105", "107", "109", "121", "131", "141", "161", "167",
+  "501", "503", "505", "511", "521", "523", "525", "531", "561", "563",
+  "565", "571", "573", "575", "581", "888",
+  "Z09", "Z10", "Z12", "Z13", "Z14", "Z15", "Z18", "Z23", "Z25",
+  "262", "242", "602", "Y22"
+]);
+
+export const MVT_ISSUE_TYPES = new Set([
+  "201", "221", "231", "241", "251", "261", "281", "291",
+  "331", "332", "333", "334", "335", "451", "541", "543", "601", "661",
+  "Z01", "Z02", "Z03", "Z04", "Z05", "Z06", "Z07", "Z08", "Z11", "Z16",
+  "Z19", "Z20", "Z21", "Z22", "Z24",
+  "102", "122", "Y08", "Y09", "Y15"
+]);
+
+export const MVT_SCRAP_TYPES = new Set([
+  "551", "553", "555", "89C"
+]);
+
+export const MVT_SCRAP_REVERSAL_TYPES = new Set([
+  "552", "554", "556", "89D"
+]);
+
+export const MVT_TRANSFER_TYPES = new Set([
+  "301", "302", "303", "304", "305", "306", "309", "310", "311", "312",
+  "313", "314", "315", "316", "321", "322", "323", "324", "325", "326",
+  "341", "342", "343", "344", "345", "346", "347", "348", "349", "350",
+  "351", "352", "411", "412", "413", "414", "415", "416", "417", "418",
+  "419", "420", "421", "422", "423", "424", "425", "426", "427", "428",
+  "429", "430", "641", "642", "643", "644", "645", "646", "647", "648"
+]);
+
+export function classifyMovType(mvt) {
+  const clean = String(mvt || "").trim().toUpperCase();
+  if (MVT_SCRAP_TYPES.has(clean)) return "scrap";
+  if (MVT_SCRAP_REVERSAL_TYPES.has(clean)) return "scrap_reversal";
+  if (MVT_TRANSFER_TYPES.has(clean)) return "transfer";
+  if (MVT_RECEIPT_TYPES.has(clean)) return "receipt";
+  if (MVT_ISSUE_TYPES.has(clean)) return "issue";
+  return "other";
+}
+
+export function mapMb51RowToLegacyStockTx(r) {
+  const cleanMvt = String(r.mov_type || "").trim().toUpperCase();
+  const labelDesc = r.mov_text_vi || r.mov_text_sap || cleanMvt;
+  const mvtLabel = cleanMvt ? `${cleanMvt} - ${labelDesc}` : labelDesc;
+  const qty = Number(r.quantity || 0);
+  const amount = Number(r.amount_lc !== undefined && r.amount_lc !== null ? r.amount_lc : 0);
+  const price = (qty !== 0 && amount !== 0) ? Math.round(Math.abs(amount) / Math.abs(qty)) : 0;
+  const value = amount !== 0 ? amount : Math.round(qty * price);
+
+  const ng = String(r.nganh_hang || "").toLowerCase();
+  const nh = String(r.nhom_hang || "").toLowerCase();
+  let type = "Khác / Chưa phân loại";
+  if (ng.includes("thành phẩm") || nh.includes("thành phẩm") || ng.includes("nhà hàng")) {
+    type = "Thành phẩm";
+  } else if (ng.includes("sơ chế") || ng.includes("chế biến") || ng.includes("nvl") || ng.includes("rau") || ng.includes("thịt") || ng.includes("trứng") || ng.includes("khô") || ng.includes("đồ uống")) {
+    type = "Bán thành phẩm - NVL";
+  } else if (r.nganh_hang) {
+    type = r.nganh_hang;
+  }
+
+  const pDate = r.posting_date || r.entry_date || "";
+  const dateFormatted = pDate ? formatDate(pDate) : "";
+
+  return {
+    article: r.material || "",
+    material: r.material || "",
+    name: r.material_desc || r.material || "",
+    material_desc: r.material_desc || r.material || "",
+    category: r.nhom_hang || r.nganh_hang || "Chưa phân loại",
+    nhom_hang: r.nhom_hang || "",
+    nganh_hang: r.nganh_hang || "",
+    type,
+    sloc: r.stor_loc || "KL01",
+    stor_loc: r.stor_loc || "KL01",
+    stor_loc_name: getSlocName(r.stor_loc || "KL01"),
+    stor_loc_display: getSlocDisplayName(r.stor_loc || "KL01"),
+    date: dateFormatted,
+    posting_date: pDate,
+    pstng_date: pDate,
+    mvt: cleanMvt,
+    mov_type: cleanMvt,
+    mvt_label: mvtLabel,
+    mov_text_vi: r.mov_text_vi || "",
+    mov_text_sap: r.mov_text_sap || "",
+    qty,
+    quantity: qty,
+    value,
+    amount_lc: amount,
+    price,
+    site: r.site || "",
+    site_name: r.site_name || r.site || "",
+    doc_no: r.mat_doc || "",
+    art_doc: r.mat_doc || "",
+    mat_doc: r.mat_doc || "",
+    doc_item: r.doc_item || "",
+    item: r.doc_item || "",
+    mat_doc_year: r.mat_doc_year || "",
+    uom: r.entry_unit || "Kg",
+    entry_unit: r.entry_unit || "Kg",
+    order_no: r.order_no || "",
+    doc_header_text: r.doc_header_text || ""
+  };
+}
+
 export async function getWarehouseDashboardData(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
@@ -821,13 +958,13 @@ export async function getWarehouseDashboardData(filtersParam) {
     filters = filtersParam;
   }
 
-  // 1. Xác định ngày mới nhất trong stock_transactions và mb51_goods_issue
+  // 1. Xác định ngày mới nhất từ mb51_material_docs
   const [latestDateRow, latestMbRow] = await Promise.all([
-    supabase.from("stock_transactions").select("pstng_date").order("pstng_date", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("mb51_goods_issue").select("posting_date").order("posting_date", { ascending: false }).limit(1).maybeSingle()
+    supabase.from("mb51_material_docs").select("posting_date").order("posting_date", { ascending: false }).limit(1).maybeSingle(),
+    supabase.from("mb51_material_docs").select("posting_date").eq("mov_type", "551").order("posting_date", { ascending: false }).limit(1).maybeSingle()
   ]);
 
-  const dKho = latestDateRow?.data?.pstng_date || "2026-09-30";
+  const dKho = latestDateRow?.data?.posting_date || "2026-11-02";
   const dHuy = latestMbRow?.data?.posting_date || "";
   const dMax = (dHuy && dHuy > dKho) ? dHuy : dKho;
 
@@ -847,6 +984,13 @@ export async function getWarehouseDashboardData(filtersParam) {
     return `${targetYear}-${String(targetMonth).padStart(2, "0")}-${String(targetDay).padStart(2, "0")}`;
   }
 
+  function getDayBefore(dStr) {
+    if (!dStr) return "";
+    const d = new Date(dStr + "T00:00:00");
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  }
+
   const defaultTo = dMax;
   const defaultFrom = calcMinusOneMonth(dMax);
 
@@ -859,89 +1003,104 @@ export async function getWarehouseDashboardData(filtersParam) {
     reqTo = defaultTo;
   }
 
-  // Lấy dữ liệu kho qua fetchAllRows (lọc theo khoảng ngày phát sinh để tối ưu tốc độ)
-  const [rawHeaders, rawTx, rawPrice] = await Promise.all([
-    fetchAllRows("stock_header", "*"),
-    fetchAllRows("stock_transactions", "*", "pstng_date", reqFrom || null, reqTo || null, "pstng_date"),
-    fetchAllRows("stock_price_category", "article, price, mdse_catgry_desc, base_uom")
-  ]);
+  const selectCols = "mat_doc,mat_doc_year,doc_item,posting_date,entry_date,site,site_name,stor_loc,material,material_desc,nganh_hang,nhom_hang,mov_type,mov_text_sap,mov_text_vi,transaction_type,quantity,entry_unit,amount_lc,order_no,doc_header_text";
 
-  const normArt = (a) => String(a || "").trim().replace(/\.0+$/, "");
-  const priceMap = {}, catMap = {}, uomMap = {};
-  rawPrice.forEach(p => {
-    const key = normArt(p.article);
-    priceMap[key] = Number(p.price || 0);
-    if (p.mdse_catgry_desc) catMap[key] = p.mdse_catgry_desc;
-    if (p.base_uom) uomMap[key] = p.base_uom;
+  const fetchPromises = [
+    fetchAllRows("mb51_material_docs", selectCols, "posting_date", reqFrom || null, reqTo || null, "posting_date")
+  ];
+  if (reqFrom && reqFrom > "2026-09-01") {
+    const priorTo = getDayBefore(reqFrom);
+    fetchPromises.push(
+      fetchAllRows("mb51_material_docs", "material,quantity,amount_lc,site,site_name", null, null, priorTo, "posting_date")
+    );
+  }
+
+  const [periodRows, priorRows = []] = await Promise.all(fetchPromises);
+
+  const stockBeginMap = {};
+  const priceMap = {};
+  priorRows.forEach(r => {
+    if (r.posting_date && r.posting_date >= reqFrom) return;
+    const artKey = String(r.material || "").trim();
+    const key = (r.site || "") + "|" + artKey;
+    stockBeginMap[key] = (stockBeginMap[key] || 0) + Number(r.quantity || 0);
+    const qty = Math.abs(Number(r.quantity || 0));
+    const amt = Math.abs(Number(r.amount_lc || 0));
+    if (qty > 0 && amt > 0) {
+      priceMap[artKey] = Math.round(amt / qty);
+    }
   });
-
-  // Tạo map chuyển đổi mã site (ví dụ K500) sang tên site người dùng đọc được
-  const siteCodeToName = {};
-  rawHeaders.forEach(h => {
-    if (h.site && h.site_name) siteCodeToName[h.site] = h.site_name;
-  });
-
-  const slocDict = {
-    "KL01": { name: "Kho nguyên vật liệu & Thực phẩm (KL01)" },
-    "KL02": { name: "Kho vật tư tiêu hao & Hóa phẩm (KL02)" },
-    "KL03": { name: "Kho công cụ dụng cụ & Thiết bị bếp (KL03)" }
-  };
 
   const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set();
   const typeSet = new Set(["Thành phẩm", "Bán thành phẩm - NVL", "Khác / Chưa phân loại"]);
+  const itemsMap = {};
+  const transactions = [];
 
-  const MVT_NAME_MAP = {
-    "101": "101 - Nhập mua hàng",
-    "102": "102 - Hủy nhập mua",
-    "261": "261 - Xuất sản xuất / Bếp",
-    "262": "262 - Hủy xuất sản xuất",
-    "241": "241 - Xuất dự án / TSCĐ",
-    "242": "242 - Hủy xuất dự án",
-    "351": "351 - Xuất điều chuyển kho",
-    "309": "309 - Chuyển đổi mã NVL",
-    "551": "551 - Xuất hủy hao hụt",
-    "601": "601 - Xuất bán hàng",
-    "Z20": "Z20 - Xuất nội bộ",
-    "Z09": "Z09 - Điều chỉnh kho",
-    "Z15": "Z15 - Nhập nội bộ",
-    "Y09": "Y09 - Nghiệp vụ khác"
-  };
+  periodRows.forEach(r => {
+    const t = mapMb51RowToLegacyStockTx(r);
+    transactions.push(t);
 
-  const transactions = rawTx.map(t => {
-    const sloc = String(t.sloc || "KL01");
-    slocSet.add(sloc);
-    const artKey = normArt(t.article);
-    const category = catMap[artKey] || (t.loai_hang ? `Nhóm ${t.loai_hang}` : "Chưa phân loại");
-    catSet.add(category);
-    const siteName = siteCodeToName[t.site] || t.site_name || t.site || "";
-    if (siteName) siteNameSet.add(siteName);
+    if (t.sloc) slocSet.add(t.sloc);
+    if (t.category) catSet.add(t.category);
+    if (t.site_name) siteNameSet.add(t.site_name);
+    if (t.type) typeSet.add(t.type);
 
-    // Lấy chính xác loại vật tư từ cột type trong bảng stock_transactions
-    const type = (t.type && String(t.type).trim()) ? String(t.type).trim() : "Khác / Chưa phân loại";
-    typeSet.add(type);
+    const artKey = t.article;
+    const qtyAbs = Math.abs(t.qty);
+    const valAbs = Math.abs(t.value);
+    if (qtyAbs > 0 && valAbs > 0) {
+      priceMap[artKey] = Math.round(valAbs / qtyAbs);
+    }
 
-    const qty = Number(t.quantity || 0);
-    const price = priceMap[artKey] || 0;
-    const value = Math.round(qty * price);
+    const itemKey = (t.site || "") + "|" + artKey;
+    if (!itemsMap[itemKey]) {
+      itemsMap[itemKey] = {
+        code: artKey,
+        name: t.name,
+        category: t.category,
+        uom: t.uom,
+        stock_begin: stockBeginMap[itemKey] || 0,
+        receipts: 0,
+        issues: 0,
+        issues_abs: 0,
+        receipts_val: 0,
+        issues_val: 0,
+        site_name: t.site_name,
+        site: t.site
+      };
+    }
 
-    // Chuẩn hóa mã chứng từ mvt và gom nhóm chính xác
-    const cleanMvt = String(t.mvt || "101").trim().replace(/\.0+$/, "").toUpperCase();
-    const mvtLabel = MVT_NAME_MAP[cleanMvt] || `MVT ${cleanMvt}`;
+    if (t.qty >= 0) {
+      itemsMap[itemKey].receipts += t.qty;
+      itemsMap[itemKey].receipts_val += Math.abs(t.value || 0);
+    } else {
+      itemsMap[itemKey].issues += t.qty;
+      itemsMap[itemKey].issues_abs += Math.abs(t.qty);
+      itemsMap[itemKey].issues_val += Math.abs(t.value || 0);
+    }
+  });
 
-    return {
-      article: t.article,
-      name: t.description || t.article,
-      category, type, sloc,
-      date: formatDate(t.pstng_date),
-      mvt: cleanMvt,
-      mvt_label: mvtLabel,
-      qty, value,
-      site_name: siteName,
-      site: t.site || "",
-      art_doc: t.art_doc || "",
-      item: t.item || "",
-      uom: t.bun || uomMap[artKey] || "Kg"
-    };
+  // Bổ sung các mã có tồn đầu nhưng không phát sinh trong kỳ
+  Object.keys(stockBeginMap).forEach(key => {
+    if (!itemsMap[key] && stockBeginMap[key] !== 0) {
+      const parts = key.split("|");
+      const site = parts[0];
+      const code = parts[1];
+      itemsMap[key] = {
+        code,
+        name: code,
+        category: "Chưa phân loại",
+        uom: "Kg",
+        stock_begin: stockBeginMap[key],
+        receipts: 0,
+        issues: 0,
+        issues_abs: 0,
+        receipts_val: 0,
+        issues_val: 0,
+        site_name: site,
+        site
+      };
+    }
   });
 
   let minDate = "", maxDate = "";
@@ -954,42 +1113,36 @@ export async function getWarehouseDashboardData(filtersParam) {
   const d2 = maxDate ? new Date(maxDate) : new Date();
   const daysInPeriod = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
-  const items = rawHeaders.map(h => {
-    const artKey = normArt(h.article);
-    const category = catMap[artKey] || "Chưa phân loại";
-    catSet.add(category);
-    const siteName = h.site_name || siteCodeToName[h.site] || h.site || "";
-    if (siteName) siteNameSet.add(siteName);
-
-    const stockBegin = Number(h.stock_begin_qty || 0);
-    const receipts = Number(h.total_receipts_qty || 0);
-    const issues = Number(h.total_issues_qty || 0);
-    const issuesAbs = Math.abs(issues);
-    const stockEnd = Number(h.stock_end_qty || 0);
-    const price = priceMap[artKey] || 0;
+  const items = Object.values(itemsMap).map(it => {
+    const price = priceMap[it.code] || (it.receipts_abs > 0 ? Math.round(it.receipts_val / it.receipts_abs) : 0);
+    const stockEnd = it.stock_begin + it.receipts + it.issues;
     const stockEndValue = Math.round(stockEnd * price);
-    const receiptsValue = Math.round(receipts * price);
-    const issuesValue = Math.round(issuesAbs * price);
-    const consumptionPerDay = issuesAbs > 0 ? issuesAbs / daysInPeriod : 0;
+    const receiptsValue = it.receipts_val > 0 ? it.receipts_val : Math.round(it.receipts * price);
+    const issuesValue = it.issues_val > 0 ? it.issues_val : Math.round(it.issues_abs * price);
+    const consumptionPerDay = it.issues_abs > 0 ? it.issues_abs / daysInPeriod : 0;
     let daysOfStock = null;
-    if (consumptionPerDay > 0) daysOfStock = Math.round((stockEnd / consumptionPerDay) * 10) / 10;
+    if (consumptionPerDay > 0) {
+      daysOfStock = Math.round((stockEnd / consumptionPerDay) * 10) / 10;
+    }
 
     let status = "binh_thuong";
     if (stockEnd <= 0) status = "het_hang";
     else if (daysOfStock !== null && daysOfStock <= 3) status = "sap_het";
-    else if (receipts === 0 && issuesAbs === 0 && stockEnd > 0) status = "ton_dong";
+    else if (it.receipts === 0 && it.issues_abs === 0 && stockEnd > 0) status = "ton_dong";
 
-    const calculatedEnd = stockBegin + receipts - issuesAbs;
+    const calculatedEnd = it.stock_begin + it.receipts - it.issues_abs;
     const diff = stockEnd - calculatedEnd;
     const hasMismatch = Math.abs(diff) > 0.01;
 
     return {
-      code: h.article,
-      name: h.description || h.article,
-      category,
-      uom: h.uom || uomMap[artKey] || "Kg",
-      stock_begin: stockBegin,
-      receipts, issues, issues_abs: issuesAbs,
+      code: it.code,
+      name: it.name,
+      category: it.category,
+      uom: it.uom,
+      stock_begin: it.stock_begin,
+      receipts: it.receipts,
+      issues: it.issues,
+      issues_abs: it.issues_abs,
       stock_end: stockEnd,
       price,
       stock_end_value: stockEndValue,
@@ -997,25 +1150,30 @@ export async function getWarehouseDashboardData(filtersParam) {
       issues_value: issuesValue,
       consumption_per_day: consumptionPerDay,
       days_of_stock: daysOfStock,
-      status, has_mismatch: hasMismatch,
+      status,
+      has_mismatch: hasMismatch,
       reconciliation_diff: diff,
       computed_end_from_trans: calculatedEnd,
-      site_name: siteName,
-      site: h.site || ""
+      site_name: it.site_name,
+      site: it.site
     };
   });
 
   const viSort = (a, b) => a.localeCompare(b, "vi");
   const slocMeta = {};
   slocSet.forEach(s => {
-    slocMeta[s] = slocDict[s] || { name: `Kho ${s}` };
+    slocMeta[s] = {
+      name: getSlocName(s) || `Kho ${s}`,
+      display: getSlocDisplayName(s),
+      group: getSlocGroup(s)
+    };
   });
 
   return {
     success: true,
     meta: {
-      site: rawHeaders[0]?.site || "K500",
-      site_name: rawHeaders[0]?.site_name || "MB A Kitchen Hòa Bình",
+      site: transactions[0]?.site || "K500",
+      site_name: transactions[0]?.site_name || "MB A Kitchen Hòa Bình",
       period_from: reqFrom || minDate || defaultFrom,
       period_to: reqTo || maxDate || defaultTo,
       max_date: dMax,
@@ -1028,7 +1186,12 @@ export async function getWarehouseDashboardData(filtersParam) {
       days_in_period: daysInPeriod,
       generated_at: new Date().toISOString()
     },
-    by_sloc: Array.from(slocSet).sort().map(s => ({ sloc: s, name: slocMeta[s]?.name || `Kho ${s}` })),
+    by_sloc: Array.from(slocSet).sort().map(s => ({
+      sloc: s,
+      name: getSlocName(s) || `Kho ${s}`,
+      display: getSlocDisplayName(s),
+      group: getSlocGroup(s)
+    })),
     by_category: Array.from(catSet).sort(viSort).map(c => ({ category: c })),
     sites: Array.from(siteNameSet).sort(viSort).map(s => ({ name: s })),
     types: Array.from(typeSet).sort(viSort),
@@ -1229,7 +1392,10 @@ export async function getRevenueEstData(filtersParam) {
 }
 
 /**
- * Lấy dữ liệu chi tiết hủy hàng từ mb51_goods_issue
+ * Lấy dữ liệu chi tiết hủy hàng từ public.mb51_material_docs
+ * Chỉ lấy dòng xuất tiêu hủy (mov_type = '551')
+ * Loại trừ các dòng đã bị hủy bởi mov_type = '552' (cùng mat_doc + mat_doc_year + doc_item)
+ * Không tính/không cộng 552 vào số hủy
  * Phục vụ section Chi tiết hủy hàng trong tab Quản lý kho
  */
 export async function getMb51GoodsIssue(filtersParam) {
@@ -1240,8 +1406,10 @@ export async function getMb51GoodsIssue(filtersParam) {
     filters = filtersParam;
   }
 
-  const selectCols = "mat_doc,doc_item,mat_doc_year,posting_date,doc_date,entry_date,site,site_name,stor_loc,user_name,mov_type,mov_type_text,material,material_desc,doc_header_text,quantity,entry_unit,amount_lc,ext_amount_lc,qty_stock_unit,stock_unit,nganh_hang,nhom_hang";
-  let q = supabase.from("mb51_goods_issue").select(selectCols);
+  const selectCols = "mat_doc,mat_doc_year,doc_item,posting_date,entry_date,entry_time,site,site_name,stor_loc,material,material_desc,nganh_hang,nhom_hang,mov_type,mov_text_sap,mov_text_vi,transaction_type,quantity,entry_unit,amount_lc,order_no,doc_header_text";
+
+  // 1. Truy vấn các dòng 551 và 552 từ mb51_material_docs
+  let q = supabase.from("mb51_material_docs").select(selectCols).in("mov_type", ["551", "552"]);
 
   if (filters.from) q = q.gte("posting_date", filters.from);
   if (filters.to) q = q.lte("posting_date", filters.to);
@@ -1266,43 +1434,114 @@ export async function getMb51GoodsIssue(filtersParam) {
     }
   }
 
-  if (filters.entry_unit && filters.entry_unit !== "ALL" && filters.entry_unit !== "") {
-    q = q.eq("entry_unit", filters.entry_unit.trim());
-  }
-
-  if (filters.mvt_type && filters.mvt_type !== "ALL" && filters.mvt_type !== "") {
-    q = q.eq("mov_type", filters.mvt_type.trim());
-  }
-
-  if (filters.stor_loc && filters.stor_loc !== "ALL" && filters.stor_loc !== "") {
-    q = q.eq("stor_loc", filters.stor_loc.trim());
-  }
-
-  if (filters.nhom_hang && filters.nhom_hang !== "ALL" && filters.nhom_hang !== "") {
-    q = q.eq("nhom_hang", filters.nhom_hang.trim());
-  }
-
-  if (filters.nganh_hang && filters.nganh_hang !== "ALL" && filters.nganh_hang !== "") {
-    q = q.eq("nganh_hang", filters.nganh_hang.trim());
-  }
-
-  if (filters.q && typeof filters.q === "string" && filters.q.trim()) {
-    const kw = filters.q.trim();
-    q = q.or(`material.ilike.%${kw}%,material_desc.ilike.%${kw}%,mat_doc.ilike.%${kw}%`);
-  }
-
   q = q.order("posting_date", { ascending: false }).order("mat_doc", { ascending: false });
-  if (filters.limit) q = q.limit(filters.limit);
 
   const { data, error } = await q;
   if (error) {
-    console.error("getMb51GoodsIssue error:", error);
+    console.error("getMb51MaterialDocsDisposal error:", error);
     return { ok: false, error: error.message, rows: [] };
   }
 
-  return {
-    ok: true,
-    total: (data || []).length,
-    rows: data || []
-  };
+  const rawRows = data || [];
+
+  // 2. Thu thập các khóa reversal từ 552
+  const set552Item = new Set();
+  const set552Doc = new Set();
+  const set552Heuristic = new Set();
+
+  rawRows.forEach(r => {
+    if (String(r.mov_type || "").trim() === "552") {
+      set552Item.add(`${r.mat_doc}_${r.mat_doc_year}_${r.doc_item}`);
+      set552Doc.add(`${r.mat_doc}_${r.mat_doc_year}`);
+      if (r.site && r.material) {
+        set552Heuristic.add(`${r.site}_${r.material}_${Math.abs(Number(r.quantity))}_${String(r.doc_header_text || "").trim().toLowerCase()}`);
+      }
+    }
+  });
+
+  // 3. Lọc lấy dòng 551 không bị đảo bởi 552
+  let valid551 = rawRows.filter(r => {
+    if (String(r.mov_type || "").trim() !== "551") return false;
+    const kItem = `${r.mat_doc}_${r.mat_doc_year}_${r.doc_item}`;
+    const kDoc = `${r.mat_doc}_${r.mat_doc_year}`;
+    const kHeuristic = `${r.site}_${r.material}_${Math.abs(Number(r.quantity))}_${String(r.doc_header_text || "").trim().toLowerCase()}`;
+    if (set552Item.has(kItem) || set552Doc.has(kDoc) || set552Heuristic.has(kHeuristic)) {
+      return false;
+    }
+    return true;
+  });
+
+  // 4. Áp dụng các bộ lọc riêng nếu có
+  if (filters.entry_unit && filters.entry_unit !== "ALL" && filters.entry_unit !== "") {
+    const targetUnit = String(filters.entry_unit).trim().toUpperCase();
+    valid551 = valid551.filter(r => String(r.entry_unit || "").trim().toUpperCase() === targetUnit);
+  }
+
+  if (filters.stor_loc && filters.stor_loc !== "ALL" && filters.stor_loc !== "") {
+    const targetSloc = String(filters.stor_loc).trim().toUpperCase();
+    valid551 = valid551.filter(r => {
+      const s = String(r.stor_loc || "").trim().toUpperCase();
+      const sName = getSlocName(s).toUpperCase();
+      return s === targetSloc || sName === targetSloc || targetSloc.includes(s);
+    });
+  }
+
+  if (filters.nhom_hang && filters.nhom_hang !== "ALL" && filters.nhom_hang !== "") {
+    const targetNhom = String(filters.nhom_hang).trim().toLowerCase();
+    valid551 = valid551.filter(r => String(r.nhom_hang || "").trim().toLowerCase() === targetNhom);
+  }
+
+  if (filters.nganh_hang && filters.nganh_hang !== "ALL" && filters.nganh_hang !== "") {
+    const targetNganh = String(filters.nganh_hang).trim().toLowerCase();
+    valid551 = valid551.filter(r => String(r.nganh_hang || "").trim().toLowerCase() === targetNganh);
+  }
+
+  if (filters.q && typeof filters.q === "string" && filters.q.trim()) {
+    const kw = filters.q.trim().toLowerCase();
+    valid551 = valid551.filter(r => {
+      const mat = String(r.material || "").toLowerCase();
+      const desc = String(r.material_desc || "").toLowerCase();
+      const doc = String(r.mat_doc || "").toLowerCase();
+      return mat.includes(kw) || desc.includes(kw) || doc.includes(kw);
+    });
+  }
+
+  // 5. Chuẩn hóa hiển thị (dương số lượng và tiền, map tên kho)
+  const rows = valid551.map(r => {
+    const qty = Math.abs(Number(r.quantity || 0));
+    const amt = Math.abs(Number(r.amount_lc || 0));
+    const price = qty > 0 ? Math.round(amt / qty) : 0;
+    return {
+      mat_doc: r.mat_doc || "",
+      doc_item: r.doc_item,
+      mat_doc_year: r.mat_doc_year || "",
+      posting_date: r.posting_date || r.entry_date || "",
+      site: r.site || "",
+      site_name: r.site_name || r.site || "",
+      stor_loc: r.stor_loc || "",
+      stor_loc_name: getSlocName(r.stor_loc),
+      stor_loc_display: getSlocDisplayName(r.stor_loc),
+      material: r.material || "",
+      material_desc: r.material_desc || r.material || "",
+      entry_unit: r.entry_unit || "",
+      quantity: qty,
+      amount_lc: amt,
+      unit_price: price,
+      mov_type: "551",
+      mov_type_text: r.mov_text_vi || r.mov_text_sap || "Xuất kho tiêu hủy",
+      mov_text_vi: r.mov_text_vi || "Xuất kho tiêu hủy",
+      nganh_hang: r.nganh_hang || "",
+      nhom_hang: r.nhom_hang || "",
+      user_name: "",
+      doc_header_text: r.doc_header_text || ""
+    };
+  });
+
+  if (filters.limit && typeof filters.limit === "number") {
+    return { ok: true, total: rows.length, rows: rows.slice(0, filters.limit) };
+  }
+
+  return { ok: true, total: rows.length, rows };
 }
+
+export const getMb51MaterialDocsDisposal = getMb51GoodsIssue;

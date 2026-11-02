@@ -213,63 +213,42 @@ CREATE TABLE IF NOT EXISTS kehoach_thamso (
 
 CREATE INDEX IF NOT EXISTS idx_kehoach_thamso_site ON kehoach_thamso (site);
 
--- 7. QUẢN LÝ KHO (STOCK HEADER, TRANSACTIONS, PRICE CATEGORY)
-CREATE TABLE IF NOT EXISTS stock_header (
-  id BIGSERIAL PRIMARY KEY,
-  site TEXT NOT NULL,
-  site_name TEXT,
-  article TEXT NOT NULL,
-  name TEXT NOT NULL,
-  category TEXT,
-  uom TEXT,
-  stock_begin NUMERIC DEFAULT 0,
-  receipts NUMERIC DEFAULT 0,
-  issues NUMERIC DEFAULT 0,
-  stock_end NUMERIC DEFAULT 0,
-  price NUMERIC DEFAULT 0,
-  stock_end_value NUMERIC DEFAULT 0,
-  consumption_per_day NUMERIC DEFAULT 0,
-  days_of_stock NUMERIC,
-  status TEXT DEFAULT 'binh_thuong',
-  has_mismatch BOOLEAN DEFAULT false,
-  reconciliation_diff NUMERIC DEFAULT 0,
-  period_from DATE,
-  period_to DATE,
-  generated_at TIMESTAMPTZ NOT NULL DEFAULT now()
-);
-
-CREATE INDEX IF NOT EXISTS idx_stock_header_site_article ON stock_header (site, article);
-
-CREATE TABLE IF NOT EXISTS stock_transactions (
-  id BIGSERIAL PRIMARY KEY,
+-- 7. QUẢN LÝ KHO (MB51 MATERIAL DOCS)
+CREATE TABLE IF NOT EXISTS mb51_material_docs (
+  mat_doc TEXT NOT NULL,
+  mat_doc_year TEXT NOT NULL,
+  doc_item INTEGER NOT NULL,
+  posting_date DATE,
+  entry_date DATE,
+  entry_time TIME,
   site TEXT,
   site_name TEXT,
-  article TEXT NOT NULL,
-  name TEXT,
-  category TEXT,
-  type TEXT,
-  sloc TEXT,
-  date DATE,
-  mvt TEXT,
-  mvt_label TEXT,
-  qty NUMERIC DEFAULT 0,
-  value NUMERIC DEFAULT 0,
-  doc_no TEXT,
-  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  stor_loc TEXT,
+  material TEXT NOT NULL,
+  material_desc TEXT,
+  nganh_hang TEXT,
+  nhom_hang TEXT,
+  mov_type TEXT,
+  mov_text_sap TEXT,
+  mov_text_vi TEXT,
+  transaction_type TEXT,
+  quantity NUMERIC DEFAULT 0,
+  entry_unit TEXT,
+  amount_lc NUMERIC DEFAULT 0,
+  order_no TEXT,
+  sales_order TEXT,
+  purch_order TEXT,
+  doc_header_text TEXT,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (mat_doc, mat_doc_year, doc_item)
 );
 
-CREATE INDEX IF NOT EXISTS idx_stock_tx_date ON stock_transactions (date DESC);
-CREATE INDEX IF NOT EXISTS idx_stock_tx_article ON stock_transactions (article);
-CREATE INDEX IF NOT EXISTS idx_stock_tx_sloc ON stock_transactions (sloc);
-
-CREATE TABLE IF NOT EXISTS stock_price_category (
-  id SERIAL PRIMARY KEY,
-  article TEXT NOT NULL UNIQUE,
-  name TEXT,
-  category TEXT,
-  uom TEXT,
-  price NUMERIC DEFAULT 0
-);
+CREATE INDEX IF NOT EXISTS idx_mb51_mat_docs_posting_date ON mb51_material_docs (posting_date DESC);
+CREATE INDEX IF NOT EXISTS idx_mb51_mat_docs_material ON mb51_material_docs (material);
+CREATE INDEX IF NOT EXISTS idx_mb51_mat_docs_site ON mb51_material_docs (site);
+CREATE INDEX IF NOT EXISTS idx_mb51_mat_docs_stor_loc ON mb51_material_docs (stor_loc);
+CREATE INDEX IF NOT EXISTS idx_mb51_mat_docs_mov_type ON mb51_material_docs (mov_type);
 
 -- 8. DINH DƯỠNG SUẤT ĂN
 CREATE TABLE IF NOT EXISTS dinhduong_100g (
