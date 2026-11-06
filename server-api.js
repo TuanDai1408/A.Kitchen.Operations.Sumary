@@ -9,15 +9,49 @@ import {
   SLOC_MAP,
   getSlocGroup,
   getSlocName,
-  getSlocDisplayName
+  getSlocDisplayName,
+  isProductionOrderIssue,
+  isTransferMovement,
+  isCountedAsWarehouseIssue,
+  isCountedAsWarehouseReceipt
 } from "./shared/sloc-config.js";
+
+import {
+  PORTION_SITE_RULES,
+  isSiteK003,
+  isSiteD007,
+  getPortionFactor,
+  normalizePortionQty
+} from "./shared/portion-config.js";
+
+import {
+  isIssueMovement,
+  isDisposalMovement,
+  buildIssuePriceIndex,
+  resolveIssueReferencePrice,
+  enrichTransactionsWithEffectiveReceiptPrices
+} from "./shared/warehouse-receipt-pricing.js";
 
 export {
   SLOC_GROUPS,
   SLOC_MAP,
   getSlocGroup,
   getSlocName,
-  getSlocDisplayName
+  getSlocDisplayName,
+  isProductionOrderIssue,
+  isTransferMovement,
+  isCountedAsWarehouseIssue,
+  isCountedAsWarehouseReceipt,
+  PORTION_SITE_RULES,
+  isSiteK003,
+  isSiteD007,
+  getPortionFactor,
+  normalizePortionQty,
+  isIssueMovement,
+  isDisposalMovement,
+  buildIssuePriceIndex,
+  resolveIssueReferencePrice,
+  enrichTransactionsWithEffectiveReceiptPrices
 };
 
 const SUPABASE_URL = process.env.SUPABASE_URL || "https://alqcojnxshfylheovdgw.supabase.co";
@@ -515,6 +549,22 @@ export async function getRevenueRawData(filtersParam) {
   });
   const viSort = (a, b) => a.localeCompare(b, "vi");
 
+  // Nạp toàn bộ danh mục ngày có dữ liệu bán hàng để dropdown kỳ (Tuần/Tháng/Quý/Năm) luôn có đủ dữ liệu
+  if (!global._cachedAllBillingDates || Date.now() - (global._cachedAllBillingDatesAt || 0) > 300000) {
+    try {
+      const { data: allDatesRows } = await supabase.from("transactions").select("billing_date");
+      const dSet = new Set();
+      (allDatesRows || []).forEach(r => { if (r.billing_date) dSet.add(r.billing_date.slice(0, 10)); });
+      global._cachedAllBillingDates = Array.from(dSet).sort();
+      global._cachedAllBillingDatesAt = Date.now();
+    } catch (e) {
+      console.warn("fetch all billing dates error:", e);
+    }
+  }
+  const allAvailableDates = (global._cachedAllBillingDates && global._cachedAllBillingDates.length)
+    ? global._cachedAllBillingDates
+    : Array.from(dateSet).sort();
+
   const dims = {
     sites: Array.from(siteSet).sort(viSort),
     kenh: Array.from(kenhSet).sort(viSort),
@@ -522,6 +572,7 @@ export async function getRevenueRawData(filtersParam) {
     nvkd: Array.from(nvkdSet).sort(viSort),
     khachHang: Array.from(khSet).sort(viSort),
     dates: Array.from(dateSet).sort(),
+    allDates: allAvailableDates,
     vungMien: Array.from(vungSet).sort(viSort),
     loaiCuaHang: Array.from(loaiSet).sort(viSort),
     maxBillingDate: maxDateStr,
@@ -890,10 +941,26 @@ export function mapMb51RowToLegacyStockTx(r) {
   const cleanMvt = String(r.mov_type || "").trim().toUpperCase();
   const labelDesc = r.mov_text_vi || r.mov_text_sap || cleanMvt;
   const mvtLabel = cleanMvt ? `${cleanMvt} - ${labelDesc}` : labelDesc;
-  const qty = Number(r.quantity || 0);
-  const amount = Number(r.amount_lc !== undefined && r.amount_lc !== null ? r.amount_lc : 0);
+  let qty = Number(r.quantity || 0);
+  let amount = Number(r.amount_lc !== undefined && r.amount_lc !== null ? r.amount_lc : 0);
+
+  // In SAP MB51: Movement 351 (Transfer issue to in-transit / Xuất chuyển kho) is an issue from the sending plant,
+  // but was recorded with positive sign in the DB dump. Normalize 351 to negative (issue / giảm tồn kho gửi).
+  // Movement 352 (Reversal of 351 / Hủy xuất chuyển kho) normalize to positive (tăng tồn kho gửi).
+  if (cleanMvt === "351" && qty > 0) {
+    qty = -qty;
+    amount = -Math.abs(amount);
+  } else if (cleanMvt === "352" && qty < 0) {
+    qty = Math.abs(qty);
+    amount = Math.abs(amount);
+  }
+
   const price = (qty !== 0 && amount !== 0) ? Math.round(Math.abs(amount) / Math.abs(qty)) : 0;
   const value = amount !== 0 ? amount : Math.round(qty * price);
+
+  const matDesc = String(r.material_desc || "").trim();
+  const matCode = String(r.material || "").trim();
+  const matName = matDesc || matCode || "";
 
   const ng = String(r.nganh_hang || "").toLowerCase();
   const nh = String(r.nhom_hang || "").toLowerCase();
@@ -910,10 +977,10 @@ export function mapMb51RowToLegacyStockTx(r) {
   const dateFormatted = pDate ? formatDate(pDate) : "";
 
   return {
-    article: r.material || "",
-    material: r.material || "",
-    name: r.material_desc || r.material || "",
-    material_desc: r.material_desc || r.material || "",
+    article: matCode,
+    material: matCode,
+    name: matName,
+    material_desc: matDesc || matCode,
     category: r.nhom_hang || r.nganh_hang || "Chưa phân loại",
     nhom_hang: r.nhom_hang || "",
     nganh_hang: r.nganh_hang || "",
@@ -1011,24 +1078,55 @@ export async function getWarehouseDashboardData(filtersParam) {
   if (reqFrom && reqFrom > "2026-09-01") {
     const priorTo = getDayBefore(reqFrom);
     fetchPromises.push(
-      fetchAllRows("mb51_material_docs", "material,quantity,amount_lc,site,site_name", null, null, priorTo, "posting_date")
+      fetchAllRows("mb51_material_docs", "material,material_desc,quantity,amount_lc,site,site_name,entry_unit,nhom_hang,mov_type,stor_loc,posting_date", "posting_date", null, priorTo, "posting_date")
     );
   }
 
   const [periodRows, priorRows = []] = await Promise.all(fetchPromises);
 
   const stockBeginMap = {};
+  const stockBeginValueMap = {};
   const priceMap = {};
+  const matDescMap = {};
+  const matUomMap = {};
+  const matCatMap = {};
+
+  const registerMatMeta = (mat, desc, uom, cat) => {
+    const k = String(mat || "").trim();
+    if (!k) return;
+    const d = String(desc || "").trim();
+    if (d && (!matDescMap[k] || matDescMap[k] === k)) {
+      matDescMap[k] = d;
+    }
+    if (uom && !matUomMap[k]) matUomMap[k] = uom;
+    if (cat && !matCatMap[k]) matCatMap[k] = cat;
+  };
+
+  // 1. Xử lý tồn đầu kỳ từ priorRows (các chứng từ trước fromDate)
   priorRows.forEach(r => {
+    registerMatMeta(r.material, r.material_desc, r.entry_unit, r.nhom_hang);
     if (r.posting_date && r.posting_date >= reqFrom) return;
     const artKey = String(r.material || "").trim();
-    const key = (r.site || "") + "|" + artKey;
-    stockBeginMap[key] = (stockBeginMap[key] || 0) + Number(r.quantity || 0);
-    const qty = Math.abs(Number(r.quantity || 0));
-    const amt = Math.abs(Number(r.amount_lc || 0));
-    if (qty > 0 && amt > 0) {
-      priceMap[artKey] = Math.round(amt / qty);
+    const cleanMvt = String(r.mov_type || "").trim().toUpperCase();
+
+    let q = Number(r.quantity || 0);
+    let amt = Number(r.amount_lc || 0);
+
+    // Cập nhật đơn giá tham chiếu từ các dòng có giá trị thực
+    const qtyAbs = Math.abs(q);
+    const amtAbs = Math.abs(amt);
+    if (qtyAbs > 0 && amtAbs > 0) {
+      priceMap[artKey] = Math.round(amtAbs / qtyAbs);
     }
+
+    // LOẠI TRỪ khỏi tồn kho đầu kỳ:
+    // - Lệnh sản xuất (261, 262)
+    // - Điều chuyển nội bộ (351, 352, 301, 309...) để không gây âm ảo/double-subtract
+    if (isProductionOrderIssue(cleanMvt) || isTransferMovement(cleanMvt)) return;
+
+    const key = (r.site || "") + "|" + artKey;
+    stockBeginMap[key] = (stockBeginMap[key] || 0) + q;
+    stockBeginValueMap[key] = (stockBeginValueMap[key] || 0) + amt;
   });
 
   const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set();
@@ -1037,9 +1135,15 @@ export async function getWarehouseDashboardData(filtersParam) {
   const transactions = [];
 
   periodRows.forEach(r => {
+    registerMatMeta(r.material, r.material_desc, r.entry_unit, r.nhom_hang || r.nganh_hang);
     const t = mapMb51RowToLegacyStockTx(r);
     transactions.push(t);
+  });
 
+  // Áp dụng đơn giá tham chiếu từ dòng xuất cho các dòng nhập có amount_lc = 0
+  enrichTransactionsWithEffectiveReceiptPrices(transactions, priorRows);
+
+  transactions.forEach(t => {
     if (t.sloc) slocSet.add(t.sloc);
     if (t.category) catSet.add(t.category);
     if (t.site_name) siteNameSet.add(t.site_name);
@@ -1056,10 +1160,11 @@ export async function getWarehouseDashboardData(filtersParam) {
     if (!itemsMap[itemKey]) {
       itemsMap[itemKey] = {
         code: artKey,
-        name: t.name,
+        name: matDescMap[artKey] || t.name || artKey,
         category: t.category,
         uom: t.uom,
         stock_begin: stockBeginMap[itemKey] || 0,
+        stock_begin_val: stockBeginValueMap[itemKey] || 0,
         receipts: 0,
         issues: 0,
         issues_abs: 0,
@@ -1068,15 +1173,26 @@ export async function getWarehouseDashboardData(filtersParam) {
         site_name: t.site_name,
         site: t.site
       };
+    } else if (matDescMap[artKey] && itemsMap[itemKey].name === artKey) {
+      itemsMap[itemKey].name = matDescMap[artKey];
     }
 
-    if (t.qty >= 0) {
-      itemsMap[itemKey].receipts += t.qty;
-      itemsMap[itemKey].receipts_val += Math.abs(t.value || 0);
-    } else {
-      itemsMap[itemKey].issues += t.qty;
-      itemsMap[itemKey].issues_abs += Math.abs(t.qty);
-      itemsMap[itemKey].issues_val += Math.abs(t.value || 0);
+    // LOẠI TRỪ KHỎI GT/SL XUẤT VÀ NHẬP:
+    // 1. isProductionOrderIssue: mov_type 261, 262
+    // 2. isTransferMovement: mov_type 351, 352, 301, 309, 311...
+    // (tránh làm GT xuất tăng một phía gây âm ảo)
+    const isProdOrder = isProductionOrderIssue(t.mov_type || t.mvt);
+    const isTransfer = isTransferMovement(t.mov_type || t.mvt);
+
+    if (!isProdOrder && !isTransfer) {
+      if (t.qty >= 0) {
+        itemsMap[itemKey].receipts += t.qty;
+        itemsMap[itemKey].receipts_val += Math.abs(t.value || 0);
+      } else {
+        itemsMap[itemKey].issues += t.qty;
+        itemsMap[itemKey].issues_abs += Math.abs(t.qty);
+        itemsMap[itemKey].issues_val += Math.abs(t.value || 0);
+      }
     }
   });
 
@@ -1088,10 +1204,11 @@ export async function getWarehouseDashboardData(filtersParam) {
       const code = parts[1];
       itemsMap[key] = {
         code,
-        name: code,
-        category: "Chưa phân loại",
-        uom: "Kg",
+        name: matDescMap[code] || code,
+        category: matCatMap[code] || "Chưa phân loại",
+        uom: matUomMap[code] || "Kg",
         stock_begin: stockBeginMap[key],
+        stock_begin_val: stockBeginValueMap[key] || 0,
         receipts: 0,
         issues: 0,
         issues_abs: 0,
@@ -1103,6 +1220,39 @@ export async function getWarehouseDashboardData(filtersParam) {
     }
   });
 
+  const missingNames = Object.keys(itemsMap).filter(k => itemsMap[k].name === itemsMap[k].code).map(k => itemsMap[k].code);
+  const uniqueMissing = [...new Set(missingNames)];
+  if (uniqueMissing.length > 0) {
+    try {
+      const { data: descData } = await supabase
+        .from("mb51_material_docs")
+        .select("material,material_desc,nhom_hang,entry_unit")
+        .in("material", uniqueMissing.slice(0, 500))
+        .not("material_desc", "is", null);
+      if (descData && descData.length) {
+        descData.forEach(d => {
+          const c = String(d.material || "").trim();
+          const nm = String(d.material_desc || "").trim();
+          if (c && nm) {
+            matDescMap[c] = nm;
+            if (d.nhom_hang) matCatMap[c] = d.nhom_hang;
+            if (d.entry_unit) matUomMap[c] = d.entry_unit;
+          }
+        });
+        Object.keys(itemsMap).forEach(k => {
+          const it = itemsMap[k];
+          if (matDescMap[it.code]) {
+            it.name = matDescMap[it.code];
+            if (matCatMap[it.code] && it.category === "Chưa phân loại") it.category = matCatMap[it.code];
+            if (matUomMap[it.code] && it.uom === "Kg") it.uom = matUomMap[it.code];
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("lookup missing material names error:", e);
+    }
+  }
+
   let minDate = "", maxDate = "";
   transactions.forEach(t => {
     if (!minDate || (t.date && t.date < minDate)) minDate = t.date;
@@ -1113,12 +1263,20 @@ export async function getWarehouseDashboardData(filtersParam) {
   const d2 = maxDate ? new Date(maxDate) : new Date();
   const daysInPeriod = Math.max(1, Math.round((d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24)) + 1);
 
+  // CÔNG THỨC BẮT BUỘC (UNIFIED PIPELINE):
+  // GT_cuoi = GT_dau + GT_nhap - GT_xuat
+  // SL_cuoi = SL_dau + SL_nhap - SL_xuat
   const items = Object.values(itemsMap).map(it => {
     const price = priceMap[it.code] || (it.receipts_abs > 0 ? Math.round(it.receipts_val / it.receipts_abs) : 0);
-    const stockEnd = it.stock_begin + it.receipts + it.issues;
-    const stockEndValue = Math.round(stockEnd * price);
-    const receiptsValue = it.receipts_val > 0 ? it.receipts_val : Math.round(it.receipts * price);
-    const issuesValue = it.issues_val > 0 ? it.issues_val : Math.round(it.issues_abs * price);
+    const stockBegin = it.stock_begin;
+    const stockBeginValue = (it.stock_begin_val !== undefined && it.stock_begin_val !== 0)
+      ? it.stock_begin_val
+      : Math.round(stockBegin * price);
+    const receiptsValue = it.receipts_val;
+    const issuesValue = it.issues_val;
+    const stockEnd = stockBegin + it.receipts - it.issues_abs;
+    // BẢO TOÀN GIÁ TRỊ: GT_cuoi = GT_dau + GT_nhap - GT_xuat
+    const stockEndValue = stockBeginValue + receiptsValue - issuesValue;
     const consumptionPerDay = it.issues_abs > 0 ? it.issues_abs / daysInPeriod : 0;
     let daysOfStock = null;
     if (consumptionPerDay > 0) {
@@ -1139,7 +1297,8 @@ export async function getWarehouseDashboardData(filtersParam) {
       name: it.name,
       category: it.category,
       uom: it.uom,
-      stock_begin: it.stock_begin,
+      stock_begin: stockBegin,
+      stock_begin_value: stockBeginValue,
       receipts: it.receipts,
       issues: it.issues,
       issues_abs: it.issues_abs,

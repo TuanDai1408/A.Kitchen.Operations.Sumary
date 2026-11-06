@@ -48,3 +48,66 @@ export function getSlocDisplayName(code, withCode = true) {
   if (!info) return c;
   return withCode ? `${info.name} (${c})` : info.name;
 }
+
+// =========================================================================
+// QUY TẮC PHÂN LOẠI GIAO DỊCH VÀ CÔNG THỨC BẢO TOÀN GIÁ TRỊ KHO:
+//
+// 1. CÔNG THỨC BẮT BUỘC (UNIFIED PIPELINE):
+//    GT_cuoi = GT_dau + GT_nhap - GT_xuat
+//    SL_cuoi = SL_dau + SL_nhap - SL_xuat
+//
+// 2. GT_dau (Tồn đầu kỳ):
+//    Tính từ toàn bộ các dòng phát sinh TRƯỚC fromDate (posting_date < fromDate)
+//    trong cùng phạm vi bộ lọc (site, sloc, material). Không mặc định = 0.
+//
+// 3. GT_nhap (Nhập trong kỳ):
+//    Tổng giá trị các dòng nhập kho hợp lệ (101, 501, 561, Z09, Z15... và reversal 602, 552).
+//    Nếu amount_lc = 0: quy đổi từ đơn giá xuất (amount_lc_effective).
+//    Reversal nhập (102, 122) có dấu âm bù trừ tự nhiên vào GT_nhap.
+//    LOẠI TRỪ: transfer (351, 352, 301, 309...).
+//
+// 4. GT_xuat (Xuất trong kỳ):
+//    Tổng giá trị các dòng xuất kho thực tế (601 xuất bán/giao hàng, 201 xuất chi phí, 241 CCDC, 551 hủy).
+//    LOẠI TRỪ TUYỆT ĐỐI:
+//      - mov_type 261, 262: Xuất cho lệnh sản xuất.
+//      - mov_type 351, 352, 301, 309, 311...: Điều chuyển nội bộ/in-transit,
+//        tránh làm tăng GT xuất một phía gây âm ảo (vì leg 101 tương ứng đã nhập).
+//
+// 5. GT_cuoi (Tồn cuối kỳ):
+//    GT_cuoi = GT_dau + GT_nhap - GT_xuat
+// =========================================================================
+
+export function isProductionOrderIssue(mov_type) {
+  if (!mov_type) return false;
+  const m = String(mov_type).trim().toUpperCase();
+  return m === "261" || m === "262" || m.startsWith("261 ") || m.startsWith("262 ") || m.startsWith("261-") || m.startsWith("262-");
+}
+
+export function isTransferMovement(mov_type) {
+  if (!mov_type) return false;
+  const m = String(mov_type).trim().toUpperCase();
+  return m === "351" || m === "352" || m === "301" || m === "302" ||
+         m === "309" || m === "310" || m === "311" || m === "312" ||
+         m === "313" || m === "314" || m === "321" || m === "322" ||
+         m === "343" || m === "411" || m === "687" || m === "688";
+}
+
+export function isCountedAsWarehouseIssue(rowOrMvt) {
+  const m = typeof rowOrMvt === "object" && rowOrMvt !== null
+    ? (rowOrMvt.mov_type || rowOrMvt.mvt)
+    : rowOrMvt;
+  if (!m) return false;
+  if (isProductionOrderIssue(m)) return false;
+  if (isTransferMovement(m)) return false;
+  return true;
+}
+
+export function isCountedAsWarehouseReceipt(rowOrMvt) {
+  const m = typeof rowOrMvt === "object" && rowOrMvt !== null
+    ? (rowOrMvt.mov_type || rowOrMvt.mvt)
+    : rowOrMvt;
+  if (!m) return false;
+  if (isProductionOrderIssue(m)) return false;
+  if (isTransferMovement(m)) return false;
+  return true;
+}
