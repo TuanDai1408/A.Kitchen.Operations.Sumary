@@ -72,3 +72,53 @@ test('Revenue Time Filter Suite - State objects RF, RF_SACN, RF_EST have time co
   assert.ok(js.includes('updateRevSacnPeriodDropdown'), 'updateRevSacnPeriodDropdown must be declared');
   assert.ok(js.includes('updateEstPeriodDropdown'), 'updateEstPeriodDropdown must be declared');
 });
+
+test('Revenue Time Filter Suite - akComputeRangeFromPreset parity across presets', async (t) => {
+  const { akComputeRangeFromPreset, akFormatLocalDate } = await import('../shared/time-range-helpers.js');
+
+  const testDates = [
+    '2026-08-01', '2026-08-15', '2026-08-31',
+    '2026-09-01', '2026-09-15', '2026-09-30',
+    '2026-10-01', '2026-10-15', '2026-10-31',
+    '2026-11-01', '2026-11-05'
+  ];
+
+  // 1. Week 4-period preset
+  const weekRange = akComputeRangeFromPreset('week', '4', [], testDates);
+  assert.equal(weekRange.periods.length, 4, 'Week 4-period preset should select 4 weeks');
+  assert.ok(weekRange.from <= weekRange.to, 'Week from <= to');
+  assert.equal(weekRange.to, '2026-11-08', 'Week 4-period ends on Sunday 2026-11-08');
+
+  // 2. Month 4-period preset
+  const monthRange = akComputeRangeFromPreset('month', '4', [], testDates);
+  assert.equal(monthRange.periods.length, 4, 'Month 4-period preset should select 4 months');
+  assert.equal(monthRange.from, '2026-08-01', 'Month 4-period starts on 2026-08-01');
+  assert.equal(monthRange.to, '2026-11-30', 'Month 4-period ends on 2026-11-30');
+
+  // 3. Quarter 4-period preset
+  const qRange = akComputeRangeFromPreset('quarter', '4', [], testDates);
+  assert.ok(qRange.periods.length > 0, 'Quarter preset selects periods');
+  assert.equal(qRange.to, '2026-12-31', 'Quarter preset ends on quarter boundary');
+
+  // 4. Year preset (scope all uses min/max of all dates, matching tab Doanh thu uoc tinh)
+  const yRange = akComputeRangeFromPreset('year', 'all', [], testDates);
+  assert.equal(yRange.from, '2026-08-01');
+  assert.equal(yRange.to, '2026-11-05');
+});
+
+test('Revenue Time Filter Suite - Event bindings invoke loadFoodcostData with force: true', (t) => {
+  const js = fs.readFileSync('script.js', 'utf8');
+
+  // Tab SACN bindings
+  assert.ok(js.includes("loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true })"), 'sGran/sScope must call loadFoodcostData');
+  assert.ok(js.includes("loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites })"), 'sFrom/sTo must call loadFoodcostData');
+
+  // Tab ALL bindings
+  assert.ok(js.includes("loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true })"), 'rGran/rScope must call loadFoodcostData');
+  assert.ok(js.includes("loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites })"), 'rFrom/rTo must call loadFoodcostData');
+
+  // Neither buildRevFilters nor buildRevSacnFilters overrides preset dates with a 30-day default
+  assert.ok(!js.includes('RF.to = maxDate; RF.from = defaultFrom;'), 'buildRevFilters must not overwrite RF.from with defaultFrom');
+  assert.ok(!js.includes('RF_SACN.to = maxSacnDate; RF_SACN.from = defaultSacnFrom;'), 'buildRevSacnFilters must not overwrite RF_SACN.from with defaultSacnFrom');
+});
+

@@ -271,6 +271,7 @@ var RF = { gran:'week', scope:'4', periods:[], from:'', to:'', sites:[], vungMie
 var REV_RAW = null;   // payload từ getRevenueRawData (rows + dims + opex + huy)
 var RUI = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', mixChartMode:'fcNhom', geoMode:'loai' };
 // barDim: 'khachHang' (default) | 'site'
+var REV_LOADED_RANGE = null; // { tab: 'revenue'|'sacn', from: '', to: '' }
 
 /* ---- STATE RIÊNG CHO TAB DOANH THU & FOOD COST (SACN) ---- */
 var SACN_EXCLUDE_MASITE = ['K502','K003','K800','D007']; // Mã site bị loại khỏi tab SACN
@@ -3475,61 +3476,71 @@ function computeAndDrawRevenue() {
 // }
 
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
-function loadRevenue(opts) {
+/* ---------- NẠP DỮ LIỆU TỪ BACKEND (LOAD FOODCOST DATA CHO ALL & SACN) ---------- */
+function loadFoodcostData(opts) {
   opts = opts || {};
-  var box = document.getElementById('tab-revenue');
-  var sacnBox = document.getElementById('tab-sacn');
+  var targetTab = opts.tab || (TAB === 'sacn' ? 'sacn' : 'revenue');
+  var isSacn = (targetTab === 'sacn');
+  var fFrom = (opts && opts.from) !== undefined ? opts.from : (isSacn ? RF_SACN.from : RF.from);
+  var fTo = (opts && opts.to) !== undefined ? opts.to : (isSacn ? RF_SACN.to : RF.to);
+  var fSite = (opts && opts.site) !== undefined ? opts.site : (isSacn ? RF_SACN.sites : RF.sites);
 
-  // Đảm bảo hiển thị skeleton và animation chờ khi người dùng chủ động xem tab
+  var box = document.getElementById(isSacn ? 'tab-sacn' : 'tab-revenue');
+
+  // Loading state rõ ràng khi người dùng chuyển kỳ hoặc lọc
   if (!opts.silent) {
-    akShowLoading('Đang tải dữ liệu Doanh thu & Food Cost...');
-    if (box && !REV_RAW && !box.querySelector('.sk-wrap')) {
-      box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
-    }
-    if (sacnBox && !REV_RAW && !sacnBox.querySelector('.sk-wrap')) {
-      sacnBox.innerHTML = akSkeletonHTML('Doanh thu & Food Cost (SACN)');
+    var tabTitle = isSacn ? 'Doanh thu & Food Cost (SACN)' : 'Doanh thu & Food Cost';
+    akShowLoading('Đang tải dữ liệu ' + tabTitle + '...', 'Đang cập nhật báo cáo, MB51 và hóa đơn...');
+    if (box && (!REV_RAW || opts.force)) {
+      box.innerHTML = akSkeletonHTML(tabTitle);
     }
   }
 
-  // Nếu đang có request chạy ngầm và người dùng chủ động vào tab -> skeleton đã được hiển thị ở trên, chờ kết quả trả về
-  if (REV_LOADING) return;
-
-  // Đã có raw và không force → chỉ vẽ lại theo filter hiện tại
-  if (REV_RAW && !opts.force) {
-    computeAndDrawRevenue();
-    return;
+  // Clear drill-down site để không giữ data drill kỳ cũ
+  if (isSacn) {
+    RUI_SACN.drillSite = '';
+  } else {
+    RUI.drillSite = '';
   }
 
+  if (REV_LOADING && !opts.force) return Promise.resolve();
   REV_LOADING = true;
 
   var params = {};
-  var fFrom = (opts && opts.from) || RF.from || (typeof F !== 'undefined' && F ? F.from : '') || '';
-  var fTo = (opts && opts.to) || RF.to || (typeof F !== 'undefined' && F ? F.to : '') || '';
-  if (fFrom || fTo) {
-    params.filters = JSON.stringify({ from: fFrom, to: fTo });
+  var filtersObj = {};
+  if (fFrom) filtersObj.from = fFrom;
+  if (fTo) filtersObj.to = fTo;
+  if (fSite && fSite.length) filtersObj.site = fSite;
+
+  if (Object.keys(filtersObj).length > 0) {
+    params.filters = JSON.stringify(filtersObj);
   } else if (opts && opts.all) {
     params.filters = JSON.stringify({ all: true });
   }
 
-  callAPI('getRevenueRawData', params)
+  return callAPI('getRevenueRawData', params)
     .then(function (res) {
       REV_LOADING = false;
       akHideLoading('Đã cập nhật doanh thu');
       if (res && res.updatedAt) {
-        document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
+        var updEl = document.getElementById('updAt');
+        if (updEl) updEl.textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
       }
       if (!res || !res.ok) {
-        if (box && !REV_RAW) box.innerHTML = '<div class="card"><div class="empty">' +
+        if (box) box.innerHTML = '<div class="card"><div class="empty">' +
           esc((res && res.message) || 'Không đọc được dữ liệu doanh thu') + '</div></div>';
-        return;
+        return res;
       }
       if (res.empty) {
-        if (box && !REV_RAW) box.innerHTML = '<div class="card"><div class="empty">' + esc(res.message) + '</div></div>';
-        return;
+        if (box) box.innerHTML = '<div class="card"><div class="empty">' + esc(res.message || 'Không có dữ liệu') + '</div></div>';
+        return res;
       }
-       
+
+      // Thay thế hoàn toàn REV_RAW (invalidate, không merge dữ liệu cũ với kỳ mới)
       REV_RAW = res;
+      REV_LOADED_RANGE = { tab: targetTab, from: fFrom, to: fTo };
+
       if (!REV_INIT) {
         REV = { dims: res.dims, updatedAt: res.updatedAt };
         buildRevFilters();
@@ -3539,87 +3550,64 @@ function loadRevenue(opts) {
         buildRevSacnFilters();
         REV_SACN_INIT = true;
       }
-      computeAndDrawRevenue();
-      computeAndDrawRevenueSacn();
+
+      // Aggregate và vẽ lại đầy đủ cho toàn bộ các block của tab
+      if (isSacn) {
+        computeAndDrawRevenueSacn();
+      } else {
+        computeAndDrawRevenue();
+      }
       renderPivotOnly();
+      return res;
     })
     .catch(function (err) {
       REV_LOADING = false;
       akHideLoading('Lỗi tải dữ liệu');
-      if (box && !REV_RAW) box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
-        esc(String(err && err.message ? err.message : err)) + '</div></div>';
+      if (box && !REV_RAW) {
+        box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
+          esc(String(err && err.message ? err.message : err)) + '</div></div>';
+      }
+      throw err;
     });
 }
 
-// function loadRevenue(opts){
-//   opts = opts || {};
-//   if (REV_LOADING) return;
-//   REV_LOADING = true;
-//   var box = document.getElementById('tab-revenue');
-//   if (!opts.silent && box) {
-//     box.innerHTML = '<div class="card"><div class="empty">Đang tải dữ liệu doanh thu từ Transactions...</div></div>';
-//   }
+function loadRevenue(opts) {
+  return loadFoodcostData(opts);
+}
 
-//   callAPI('getRevenueFoodCostData', {filters: JSON.stringify(RF)})
-//     .then(function(res){
-//       REV_LOADING = false;
-//       if (res && res.updatedAt) {
-//         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
-//         setLive(true, liveLabel(res.updatedAt));
-//       }
-//       if (!res || !res.ok){
-//         if (box) box.innerHTML = '<div class="card"><div class="empty">'+
-//           esc((res && res.message) || 'Không đọc được dữ liệu doanh thu')+'</div></div>';
-//         return;
-//       }
-//       if (res.empty){
-//         if (box) box.innerHTML = '<div class="card"><div class="empty">'+esc(res.message)+'</div></div>';
-//         return;
-//       }
-//       try {
-//         REV = res;
-//         if (!REV_INIT){ buildRevFilters(); REV_INIT = true; }
-//         if (TAB === 'revenue') drawRevenue();
-//       } catch (e) {
-//         console.error('Lỗi render tab doanh thu:', e);
-//         if (box) box.innerHTML = '<div class="card"><div class="empty">'+
-//           'Lỗi hiển thị dữ liệu doanh thu: '+esc(String(e && e.message ? e.message : e))+
-//           '</div></div>';
-//       }
-//     })
-//     .catch(function(err){
-//       REV_LOADING = false;
-//       if (box) box.innerHTML = '<div class="card"><div class="empty">'+
-//         'Lỗi tải dữ liệu từ server: '+esc(String(err && err.message ? err.message : err))+
-//         '</div></div>';
-//     });
-// }
-
-// function renderRevenue(){
-//   if (!REV){ loadRevenue(); return; }
-//   drawRevenue();
-// }
-function renderRevenue(){
-  if (!REV_RAW){
+function renderRevenue() {
+  if (!REV_RAW) {
     var box = document.getElementById('tab-revenue');
     if (box && !box.querySelector('.sk-wrap')) {
       box.innerHTML = akSkeletonHTML('Doanh thu & Food Cost');
     }
-    loadRevenue();
+    loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites });
+    return;
+  }
+  if (REV_LOADED_RANGE && (REV_LOADED_RANGE.from !== RF.from || REV_LOADED_RANGE.to !== RF.to || REV_LOADED_RANGE.tab !== 'revenue')) {
+    loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
     return;
   }
   computeAndDrawRevenue();
 }
-function renderSacn(){
-  if (!REV_RAW){
+
+function renderSacn() {
+  if (!REV_RAW) {
     var sacnBox = document.getElementById('tab-sacn');
     if (sacnBox && !sacnBox.querySelector('.sk-wrap')) {
       sacnBox.innerHTML = akSkeletonHTML('Doanh thu & Food Cost (SACN)');
     }
-    loadRevenue();
+    loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
     return;
   }
-  if (!REV_SACN_INIT){ buildRevSacnFilters(); REV_SACN_INIT = true; }
+  if (!REV_SACN_INIT) {
+    buildRevSacnFilters();
+    REV_SACN_INIT = true;
+  }
+  if (REV_LOADED_RANGE && (REV_LOADED_RANGE.from !== RF_SACN.from || REV_LOADED_RANGE.to !== RF_SACN.to || REV_LOADED_RANGE.tab !== 'sacn')) {
+    loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
+    return;
+  }
   computeAndDrawRevenueSacn();
 }
 
@@ -3627,10 +3615,19 @@ function renderSacn(){
    BỘ HELPER TÍNH TOÁN KỲ THỜI GIAN DÙNG CHUNG (TUẦN / THÁNG / QUÝ / NĂM)
    Đồng bộ tuyệt đối giữa 3 tab Doanh thu: ALL, SACN và Doanh thu ước tính
    ========================================================================= */
+
+function akFormatLocalDate(d) {
+  if (!d || isNaN(d.getTime())) return '';
+  var y = d.getFullYear();
+  var m = ('0' + (d.getMonth() + 1)).slice(-2);
+  var day = ('0' + d.getDate()).slice(-2);
+  return y + '-' + m + '-' + day;
+}
+
 function akGetWeekInfo(dateStr) {
-  if (!dateStr) return { key: '', label: '', month: '', year: '' };
+  if (!dateStr) return { key: '', label: '', month: '', year: '', startDate: '', endDate: '' };
   var d = new Date(dateStr + 'T00:00:00');
-  if (isNaN(d.getTime())) return { key: '', label: '', month: '', year: '' };
+  if (isNaN(d.getTime())) return { key: '', label: '', month: '', year: '', startDate: '', endDate: '' };
   var day = d.getDay();
   var diff = d.getDate() - day + (day === 0 ? -6 : 1);
   var monday = new Date(d.setDate(diff));
@@ -3647,8 +3644,8 @@ function akGetWeekInfo(dateStr) {
     label: 'Tuần ' + weekNum + ' (' + mStr + ' - ' + sStr + ')',
     month: y + '-' + m,
     year: String(y),
-    startDate: monday.toISOString().slice(0, 10),
-    endDate: sunday.toISOString().slice(0, 10)
+    startDate: akFormatLocalDate(monday),
+    endDate: akFormatLocalDate(sunday)
   };
 }
 
@@ -3697,7 +3694,32 @@ function akGetYearInfo(dateStr) {
   };
 }
 
-function akCalcPeriodRange(gran, periods, allDates) {
+function akBuildPeriodMap(gran, dates) {
+  gran = gran || 'week';
+  var periodMap = {};
+  var validDates = (dates || []).filter(Boolean);
+
+  validDates.forEach(function(d) {
+    var info;
+    if (gran === 'week') {
+      info = akGetWeekInfo(d);
+    } else if (gran === 'quarter') {
+      info = akGetQuarterInfo(d);
+    } else if (gran === 'year') {
+      info = akGetYearInfo(d);
+    } else {
+      info = akGetMonthInfo(d);
+    }
+    if (info && info.key && !periodMap[info.key]) {
+      periodMap[info.key] = info;
+    }
+  });
+
+  var sortedKeys = Object.keys(periodMap).sort().reverse();
+  return { periodMap: periodMap, sortedKeys: sortedKeys };
+}
+
+function akCalcPeriodRange(gran, periods, allDates, periodMap) {
   gran = gran || 'week';
   periods = periods || [];
   allDates = (allDates || []).slice().sort();
@@ -3712,7 +3734,10 @@ function akCalcPeriodRange(gran, periods, allDates) {
   var minFrom = '', maxTo = '';
   periods.forEach(function(k) {
     var s = '', e = '';
-    if (gran === 'week') {
+    if (periodMap && periodMap[k] && periodMap[k].startDate && periodMap[k].endDate) {
+      s = periodMap[k].startDate;
+      e = periodMap[k].endDate;
+    } else if (gran === 'week') {
       var parts = k.split('-W');
       if (parts.length === 2) {
         var yr = parseInt(parts[0], 10);
@@ -3725,8 +3750,8 @@ function akCalcPeriodRange(gran, periods, allDates) {
         var monday = new Date(approx.setDate(diff));
         var sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        s = monday.toISOString().slice(0, 10);
-        e = sunday.toISOString().slice(0, 10);
+        s = akFormatLocalDate(monday);
+        e = akFormatLocalDate(sunday);
       }
     } else if (gran === 'quarter') {
       var partsQ = k.split('-Q');
@@ -3760,65 +3785,89 @@ function akCalcPeriodRange(gran, periods, allDates) {
   return { from: minFrom, to: maxTo };
 }
 
+function akComputeRangeFromPreset(gran, scope, periods, allDates, periodMap) {
+  gran = gran || 'week';
+  scope = scope || '4';
+  periods = periods || [];
+  allDates = (allDates || []).slice().sort();
+
+  if (!periodMap || !Object.keys(periodMap).length) {
+    var built = akBuildPeriodMap(gran, allDates);
+    periodMap = built.periodMap;
+  }
+
+  var sortedKeys = Object.keys(periodMap).sort().reverse();
+  var activePeriods = [];
+  if (scope === 'all') {
+    activePeriods = [];
+  } else if (scope === '4') {
+    activePeriods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
+  } else if (periods && periods.length) {
+    activePeriods = periods.slice();
+  } else {
+    activePeriods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
+  }
+
+  var range = akCalcPeriodRange(gran, activePeriods, allDates, periodMap);
+  return {
+    from: range.from,
+    to: range.to,
+    periods: activePeriods,
+    periodMap: periodMap,
+    sortedKeys: sortedKeys
+  };
+}
+
+function akGetAllDates() {
+  if (REV_RAW && REV_RAW.dims && Array.isArray(REV_RAW.dims.allDates) && REV_RAW.dims.allDates.length) {
+    return REV_RAW.dims.allDates.slice().sort();
+  }
+  if (REV_EST_RAW && Array.isArray(REV_EST_RAW.rows) && REV_EST_RAW.rows.length) {
+    var dSet = {};
+    REV_EST_RAW.rows.forEach(function(r) { if (r.ngay) dSet[r.ngay] = 1; });
+    var k = Object.keys(dSet).sort();
+    if (k.length) return k;
+  }
+  if (REV_RAW && REV_RAW.dims && Array.isArray(REV_RAW.dims.dates) && REV_RAW.dims.dates.length) {
+    return REV_RAW.dims.dates.slice().sort();
+  }
+  if (typeof RAW !== 'undefined' && Array.isArray(RAW) && RAW.length) {
+    var rSet = {};
+    RAW.forEach(function(r) { if (r.ngay) rSet[r.ngay] = 1; });
+    var rk = Object.keys(rSet).sort();
+    if (rk.length) return rk;
+  }
+  return [];
+}
+
 function updateRevSacnPeriodDropdown(isReset) {
   var pList = document.getElementById('sPeriodList');
   var pLbl = document.getElementById('sPeriodLabel');
   var btnScope4 = document.getElementById('btnSacnScope4');
   var btnScopeAll = document.getElementById('btnSacnScopeAll');
 
-  var allRows = (REV_RAW && REV_RAW.rows) || [];
+  var allDates = akGetAllDates();
   var gran = RF_SACN.gran || 'week';
-  var periodMap = {};
-  var allDates = [];
-
-  allRows.forEach(function(r) {
-    if (SACN_EXCLUDE_MASITE.indexOf(r.maSite) >= 0) return;
-    if (!r.ngay) return;
-    allDates.push(r.ngay);
-    if (gran === 'week') {
-      var w = akGetWeekInfo(r.ngay);
-      if (w.key && !periodMap[w.key]) periodMap[w.key] = w.label;
-    } else if (gran === 'quarter') {
-      var q = akGetQuarterInfo(r.ngay);
-      if (q.key && !periodMap[q.key]) periodMap[q.key] = q.label;
-    } else if (gran === 'year') {
-      var y = akGetYearInfo(r.ngay);
-      if (y.key && !periodMap[y.key]) periodMap[y.key] = y.label;
-    } else {
-      var m = akGetMonthInfo(r.ngay);
-      if (m.key && !periodMap[m.key]) periodMap[m.key] = m.label;
-    }
-  });
+  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
 
   if (pLbl) {
-    pLbl.textContent = gran === 'week' ? 'CHỌN TUẦN' : (gran === 'quarter' ? 'CHỌN QUÝ' : (gran === 'year' ? 'CHỌN NĂM' : 'CHỌN THÁNG'));
+    pLbl.textContent = 'CHỌN ' + granWord.toUpperCase();
+  }
+  if (btnScope4) btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+
+  if (isReset && RF_SACN.scope !== 'all') {
+    RF_SACN.scope = '4';
   }
 
-  var sortedKeys = Object.keys(periodMap).sort().reverse();
-  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
-  if (btnScope4) btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+  var res = akComputeRangeFromPreset(gran, RF_SACN.scope, RF_SACN.periods, allDates);
+  RF_SACN.periods = res.periods;
+  RF_SACN.from = res.from;
+  RF_SACN.to = res.to;
 
   var isAllScope = (RF_SACN.scope === 'all');
   if (btnScope4 && btnScopeAll) {
     btnScope4.classList.toggle('on', !isAllScope && RF_SACN.scope === '4');
     btnScopeAll.classList.toggle('on', isAllScope);
-  }
-
-  if (isAllScope) {
-    RF_SACN.periods = [];
-    var fullRange = akCalcPeriodRange(gran, [], allDates);
-    if (fullRange.from && fullRange.to) {
-      RF_SACN.from = fullRange.from;
-      RF_SACN.to = fullRange.to;
-    }
-  } else if (RF_SACN.scope === '4' || isReset) {
-    RF_SACN.scope = '4';
-    RF_SACN.periods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
-    var pRange = akCalcPeriodRange(gran, RF_SACN.periods, allDates);
-    if (pRange.from && pRange.to) {
-      RF_SACN.from = pRange.from;
-      RF_SACN.to = pRange.to;
-    }
   }
 
   var sFromEl = document.getElementById('sFrom');
@@ -3827,13 +3876,14 @@ function updateRevSacnPeriodDropdown(isReset) {
   if (sToEl && RF_SACN.to) sToEl.value = RF_SACN.to;
 
   if (pList) {
-    pList.innerHTML = sortedKeys.map(function(k) {
+    pList.innerHTML = res.sortedKeys.map(function(k) {
       var checked = (isAllScope || RF_SACN.periods.indexOf(k) >= 0) ? ' checked' : '';
-      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(periodMap[k]) + '</span></label>';
+      var itemLabel = (res.periodMap[k] && res.periodMap[k].label) ? res.periodMap[k].label : k;
+      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(itemLabel) + '</span></label>';
     }).join('');
   }
 
-  updateRevSacnPeriodLabel(periodMap);
+  updateRevSacnPeriodLabel(res.periodMap);
 }
 
 function updateRevSacnPeriodLabel(periodMap) {
@@ -3852,7 +3902,7 @@ function updateRevSacnPeriodLabel(periodMap) {
   } else if (n === 1) {
     var k = RF_SACN.periods[0];
     if (periodMap && periodMap[k]) {
-      el.textContent = periodMap[k];
+      el.textContent = periodMap[k].label || periodMap[k];
     } else {
       var cb = document.querySelector('#sPeriodList input[value="' + k + '"]');
       el.textContent = cb && cb.parentElement ? cb.parentElement.textContent.trim() : k;
@@ -3873,58 +3923,28 @@ function updateRevPeriodDropdown(isReset) {
   var btnScope4 = document.getElementById('btnRevScope4');
   var btnScopeAll = document.getElementById('btnRevScopeAll');
 
-  var allRows = (REV_RAW && REV_RAW.rows) || [];
+  var allDates = akGetAllDates();
   var gran = RF.gran || 'week';
-  var periodMap = {};
-  var allDates = [];
-
-  allRows.forEach(function(r) {
-    if (!r.ngay) return;
-    allDates.push(r.ngay);
-    if (gran === 'week') {
-      var w = akGetWeekInfo(r.ngay);
-      if (w.key && !periodMap[w.key]) periodMap[w.key] = w.label;
-    } else if (gran === 'quarter') {
-      var q = akGetQuarterInfo(r.ngay);
-      if (q.key && !periodMap[q.key]) periodMap[q.key] = q.label;
-    } else if (gran === 'year') {
-      var y = akGetYearInfo(r.ngay);
-      if (y.key && !periodMap[y.key]) periodMap[y.key] = y.label;
-    } else {
-      var m = akGetMonthInfo(r.ngay);
-      if (m.key && !periodMap[m.key]) periodMap[m.key] = m.label;
-    }
-  });
+  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
 
   if (pLbl) {
-    pLbl.textContent = gran === 'week' ? 'CHỌN TUẦN' : (gran === 'quarter' ? 'CHỌN QUÝ' : (gran === 'year' ? 'CHỌN NĂM' : 'CHỌN THÁNG'));
+    pLbl.textContent = 'CHỌN ' + granWord.toUpperCase();
+  }
+  if (btnScope4) btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+
+  if (isReset && RF.scope !== 'all') {
+    RF.scope = '4';
   }
 
-  var sortedKeys = Object.keys(periodMap).sort().reverse();
-  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
-  if (btnScope4) btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+  var res = akComputeRangeFromPreset(gran, RF.scope, RF.periods, allDates);
+  RF.periods = res.periods;
+  RF.from = res.from;
+  RF.to = res.to;
 
   var isAllScope = (RF.scope === 'all');
   if (btnScope4 && btnScopeAll) {
     btnScope4.classList.toggle('on', !isAllScope && RF.scope === '4');
     btnScopeAll.classList.toggle('on', isAllScope);
-  }
-
-  if (isAllScope) {
-    RF.periods = [];
-    var fullRange = akCalcPeriodRange(gran, [], allDates);
-    if (fullRange.from && fullRange.to) {
-      RF.from = fullRange.from;
-      RF.to = fullRange.to;
-    }
-  } else if (RF.scope === '4' || isReset) {
-    RF.scope = '4';
-    RF.periods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
-    var pRange = akCalcPeriodRange(gran, RF.periods, allDates);
-    if (pRange.from && pRange.to) {
-      RF.from = pRange.from;
-      RF.to = pRange.to;
-    }
   }
 
   var rFromEl = document.getElementById('rFrom');
@@ -3933,13 +3953,14 @@ function updateRevPeriodDropdown(isReset) {
   if (rToEl && RF.to) rToEl.value = RF.to;
 
   if (pList) {
-    pList.innerHTML = sortedKeys.map(function(k) {
+    pList.innerHTML = res.sortedKeys.map(function(k) {
       var checked = (isAllScope || RF.periods.indexOf(k) >= 0) ? ' checked' : '';
-      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(periodMap[k]) + '</span></label>';
+      var itemLabel = (res.periodMap[k] && res.periodMap[k].label) ? res.periodMap[k].label : k;
+      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(itemLabel) + '</span></label>';
     }).join('');
   }
 
-  updateRevPeriodLabel(periodMap);
+  updateRevPeriodLabel(res.periodMap);
 }
 
 function updateRevPeriodLabel(periodMap) {
@@ -3958,7 +3979,7 @@ function updateRevPeriodLabel(periodMap) {
   } else if (n === 1) {
     var k = RF.periods[0];
     if (periodMap && periodMap[k]) {
-      el.textContent = periodMap[k];
+      el.textContent = periodMap[k].label || periodMap[k];
     } else {
       var cb = document.querySelector('#rPeriodList input[value="' + k + '"]');
       el.textContent = cb && cb.parentElement ? cb.parentElement.textContent.trim() : k;
@@ -4004,20 +4025,14 @@ function buildRevSacnFilters(){
 
   updateRevSacnPeriodDropdown(!REV_SACN_INIT);
 
-  var maxSacnDate = (REV && REV.dims && REV.dims.maxBillingDate) || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
-  var defaultSacnFrom = (REV && REV.dims && REV.dims.defaultFrom) || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 30)] : '2026-08-25');
-
-  if (!RF_SACN.from && d.dates.length){
-    RF_SACN.to = maxSacnDate; RF_SACN.from = defaultSacnFrom;
-  }
   var sFromEl = document.getElementById('sFrom');
   var sToEl = document.getElementById('sTo');
-  if (sFromEl) sFromEl.value = RF_SACN.from;
-  if (sToEl) sToEl.value = RF_SACN.to;
+  if (sFromEl && RF_SACN.from) sFromEl.value = RF_SACN.from;
+  if (sToEl && RF_SACN.to) sToEl.value = RF_SACN.to;
   ['sFrom','sTo'].forEach(function(id){
     var el = document.getElementById(id);
     if (!el) return;
-    el.min = '2026-01-01'; el.max = maxSacnDate;
+    el.min = '2020-01-01'; el.max = '2030-12-31';
   });
 
   document.getElementById('sMsList').innerHTML = d.sites.map(function(s){
@@ -4108,21 +4123,14 @@ function buildRevFilters(){
 
   updateRevPeriodDropdown(!REV_INIT);
 
-  var maxDate = d.maxBillingDate || (d.dates.length ? d.dates[d.dates.length-1] : '2026-09-25');
-  var defaultFrom = d.defaultFrom || (d.dates.length ? d.dates[Math.max(0, d.dates.length - 30)] : '2026-08-25');
-
-  // Mặc định: 1 tháng gần nhất kể từ ngày lớn nhất có dữ liệu
-  if (!RF.from && d.dates.length){
-    RF.to = maxDate; RF.from = defaultFrom;
-  }
   var rFromEl = document.getElementById('rFrom');
   var rToEl = document.getElementById('rTo');
-  if (rFromEl) rFromEl.value = RF.from;
-  if (rToEl) rToEl.value = RF.to;
+  if (rFromEl && RF.from) rFromEl.value = RF.from;
+  if (rToEl && RF.to) rToEl.value = RF.to;
   ['rFrom','rTo'].forEach(function(id){
     var el = document.getElementById(id);
     if (!el) return;
-    el.min = '2026-01-01'; el.max = maxDate;
+    el.min = '2020-01-01'; el.max = '2030-12-31';
   });
 
   document.getElementById('rMsList').innerHTML = d.sites.map(function(s){
@@ -6694,8 +6702,9 @@ function bindRevenueFiltersSacn(){
       if (!btn) return;
       granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
       RF_SACN.gran = btn.dataset.v || 'week';
-      updateRevSacnPeriodDropdown(false);
-      reload();
+      if (RF_SACN.scope !== 'all') RF_SACN.scope = '4';
+      updateRevSacnPeriodDropdown(true);
+      loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
     });
   }
 
@@ -6709,7 +6718,7 @@ function bindRevenueFiltersSacn(){
       RF_SACN.scope = scopeVal;
       scopeBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
       updateRevSacnPeriodDropdown(false);
-      reload();
+      loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
     });
   }
 
@@ -6747,7 +6756,8 @@ function bindRevenueFiltersSacn(){
         btnScope4.classList.toggle('on', false);
         btnScopeAll.classList.toggle('on', RF_SACN.scope === 'all');
       }
-      var pRange = akCalcPeriodRange(RF_SACN.gran, RF_SACN.periods, (REV_RAW && REV_RAW.dims && REV_RAW.dims.dates) || []);
+      var allDates = akGetAllDates();
+      var pRange = akCalcPeriodRange(RF_SACN.gran, RF_SACN.periods, allDates);
       if (pRange.from && pRange.to) {
         RF_SACN.from = pRange.from;
         RF_SACN.to = pRange.to;
@@ -6757,7 +6767,7 @@ function bindRevenueFiltersSacn(){
         if (sToEl) sToEl.value = RF_SACN.to;
       }
       updateRevSacnPeriodLabel();
-      reload();
+      loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
     });
   }
   if (pList){
@@ -6776,7 +6786,8 @@ function bindRevenueFiltersSacn(){
         btnScope4.classList.toggle('on', false);
         btnScopeAll.classList.toggle('on', RF_SACN.scope === 'all');
       }
-      var pRange = akCalcPeriodRange(RF_SACN.gran, RF_SACN.periods, (REV_RAW && REV_RAW.dims && REV_RAW.dims.dates) || []);
+      var allDates = akGetAllDates();
+      var pRange = akCalcPeriodRange(RF_SACN.gran, RF_SACN.periods, allDates);
       if (pRange.from && pRange.to) {
         RF_SACN.from = pRange.from;
         RF_SACN.to = pRange.to;
@@ -6786,7 +6797,7 @@ function bindRevenueFiltersSacn(){
         if (sToEl) sToEl.value = RF_SACN.to;
       }
       updateRevSacnPeriodLabel();
-      reload();
+      loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
     });
   }
 
@@ -6796,6 +6807,7 @@ function bindRevenueFiltersSacn(){
     sFromInput.addEventListener('change', function(){
       RF_SACN.from = this.value;
       RF_SACN.scope = 'custom';
+      RF_SACN.periods = [];
       var btnScope4 = document.getElementById('btnSacnScope4');
       var btnScopeAll = document.getElementById('btnSacnScopeAll');
       if (btnScope4) btnScope4.classList.remove('on');
@@ -6804,7 +6816,7 @@ function bindRevenueFiltersSacn(){
       if (pBtnText && RF_SACN.from && RF_SACN.to) {
         pBtnText.textContent = RF_SACN.from + ' → ' + RF_SACN.to;
       }
-      loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
+      loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
     });
   }
   var sToInput = document.getElementById('sTo');
@@ -6812,6 +6824,7 @@ function bindRevenueFiltersSacn(){
     sToInput.addEventListener('change', function(){
       RF_SACN.to = this.value;
       RF_SACN.scope = 'custom';
+      RF_SACN.periods = [];
       var btnScope4 = document.getElementById('btnSacnScope4');
       var btnScopeAll = document.getElementById('btnSacnScopeAll');
       if (btnScope4) btnScope4.classList.remove('on');
@@ -6820,7 +6833,7 @@ function bindRevenueFiltersSacn(){
       if (pBtnText && RF_SACN.from && RF_SACN.to) {
         pBtnText.textContent = RF_SACN.from + ' → ' + RF_SACN.to;
       }
-      loadRevenue({ force: true, from: RF_SACN.from, to: RF_SACN.to });
+      loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
     });
   }
 
@@ -6942,7 +6955,7 @@ function bindRevenueFiltersSacn(){
     }
     RUI_SACN.drillSite = '';
     buildRevSacnFilters();
-    computeAndDrawRevenueSacn();
+    loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: [], force: true });
     toast('Đã đặt lại bộ lọc');
   });
   document.getElementById('sBtnRefresh').addEventListener('click', function(){ refreshAllTabs(true); });
@@ -6960,8 +6973,9 @@ function bindRevenueFilters(){
       if (!btn) return;
       granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
       RF.gran = btn.dataset.v || 'week';
-      updateRevPeriodDropdown(false);
-      reload();
+      if (RF.scope !== 'all') RF.scope = '4';
+      updateRevPeriodDropdown(true);
+      loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
     });
   }
 
@@ -6975,7 +6989,7 @@ function bindRevenueFilters(){
       RF.scope = scopeVal;
       scopeBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
       updateRevPeriodDropdown(false);
-      reload();
+      loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
     });
   }
 
@@ -7013,7 +7027,8 @@ function bindRevenueFilters(){
         btnScope4.classList.toggle('on', false);
         btnScopeAll.classList.toggle('on', RF.scope === 'all');
       }
-      var pRange = akCalcPeriodRange(RF.gran, RF.periods, (REV_RAW && REV_RAW.dims && REV_RAW.dims.dates) || []);
+      var allDates = akGetAllDates();
+      var pRange = akCalcPeriodRange(RF.gran, RF.periods, allDates);
       if (pRange.from && pRange.to) {
         RF.from = pRange.from;
         RF.to = pRange.to;
@@ -7023,7 +7038,7 @@ function bindRevenueFilters(){
         if (rToEl) rToEl.value = RF.to;
       }
       updateRevPeriodLabel();
-      reload();
+      loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
     });
   }
   if (pList){
@@ -7042,7 +7057,8 @@ function bindRevenueFilters(){
         btnScope4.classList.toggle('on', false);
         btnScopeAll.classList.toggle('on', RF.scope === 'all');
       }
-      var pRange = akCalcPeriodRange(RF.gran, RF.periods, (REV_RAW && REV_RAW.dims && REV_RAW.dims.dates) || []);
+      var allDates = akGetAllDates();
+      var pRange = akCalcPeriodRange(RF.gran, RF.periods, allDates);
       if (pRange.from && pRange.to) {
         RF.from = pRange.from;
         RF.to = pRange.to;
@@ -7052,7 +7068,7 @@ function bindRevenueFilters(){
         if (rToEl) rToEl.value = RF.to;
       }
       updateRevPeriodLabel();
-      reload();
+      loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
     });
   }
 
@@ -7062,6 +7078,7 @@ function bindRevenueFilters(){
     rFromInput.addEventListener('change', function(){
       RF.from = this.value;
       RF.scope = 'custom';
+      RF.periods = [];
       var btnScope4 = document.getElementById('btnRevScope4');
       var btnScopeAll = document.getElementById('btnRevScopeAll');
       if (btnScope4) btnScope4.classList.remove('on');
@@ -7070,7 +7087,7 @@ function bindRevenueFilters(){
       if (pBtnText && RF.from && RF.to) {
         pBtnText.textContent = RF.from + ' → ' + RF.to;
       }
-      loadRevenue({ force: true, from: RF.from, to: RF.to });
+      loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites });
     });
   }
   var rToInput = document.getElementById('rTo');
@@ -7078,6 +7095,7 @@ function bindRevenueFilters(){
     rToInput.addEventListener('change', function(){
       RF.to = this.value;
       RF.scope = 'custom';
+      RF.periods = [];
       var btnScope4 = document.getElementById('btnRevScope4');
       var btnScopeAll = document.getElementById('btnRevScopeAll');
       if (btnScope4) btnScope4.classList.remove('on');
@@ -7086,7 +7104,7 @@ function bindRevenueFilters(){
       if (pBtnText && RF.from && RF.to) {
         pBtnText.textContent = RF.from + ' → ' + RF.to;
       }
-      loadRevenue({ force: true, from: RF.from, to: RF.to });
+      loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites });
     });
   }
 
@@ -7218,8 +7236,8 @@ function bindRevenueFilters(){
     // 3) Build lại UI: ngày mặc định 4 tuần gần nhất + bỏ chọn site/kênh/nhóm...
     buildRevFilters();
 
-    // 4) Tính lại & vẽ dashboard theo bộ lọc mặc định
-    computeAndDrawRevenue();
+    // 4) Tải lại dữ liệu & vẽ dashboard theo bộ lọc mặc định
+    loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: [], force: true });
 
     toast('Đã đặt lại bộ lọc');
   });
@@ -7400,75 +7418,34 @@ function est_isExcludedSite(siteName) {
 function updateEstPeriodDropdown(isDefaultInit) {
   var pList = document.getElementById('estPeriodList');
   var pLbl = document.getElementById('estPeriodLabel');
-  if (!REV_EST_RAW) return;
-
-  var allRows = REV_EST_RAW.rows || [];
-  var gran = RF_EST.gran || 'week';
-  var periodMap = {};
-
-  if (gran === 'week') {
-    if (pLbl) pLbl.textContent = 'CHỌN TUẦN';
-    allRows.forEach(function(r) {
-      if (!r.ngay) return;
-      var w = est_getWeekInfo(r.ngay);
-      if (!periodMap[w.key]) periodMap[w.key] = w.label;
-    });
-  } else if (gran === 'quarter') {
-    if (pLbl) pLbl.textContent = 'CHỌN QUÝ';
-    allRows.forEach(function(r) {
-      if (!r.ngay) return;
-      var q = est_getQuarterInfo(r.ngay);
-      if (!periodMap[q.key]) periodMap[q.key] = q.label;
-    });
-  } else if (gran === 'year') {
-    if (pLbl) pLbl.textContent = 'CHỌN NĂM';
-    allRows.forEach(function(r) {
-      if (!r.ngay) return;
-      var y = r.ngay.substring(0, 4);
-      if (!periodMap[y]) periodMap[y] = 'Năm ' + y;
-    });
-  } else {
-    // month
-    if (pLbl) pLbl.textContent = 'CHỌN THÁNG';
-    allRows.forEach(function(r) {
-      var k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
-      if (!k) return;
-      if (!periodMap[k]) periodMap[k] = 'Tháng ' + k.substring(5, 7) + '/' + k.substring(0, 4);
-    });
-  }
-
-  var sortedKeys = Object.keys(periodMap).sort().reverse();
-
-  // Cập nhật label và trạng thái cho nút phạm vi kỳ [ 4 kỳ gần nhất ] [ Tất cả ]
-  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
   var btnScope4 = document.getElementById('btnEstScope4');
   var btnScopeAll = document.getElementById('btnEstScopeAll');
-  if (btnScope4) {
-    btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+
+  var allDates = akGetAllDates();
+  if ((!allDates || !allDates.length) && REV_EST_RAW && REV_EST_RAW.rows) {
+    allDates = REV_EST_RAW.rows.map(function(r){ return r.ngay; }).filter(Boolean).sort();
   }
-  var isAllScope = (RF_EST.scope === 'all');
-  if (btnScope4 && btnScopeAll) {
-    btnScope4.classList.toggle('on', !isAllScope);
-    btnScopeAll.classList.toggle('on', isAllScope);
+  var gran = RF_EST.gran || 'week';
+  var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
+
+  if (pLbl) {
+    pLbl.textContent = 'CHỌN ' + granWord.toUpperCase();
+  }
+  if (btnScope4) btnScope4.textContent = '4 ' + granWord + ' gần nhất';
+
+  if (isDefaultInit && RF_EST.scope !== 'all') {
+    RF_EST.scope = '4';
   }
 
-  if (isAllScope) {
-    RF_EST.periods = [];
-    var allDates = allRows.map(function(r){ return r.ngay; }).filter(Boolean).sort();
-    var fullRange = akCalcPeriodRange(gran, [], allDates);
-    if (fullRange.from && fullRange.to) {
-      RF_EST.from = fullRange.from;
-      RF_EST.to = fullRange.to;
-    }
-  } else if (RF_EST.scope === '4' || isDefaultInit) {
-    RF_EST.scope = '4';
-    RF_EST.periods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
-    var allDates4 = allRows.map(function(r){ return r.ngay; }).filter(Boolean).sort();
-    var pRange = akCalcPeriodRange(gran, RF_EST.periods, allDates4);
-    if (pRange.from && pRange.to) {
-      RF_EST.from = pRange.from;
-      RF_EST.to = pRange.to;
-    }
+  var res = akComputeRangeFromPreset(gran, RF_EST.scope, RF_EST.periods, allDates);
+  RF_EST.periods = res.periods;
+  RF_EST.from = res.from;
+  RF_EST.to = res.to;
+
+  var isAllScope = (RF_EST.scope === 'all');
+  if (btnScope4 && btnScopeAll) {
+    btnScope4.classList.toggle('on', !isAllScope && RF_EST.scope === '4');
+    btnScopeAll.classList.toggle('on', isAllScope);
   }
 
   var estFromEl = document.getElementById('estFrom');
@@ -7477,13 +7454,14 @@ function updateEstPeriodDropdown(isDefaultInit) {
   if (estToEl && RF_EST.to) estToEl.value = RF_EST.to;
 
   if (pList) {
-    pList.innerHTML = sortedKeys.map(function(k) {
+    pList.innerHTML = res.sortedKeys.map(function(k) {
       var checked = (isAllScope || RF_EST.periods.indexOf(k) >= 0) ? ' checked' : '';
-      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(periodMap[k]) + '</span></label>';
+      var itemLabel = (res.periodMap[k] && res.periodMap[k].label) ? res.periodMap[k].label : k;
+      return '<label><input type="checkbox" value="' + esc(k) + '"' + checked + '><span class="ms-opt-text">' + esc(itemLabel) + '</span></label>';
     }).join('');
   }
 
-  updateEstPeriodLabel(periodMap);
+  updateEstPeriodLabel(res.periodMap);
 }
 
 function updateEstPeriodLabel(periodMap) {

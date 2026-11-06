@@ -6,6 +6,14 @@
 // - Doanh thu ước tính
 // =========================================================================
 
+export function akFormatLocalDate(d) {
+  if (!d || isNaN(d.getTime())) return '';
+  const y = d.getFullYear();
+  const m = ('0' + (d.getMonth() + 1)).slice(-2);
+  const day = ('0' + d.getDate()).slice(-2);
+  return y + '-' + m + '-' + day;
+}
+
 export function akGetWeekInfo(dateStr) {
   if (!dateStr) return { key: '', label: '', year: '', startDate: '', endDate: '' };
   const d = new Date(dateStr + 'T00:00:00');
@@ -25,8 +33,8 @@ export function akGetWeekInfo(dateStr) {
     label: 'Tuần ' + weekNum + ' (' + mStr + ' - ' + sStr + ')',
     month: y + '-' + m,
     year: String(y),
-    startDate: monday.toISOString().slice(0, 10),
-    endDate: sunday.toISOString().slice(0, 10)
+    startDate: akFormatLocalDate(monday),
+    endDate: akFormatLocalDate(sunday)
   };
 }
 
@@ -141,8 +149,8 @@ export function akCalcPeriodRange(gran, periods, allDates, periodMap) {
         const monday = new Date(approx.setDate(diff));
         const sunday = new Date(monday);
         sunday.setDate(monday.getDate() + 6);
-        s = monday.toISOString().slice(0, 10);
-        e = sunday.toISOString().slice(0, 10);
+        s = akFormatLocalDate(monday);
+        e = akFormatLocalDate(sunday);
       }
     } else if (gran === 'quarter') {
       const partsQ = k.split('-Q');
@@ -175,4 +183,41 @@ export function akCalcPeriodRange(gran, periods, allDates, periodMap) {
   });
 
   return { from: minFrom, to: maxTo };
+}
+
+/**
+ * Tính fromDate, toDate và danh sách kỳ từ bộ preset (Tuần / Tháng / Quý / Năm, Phạm vi 4 kỳ / Tất cả / Custom)
+ */
+export function akComputeRangeFromPreset(gran, scope, periods, allDates, periodMap) {
+  gran = gran || 'week';
+  scope = scope || '4';
+  periods = periods || [];
+  allDates = (allDates || []).slice().sort();
+
+  if (!periodMap || !Object.keys(periodMap).length) {
+    const built = akBuildPeriodMap(gran, allDates);
+    periodMap = built.periodMap;
+  }
+
+  const sortedKeys = Object.keys(periodMap).sort().reverse();
+
+  let activePeriods = [];
+  if (scope === 'all') {
+    activePeriods = [];
+  } else if (scope === '4') {
+    activePeriods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
+  } else if (periods && periods.length) {
+    activePeriods = periods.slice();
+  } else {
+    activePeriods = sortedKeys.slice(0, Math.min(4, sortedKeys.length));
+  }
+
+  const range = akCalcPeriodRange(gran, activePeriods, allDates, periodMap);
+  return {
+    from: range.from,
+    to: range.to,
+    periods: activePeriods,
+    periodMap: periodMap,
+    sortedKeys: sortedKeys
+  };
 }

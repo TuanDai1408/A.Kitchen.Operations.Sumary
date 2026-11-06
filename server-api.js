@@ -519,11 +519,24 @@ export async function getRevenueRawData(filtersParam) {
     reqTo = reqTo || maxDateStr;
   }
 
+  // Mở rộng queryFrom để chứa cả kỳ trước (phục vụ tính KPI so sánh kpiPrev / dispPrev)
+  let queryFrom = reqFrom;
+  if (reqFrom && reqTo) {
+    try {
+      const d1 = new Date(reqFrom + "T00:00:00");
+      const d2 = new Date(reqTo + "T00:00:00");
+      const days = Math.round((d2 - d1) / 86400000) + 1;
+      const pTo = new Date(d1.getTime() - 86400000);
+      const pFrom = new Date(pTo.getTime() - (days - 1) * 86400000);
+      queryFrom = pFrom.toISOString().slice(0, 10);
+    } catch {}
+  }
+
   const [rawTx, opexRes, reportRes, rawMb51, plRows] = await Promise.all([
-    fetchAllRows("transactions", "*", "billing_date", reqFrom || null, reqTo || null, "billing_date"),
+    fetchAllRows("transactions", "*", "billing_date", queryFrom || null, reqTo || null, "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
-    fetchMb51GoodsIssue(reqFrom || null, reqTo || null, filters.site || filters.sites || null),
+    fetchMb51GoodsIssue(queryFrom || null, reqTo || null, filters.site || filters.sites || null),
     fetchAllRows("kehoach_pl_thang", "*", "ky")
   ]);
 
@@ -552,7 +565,7 @@ export async function getRevenueRawData(filtersParam) {
   // Nạp toàn bộ danh mục ngày có dữ liệu bán hàng để dropdown kỳ (Tuần/Tháng/Quý/Năm) luôn có đủ dữ liệu
   if (!global._cachedAllBillingDates || Date.now() - (global._cachedAllBillingDatesAt || 0) > 300000) {
     try {
-      const { data: allDatesRows } = await supabase.from("transactions").select("billing_date");
+      const allDatesRows = await fetchAllRows("transactions", "billing_date", "billing_date");
       const dSet = new Set();
       (allDatesRows || []).forEach(r => { if (r.billing_date) dSet.add(r.billing_date.slice(0, 10)); });
       global._cachedAllBillingDates = Array.from(dSet).sort();
