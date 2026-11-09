@@ -417,12 +417,16 @@ export async function getDataVersion() {
   return { version: String(data?.version || "1.0.0"), updatedAt: data?.updated_at || now, serverTime: now };
 }
 
+export const TX_SELECT_COLS = "billing_date,ten_cua_hang,ma_cua_hang,ten_kh,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,nv_kinh_doanh,ten_sp,so_hoa_don,so_billing_goc,ly_do_tra_hang,vung_mien,loai_cua_hang";
+
 export async function getDashboardData() {
-  const [versionRes, rawRows] = await Promise.all([
+  const REPORT_COLS = "id,dau_thoi_gian,ten_site,ngay_bao_cao,nguoi_bao_cao,suat_sang,suat_trua,suat_chieu,suat_nhan_vien,suat_huy,tong_suat,gio_giao,ly_do_tre,tinh_trang_nvl,su_co_thiet_bi,so_that_thoat,nguyen_nhan_that_thoat,ns_co_mat,ns_vang,ns_tang_ca,su_co_nhan_su,so_khieu_nai,so_khen_ngoi,phan_loai_kn,muc_do_nghiem_trong,chi_tiet_y_kien,co_chi_phi_ngoai,so_tien_ly_do_chi_phi,hinh_anh,de_xuat,suat_luu_mau,suat_giao_vien,ten_khach_hang";
+  const [versionRes, reportRes] = await Promise.all([
     supabase.from("data_version").select("version, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
-    fetchAllRows("report", "*", "ngay_bao_cao")
+    supabase.from("report").select(REPORT_COLS).order("ngay_bao_cao", { ascending: true }).limit(5000)
   ]);
 
+  const rawRows = reportRes.data || [];
   const rows = rawRows.map(r => mapReportRow(r, DEFAULT_NGUONG));
   const siteSet = new Set(), nguoiSet = new Set(), khachSet = new Set(), dateSet = new Set();
   rows.forEach(r => {
@@ -486,6 +490,561 @@ async function fetchMb51GoodsIssue(fromDate = null, toDate = null, siteFilter = 
   return data || [];
 }
 
+export async function getRevenueSummary(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  // 1. Xác định ngày lớn nhất có dữ liệu
+  let maxDateStr = global._cachedMaxBillingDate;
+  if (!maxDateStr || Date.now() - (global._cachedMaxBillingDateAt || 0) > 300000) {
+    const { data: latestRow } = await supabase
+      .from("transactions")
+      .select("billing_date")
+      .order("billing_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    maxDateStr = latestRow?.billing_date || "2026-09-25";
+    global._cachedMaxBillingDate = maxDateStr;
+    global._cachedMaxBillingDateAt = Date.now();
+  }
+
+  const maxD = new Date(maxDateStr);
+  const oneMonthAgo = new Date(maxD);
+  oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+  const defaultFrom = oneMonthAgo.toISOString().slice(0, 10);
+
+  let reqFrom = filters.from || "";
+  let reqTo = filters.to || "";
+  if (!reqFrom && !filters.all) {
+    reqFrom = defaultFrom;
+    reqTo = reqTo || maxDateStr;
+  }
+
+  let queryFrom = reqFrom;
+  let prFrom = "", prTo = "";
+  if (reqFrom && reqTo) {
+    try {
+      const d1 = new Date(reqFrom + "T00:00:00");
+      const d2 = new Date(reqTo + "T00:00:00");
+      const days = Math.round((d2 - d1) / 86400000) + 1;
+      const pTo = new Date(d1.getTime() - 86400000);
+      const pFrom = new Date(pTo.getTime() - (days - 1) * 86400000);
+      prFrom = pFrom.toISOString().slice(0, 10);
+      prTo = pTo.toISOString().slice(0, 10);
+      queryFrom = prFrom;
+    } catch {}
+  }
+
+  const isSacn = Boolean(filters.sacn || filters.tab === "sacn");
+  const siteFilter = filters.site || filters.sites || null;
+
+  const [rawTx, opexRes, reportRes, rawMb51, plRows] = await Promise.all([
+    fetchAllRows("transactions", TX_SELECT_COLS, "billing_date", queryFrom || null, reqTo || null, "billing_date"),
+    supabase.from("opex_input").select("*"),
+    supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
+    fetchMb51GoodsIssue(queryFrom || null, reqTo || null, siteFilter),
+    fetchAllRows("kehoach_pl_thang", "*", "ky")
+  ]);
+
+  let txList = rawTx;
+  if (isSacn) {
+    const SACN_EXCLUDE = new Set(["K502", "K003", "K800", "D007"]);
+    txList = rawTx.filter(r => {
+      if (SACN_EXCLUDE.has(r.ma_cua_hang)) return false;
+      const s = r.ten_cua_hang || "";
+      if (/megafar/i.test(s)) return false;
+      return true;
+    });
+  }
+  if (siteFilter) {
+    const sArr = Array.isArray(siteFilter) ? siteFilter : [siteFilter];
+    if (sArr.length > 0) {
+      const sSet = new Set(sArr);
+      txList = txList.filter(r => sSet.has(r.ten_cua_hang) || sSet.has(r.ma_cua_hang));
+    }
+  }
+
+  const curRows = [];
+  const prevRows = [];
+  txList.forEach(r => {
+    const d = formatDate(r.billing_date);
+    if (reqFrom && reqTo) {
+      if (d >= reqFrom && d <= reqTo) curRows.push(r);
+      else if (prFrom && prTo && d >= prFrom && d <= prTo) prevRows.push(r);
+    } else {
+      curRows.push(r);
+    }
+  });
+
+  function agg(rows) {
+    let netRevenue = 0, foodCost = 0, soLuong = 0, qtyPHA = 0, qtyKG = 0, qtyCHY = 0;
+    const invSet = new Set();
+    const daySet = new Set();
+    const getNet = r => Number(r.thanh_tien !== undefined && r.thanh_tien !== null ? r.thanh_tien : (Number(r.thanh_tien_truoc_thue || 0) - Number(r.ck_truoc_thue || 0)));
+
+    rows.forEach(r => {
+      const tt = getNet(r);
+      const gv = Number(r.gia_von || 0);
+      const q = Number(r.so_luong || 0);
+      const dvt = String(r.dvt || "").toUpperCase().trim();
+      const d = formatDate(r.billing_date);
+      netRevenue += tt;
+      foodCost += gv;
+      soLuong += q;
+      if (dvt === "PHA") qtyPHA += q;
+      else if (dvt === "KG") qtyKG += q;
+      else if (dvt === "CHY") qtyCHY += q;
+      if (r.so_hoa_don) invSet.add(r.so_hoa_don);
+      if (d) daySet.add(d);
+    });
+    const grossProfit = netRevenue - foodCost;
+    const foodCostPct = netRevenue > 0 ? (foodCost / netRevenue) * 100 : 0;
+    const grossMarginPct = netRevenue > 0 ? (grossProfit / netRevenue) * 100 : 0;
+    const asp = qtyPHA > 0 ? netRevenue / qtyPHA : 0;
+    const aspKG = qtyKG > 0 ? netRevenue / qtyKG : 0;
+    const aspCHY = qtyCHY > 0 ? netRevenue / qtyCHY : 0;
+    const operatingDays = daySet.size;
+    const netPerDay = operatingDays > 0 ? netRevenue / operatingDays : 0;
+
+    return {
+      netRevenue, foodCost, grossProfit, foodCostPct, grossMarginPct, soLuong,
+      soDonHang: invSet.size, invoiceCount: invSet.size,
+      qtyPHA, qtyKG, qtyCHY, asp, aspKG, aspCHY, operatingDays, netPerDay
+    };
+  }
+
+  const kpiCur = agg(curRows);
+  const kpiPrev = agg(prevRows);
+
+  let totalNS = 0;
+  (plRows || []).forEach(p => {
+    if (p.hang_muc === "ChiPhiNhanSu") totalNS += Number(p.gia_tri || 0);
+  });
+  const daysSpan = reqFrom && reqTo ? Math.max(1, Math.round((new Date(reqTo) - new Date(reqFrom)) / 86400000) + 1) : 30;
+  const scaledNS = Math.round(totalNS * (daysSpan / 30));
+  kpiCur.am1 = kpiCur.grossProfit;
+  kpiCur.ns = scaledNS;
+  kpiCur.hasNS = scaledNS > 0;
+  kpiCur.am2 = kpiCur.am1 - scaledNS;
+  kpiCur.am2Pct = kpiCur.netRevenue > 0 ? (kpiCur.am2 / kpiCur.netRevenue) * 100 : 0;
+
+  kpiPrev.am1 = kpiPrev.grossProfit;
+  kpiPrev.ns = scaledNS;
+  kpiPrev.hasNS = scaledNS > 0;
+  kpiPrev.am2 = kpiPrev.am1 - scaledNS;
+  kpiPrev.am2Pct = kpiPrev.netRevenue > 0 ? (kpiPrev.am2 / kpiPrev.netRevenue) * 100 : 0;
+
+  let suatHuy = 0, tongSuat = 0;
+  (reportRes.data || []).forEach(h => {
+    const d = formatDate(h.ngay_bao_cao);
+    if (!reqFrom || !reqTo || (d >= reqFrom && d <= reqTo)) {
+      suatHuy += Number(h.suat_huy || 0);
+      tongSuat += Number(h.tong_suat || 0);
+    }
+  });
+  const huyPct = tongSuat > 0 ? (suatHuy / tongSuat) * 100 : 0;
+  kpiCur.huyQtyPct = huyPct;
+  kpiCur.huyReportPct = huyPct;
+  kpiCur.huySuatHuy = suatHuy;
+  kpiCur.huyTongSuat = tongSuat;
+  kpiCur.huyHasReport = tongSuat > 0;
+
+  const getNet = r => Number(r.thanh_tien !== undefined && r.thanh_tien !== null ? r.thanh_tien : (Number(r.thanh_tien_truoc_thue || 0) - Number(r.ck_truoc_thue || 0)));
+
+  const dayMap = {};
+  curRows.forEach(r => {
+    const d = formatDate(r.billing_date);
+    if (!dayMap[d]) dayMap[d] = { key: d, date: d, netRevenue: 0, foodCost: 0, soLuong: 0 };
+    dayMap[d].netRevenue += getNet(r);
+    dayMap[d].foodCost += Number(r.gia_von || 0);
+    dayMap[d].soLuong += Number(r.so_luong || 0);
+  });
+  const byDay = Object.values(dayMap).sort((a, b) => a.date.localeCompare(b.date)).map(d => ({
+    ...d,
+    grossProfit: d.netRevenue - d.foodCost,
+    foodCostPct: d.netRevenue > 0 ? (d.foodCost / d.netRevenue) * 100 : 0,
+    am1: d.netRevenue - d.foodCost,
+    am2: d.netRevenue - d.foodCost - (scaledNS / Math.max(1, Object.keys(dayMap).length))
+  }));
+
+  const siteMap = {};
+  curRows.forEach(r => {
+    const s = r.ten_cua_hang || "Chưa rõ";
+    if (!siteMap[s]) siteMap[s] = { key: s, site: s, maSite: r.ma_cua_hang || "", netRevenue: 0, foodCost: 0, soLuong: 0 };
+    siteMap[s].netRevenue += getNet(r);
+    siteMap[s].foodCost += Number(r.gia_von || 0);
+    siteMap[s].soLuong += Number(r.so_luong || 0);
+  });
+
+  // Hủy từ Report theo site
+  const siteHuyMap = {};
+  (reportRes.data || []).forEach(h => {
+    const s = h.ten_site || "";
+    const d = formatDate(h.ngay_bao_cao);
+    if (!reqFrom || !reqTo || (d >= reqFrom && d <= reqTo)) {
+      if (!siteHuyMap[s]) siteHuyMap[s] = { suatHuy: 0, tongSuat: 0 };
+      siteHuyMap[s].suatHuy += Number(h.suat_huy || 0);
+      siteHuyMap[s].tongSuat += Number(h.tong_suat || 0);
+    }
+  });
+
+  const normSite = str => String(str || "").toLowerCase().replace(/\s+/g, " ").trim();
+  const matchHuyForSite = siteName => {
+    if (siteHuyMap[siteName]) return siteHuyMap[siteName];
+    const target = normSite(siteName);
+    for (const key of Object.keys(siteHuyMap)) {
+      const k = normSite(key);
+      if (k === target || target.includes(k) || k.includes(target)) {
+        return siteHuyMap[key];
+      }
+    }
+    return null;
+  };
+
+  const bySite = Object.values(siteMap).sort((a, b) => b.netRevenue - a.netRevenue).map(s => {
+    const hInfo = matchHuyForSite(s.site);
+    const sh = (hInfo && hInfo.suatHuy) || 0;
+    const ts = (hInfo && hInfo.tongSuat) || 0;
+    const hPct = ts > 0 ? (sh / ts) * 100 : null;
+    return {
+      ...s,
+      grossProfit: s.netRevenue - s.foodCost,
+      foodCostPct: s.netRevenue > 0 ? (s.foodCost / s.netRevenue) * 100 : 0,
+      grossMarginPct: s.netRevenue > 0 ? ((s.netRevenue - s.foodCost) / s.netRevenue) * 100 : 0,
+      am1: s.netRevenue - s.foodCost,
+      am2: s.netRevenue - s.foodCost,
+      huyReportPct: hPct,
+      huyQtyPct: hPct,
+      huySuatHuy: sh,
+      huyTongSuat: ts
+    };
+  });
+
+  const chMap = {};
+  curRows.forEach(r => {
+    const c = r.ten_kenh_ban_hang || r.kenh_ban_hang || "(Không tên kênh)";
+    if (!chMap[c]) chMap[c] = { key: c, channel: c, netRevenue: 0, foodCost: 0, soLuong: 0 };
+    chMap[c].netRevenue += getNet(r);
+    chMap[c].foodCost += Number(r.gia_von || 0);
+    chMap[c].soLuong += Number(r.so_luong || 0);
+  });
+  const byChannel = Object.values(chMap).sort((a, b) => b.netRevenue - a.netRevenue).map(c => ({
+    ...c,
+    foodCostPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0,
+    pct: kpiCur.netRevenue > 0 ? (c.netRevenue / kpiCur.netRevenue) * 100 : 0
+  }));
+
+  const grMap = {};
+  curRows.forEach(r => {
+    const g = r.nhom_sp || "(Chưa phân nhóm)";
+    if (!grMap[g]) grMap[g] = { key: g, group: g, nhomSP: g, netRevenue: 0, foodCost: 0, soLuong: 0 };
+    grMap[g].netRevenue += getNet(r);
+    grMap[g].foodCost += Number(r.gia_von || 0);
+    grMap[g].soLuong += Number(r.so_luong || 0);
+  });
+  const byProductGroup = Object.values(grMap).sort((a, b) => b.netRevenue - a.netRevenue).map(g => ({
+    ...g,
+    foodCostPct: g.netRevenue > 0 ? (g.foodCost / g.netRevenue) * 100 : 0,
+    pct: kpiCur.netRevenue > 0 ? (g.netRevenue / kpiCur.netRevenue) * 100 : 0
+  }));
+
+  // 1. byCustomer / byKhachHang
+  const khMap = {};
+  curRows.forEach(r => {
+    const kh = r.ten_kh || r.ten_khach_hang || "(Không tên KH)";
+    if (!khMap[kh]) khMap[kh] = { key: kh, customer: kh, ten_kh: kh, ma_kh: r.ma_kh || "", netRevenue: 0, netRev: 0, foodCost: 0, cogs: 0, salesQty: 0, qty: 0 };
+    const net = getNet(r);
+    const fc = Number(r.gia_von || 0);
+    const sl = Number(r.so_luong || 0);
+    khMap[kh].netRevenue += net;
+    khMap[kh].netRev += net;
+    khMap[kh].foodCost += fc;
+    khMap[kh].cogs += fc;
+    khMap[kh].salesQty += sl;
+    khMap[kh].qty += sl;
+  });
+  const byCustomer = Object.values(khMap).sort((a, b) => b.netRevenue - a.netRevenue).map(c => ({
+    ...c,
+    grossProfit: c.netRevenue - c.foodCost,
+    foodCostPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0,
+    fcPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0
+  })).slice(0, 50);
+
+  // 2. topProductsByRev & topProductsByFc
+  const prodMap = {};
+  curRows.forEach(r => {
+    const p = r.ten_sp || "Sản phẩm";
+    if (!prodMap[p]) prodMap[p] = { key: p, name: p, ma_sp: r.ma_sp || "", ten_sp: p, group: r.nhom_sp || "", netRevenue: 0, netRev: 0, foodCost: 0, cogs: 0, salesQty: 0, qty: 0, dvt: r.dvt || "" };
+    const net = getNet(r);
+    const fc = Number(r.gia_von || 0);
+    const sl = Number(r.so_luong || 0);
+    prodMap[p].netRevenue += net;
+    prodMap[p].netRev += net;
+    prodMap[p].foodCost += fc;
+    prodMap[p].cogs += fc;
+    prodMap[p].salesQty += sl;
+    prodMap[p].qty += sl;
+  });
+  const prods = Object.values(prodMap).map(p => ({
+    ...p,
+    grossProfit: p.netRevenue - p.foodCost,
+    foodCostPct: p.netRevenue > 0 ? (p.foodCost / p.netRevenue) * 100 : 0,
+    fcPct: p.netRevenue > 0 ? (p.foodCost / p.netRevenue) * 100 : 0
+  }));
+  const topProductsByRev = prods.slice().sort((a, b) => b.netRevenue - a.netRevenue).slice(0, 20);
+  const topProductsByFc = prods.filter(p => p.netRevenue >= 100000).sort((a, b) => b.foodCostPct - a.foodCostPct).slice(0, 20);
+
+  // 3. discardNvlBySite & disposal (MB51 Goods Issue)
+  const dispSiteMap = {};
+  const dispDateMap = {};
+  let totalDispValue = 0, totalDispQtyKg = 0;
+  (rawMb51 || []).forEach(m => {
+    const s = m.site_name || m.site || "Chưa rõ";
+    const d = formatDate(m.posting_date);
+    const q = Math.abs(Number(m.quantity || m.qty || 0));
+    const v = Math.abs(Number(m.amount_lc || m.ext_amount_lc || 0));
+    totalDispQtyKg += q;
+    totalDispValue += v;
+
+    if (!dispSiteMap[s]) dispSiteMap[s] = { key: s, site: s, siteName: s, qtyKg: 0, value: 0, pctOfRev: 0, dispQtyKg: 0, dispValue: 0, dispPctRev: 0 };
+    dispSiteMap[s].qtyKg += q;
+    dispSiteMap[s].value += v;
+    dispSiteMap[s].dispQtyKg += q;
+    dispSiteMap[s].dispValue += v;
+
+    if (d) {
+      if (!dispDateMap[d]) dispDateMap[d] = { date: d, ngay: d, qtyKg: 0, value: 0 };
+      dispDateMap[d].qtyKg += q;
+      dispDateMap[d].value += v;
+    }
+  });
+  const discardNvlBySite = Object.values(dispSiteMap).map(s => {
+    const sRev = (siteMap[s.site] && siteMap[s.site].netRevenue) || 0;
+    const pct = sRev > 0 ? (s.value / sRev) * 100 : 0;
+    return {
+      ...s,
+      pctOfRev: pct,
+      dispPctRev: pct
+    };
+  }).sort((a, b) => b.value - a.value);
+
+  const disposal = {
+    qtyKg: totalDispQtyKg,
+    value: totalDispValue,
+    pctRev: kpiCur.netRevenue > 0 ? (totalDispValue / kpiCur.netRevenue) * 100 : 0,
+    bySite: dispSiteMap,
+    byDate: dispDateMap,
+    discardNvlBySite
+  };
+
+  // 4. discardByDay & huyChiTiet & huyRows (Suất hủy theo ngày từ Report)
+  const dayHuyMap = {};
+  const huyRows = [];
+  (reportRes.data || []).forEach(h => {
+    const d = formatDate(h.ngay_bao_cao);
+    if (!reqFrom || !reqTo || (d >= reqFrom && d <= reqTo)) {
+      const sh = Number(h.suat_huy || 0);
+      const ts = Number(h.tong_suat || 0);
+      const site = h.ten_site || "";
+      const row = {
+        date: d,
+        ngay: d,
+        site,
+        tenSite: site,
+        ten_site: site,
+        suatHuy: sh,
+        tongSuat: ts,
+        pct: ts > 0 ? (sh / ts) * 100 : 0,
+        huyPct: ts > 0 ? (sh / ts) * 100 : 0,
+        nguoiBaoCao: h.nguoi_bao_cao || ""
+      };
+      huyRows.push(row);
+
+      if (!dayHuyMap[d]) dayHuyMap[d] = { date: d, ngay: d, suatHuy: 0, tongSuat: 0, nguoiBaoCao: h.nguoi_bao_cao || "" };
+      dayHuyMap[d].suatHuy += sh;
+      dayHuyMap[d].tongSuat += ts;
+    }
+  });
+  const discardByDay = Object.values(dayHuyMap).map(d => ({
+    ...d,
+    pct: d.tongSuat > 0 ? (d.suatHuy / d.tongSuat) * 100 : 0,
+    huyPct: d.tongSuat > 0 ? (d.suatHuy / d.tongSuat) * 100 : 0
+  })).sort((a, b) => b.date.localeCompare(a.date));
+
+  // 5. siteDetail với byKhachHang, topSanPham, topFoodCost, huyChiTiet
+  const siteDetail = {};
+  bySite.forEach(s => {
+    const sRows = curRows.filter(r => (r.ten_cua_hang || "Chưa rõ") === s.site);
+    const sProds = {};
+    const sCusts = {};
+    sRows.forEach(r => {
+      const p = r.ten_sp || "SP";
+      if (!sProds[p]) sProds[p] = { key: p, name: p, ten_sp: p, netRevenue: 0, foodCost: 0, soLuong: 0, salesQty: 0 };
+      const net = getNet(r);
+      const fc = Number(r.gia_von || 0);
+      const sl = Number(r.so_luong || 0);
+      sProds[p].netRevenue += net;
+      sProds[p].foodCost += fc;
+      sProds[p].soLuong += sl;
+      sProds[p].salesQty += sl;
+
+      const c = r.ten_kh || r.ten_khach_hang || "(Không tên KH)";
+      if (!sCusts[c]) sCusts[c] = { key: c, customer: c, ten_kh: c, netRevenue: 0, foodCost: 0, grossProfit: 0, cogs: 0, foodCostPct: 0 };
+      sCusts[c].netRevenue += net;
+      sCusts[c].foodCost += fc;
+      sCusts[c].cogs += fc;
+    });
+    const sProdList = Object.values(sProds).map(p => ({
+      ...p,
+      grossProfit: p.netRevenue - p.foodCost,
+      foodCostPct: p.netRevenue > 0 ? (p.foodCost / p.netRevenue) * 100 : 0
+    }));
+    const sCustList = Object.values(sCusts).map(c => ({
+      ...c,
+      grossProfit: c.netRevenue - c.foodCost,
+      foodCostPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0
+    })).sort((a, b) => b.netRevenue - a.netRevenue);
+
+    const sHuyList = huyRows.filter(h => h.site === s.site).sort((a, b) => b.ngay.localeCompare(a.ngay));
+
+    // gán mb51 disposal cho site s
+    const d0 = dispSiteMap[s.site];
+    if (d0) {
+      s.dispQtyKg = d0.qtyKg;
+      s.dispValue = d0.value;
+      s.dispPctRev = d0.pctOfRev;
+    } else {
+      s.dispQtyKg = 0; s.dispValue = 0; s.dispPctRev = 0;
+    }
+
+    siteDetail[s.site] = {
+      kpi: s,
+      byKhachHang: sCustList,
+      byCustomer: sCustList,
+      topSanPham: sProdList.slice().sort((a, b) => b.netRevenue - a.netRevenue).slice(0, 20),
+      topFoodCost: sProdList.filter(p => p.netRevenue >= 100000).sort((a, b) => b.foodCostPct - a.foodCostPct).slice(0, 15),
+      huyChiTiet: sHuyList,
+      discardByDay: sHuyList
+    };
+  });
+
+  const siteSet = new Set(), kenhSet = new Set(), nhomSet = new Set(), nvkdSet = new Set(), khSet = new Set(), dateSet = new Set();
+  const vungSet = new Set(), loaiSet = new Set();
+  txList.forEach(r => {
+    if (r.ten_cua_hang) siteSet.add(r.ten_cua_hang);
+    const kName = r.ten_kenh_ban_hang || r.kenh_ban_hang;
+    if (kName) kenhSet.add(kName);
+    if (r.nhom_sp) nhomSet.add(r.nhom_sp);
+    if (r.nv_kinh_doanh) nvkdSet.add(r.nv_kinh_doanh);
+    if (r.ten_kh || r.ten_khach_hang) khSet.add(r.ten_kh || r.ten_khach_hang);
+    if (r.billing_date) dateSet.add(formatDate(r.billing_date));
+    if (r.vung_mien) vungSet.add(r.vung_mien);
+    if (r.loai_cua_hang) loaiSet.add(r.loai_cua_hang);
+  });
+  const viSort = (a, b) => a.localeCompare(b, "vi");
+  const dims = {
+    sites: Array.from(siteSet).sort(viSort),
+    kenh: Array.from(kenhSet).sort(viSort),
+    nhomSP: Array.from(nhomSet).sort(viSort),
+    nvkd: Array.from(nvkdSet).sort(viSort),
+    khachHang: Array.from(khSet).sort(viSort),
+    dates: Array.from(dateSet).sort(),
+    allDates: Array.from(dateSet).sort(),
+    vungMien: Array.from(vungSet).sort(viSort),
+    loaiCuaHang: Array.from(loaiSet).sort(viSort),
+    maxBillingDate: maxDateStr,
+    defaultFrom: defaultFrom,
+    loadedFrom: reqFrom || defaultFrom,
+    loadedTo: reqTo || maxDateStr
+  };
+
+  const aggRowsMap = new Map();
+  curRows.forEach(r => {
+    const k = `${r.billing_date}|${r.ten_cua_hang}|${r.nhom_sp}|${r.ten_kenh_ban_hang || r.kenh_ban_hang}|${r.dvt || ""}`;
+    let it = aggRowsMap.get(k);
+    if (!it) {
+      it = {
+        id: r.id,
+        ngay: formatDate(r.billing_date),
+        billing_date: formatDate(r.billing_date),
+        site: r.ten_cua_hang || "",
+        ten_cua_hang: r.ten_cua_hang || "",
+        maSite: r.ma_cua_hang || "",
+        ma_cua_hang: r.ma_cua_hang || "",
+        nhomSP: r.nhom_sp || "",
+        nhom_sp: r.nhom_sp || "",
+        tenKenhBanHang: r.ten_kenh_ban_hang || r.kenh_ban_hang || "",
+        kenhBanHang: r.kenh_ban_hang || "",
+        vungMien: r.vung_mien || "",
+        loaiCuaHang: r.loai_cua_hang || "",
+        dvt: r.dvt || "",
+        soLuong: 0,
+        so_luong: 0,
+        thanhTien: 0,
+        thanh_tien: 0,
+        netRevenue: 0,
+        foodCost: 0,
+        giaVon: 0,
+        gia_von: 0,
+        isReturn: false,
+        is_return: false
+      };
+      aggRowsMap.set(k, it);
+    }
+    const net = getNet(r);
+    const fc = Number(r.gia_von || 0);
+    const sl = Number(r.so_luong || 0);
+    it.soLuong += sl;
+    it.so_luong += sl;
+    it.thanhTien += net;
+    it.thanh_tien += net;
+    it.netRevenue += net;
+    it.foodCost += fc;
+    it.giaVon += fc;
+    it.gia_von += fc;
+  });
+  const summaryRows = Array.from(aggRowsMap.values());
+
+  return {
+    ok: true,
+    isSummary: true,
+    rows: summaryRows,
+    kpis: kpiCur,
+    kpi: kpiCur,
+    kpiPrev,
+    byDay,
+    byDate: byDay,
+    bySite,
+    byChannel,
+    byKenh: byChannel,
+    byProductGroup,
+    byNhomSP: byProductGroup,
+    byCustomer,
+    byKhachHang: byCustomer,
+    topProductsByRev,
+    topProductsByFc,
+    topSanPham: topProductsByRev,
+    topFoodCost: topProductsByFc,
+    discardNvlBySite,
+    discardBySite: discardNvlBySite,
+    disposal,
+    discardByDay,
+    huyChiTiet: discardByDay,
+    huyRows,
+    siteDetail,
+    dims,
+    nguong: DEFAULT_NGUONG,
+    totalLines: curRows.length,
+    filteredLines: curRows.length,
+    prevRange: prFrom && prTo ? { from: prFrom, to: prTo } : null,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export async function getRevenueRawData(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
@@ -533,7 +1092,7 @@ export async function getRevenueRawData(filtersParam) {
   }
 
   const [rawTx, opexRes, reportRes, rawMb51, plRows] = await Promise.all([
-    fetchAllRows("transactions", "*", "billing_date", queryFrom || null, reqTo || null, "billing_date"),
+    fetchAllRows("transactions", TX_SELECT_COLS, "billing_date", queryFrom || null, reqTo || null, "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
     fetchMb51GoodsIssue(queryFrom || null, reqTo || null, filters.site || filters.sites || null),
@@ -1366,11 +1925,83 @@ export async function getWarehouseDashboardData(filtersParam) {
     })),
     by_category: Array.from(catSet).sort(viSort).map(c => ({ category: c })),
     sites: Array.from(siteNameSet).sort(viSort).map(s => ({ name: s })),
-    types: Array.from(typeSet).sort(viSort),
     items,
-    transactions,
+    transactions: transactions.map(t => ({
+      article: t.article,
+      name: t.name,
+      category: t.category,
+      type: t.type,
+      sloc: t.sloc,
+      date: t.date,
+      mvt: t.mvt,
+      mvt_label: t.mvt_label,
+      qty: t.qty,
+      value: t.value,
+      price: t.price,
+      site: t.site,
+      site_name: t.site_name,
+      uom: t.uom,
+      is_estimated_price: t.is_estimated_price
+    })),
     sloc_meta: slocMeta
   };
+}
+
+export async function getWarehouseSummary(filtersParam) {
+  const full = await getWarehouseDashboardData(filtersParam);
+  // Summarize transactions to date/sloc/mvt/site
+  const aggTx = new Map();
+  (full.transactions || []).forEach(t => {
+    const k = `${t.date}|${t.sloc}|${t.mvt}|${t.site}`;
+    let item = aggTx.get(k);
+    if (!item) {
+      item = {
+        date: t.date,
+        sloc: t.sloc,
+        mvt: t.mvt,
+        mvt_label: t.mvt_label,
+        site: t.site,
+        site_name: t.site_name,
+        category: t.category,
+        type: t.type,
+        qty: 0,
+        value: 0,
+        count: 0
+      };
+      aggTx.set(k, item);
+    }
+    item.qty += (t.qty || 0);
+    item.value += (t.value || 0);
+    item.count++;
+  });
+
+  return {
+    ...full,
+    isSummary: true,
+    totalTransactions: full.transactions ? full.transactions.length : 0,
+    transactions: Array.from(aggTx.values())
+  };
+}
+
+export async function getWarehouseDetail(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  const matCode = filters.material || filters.article || filters.code || "";
+  let q = supabase.from("mb51_material_docs").select("*");
+  if (matCode) q = q.eq("material", matCode);
+  if (filters.from) q = q.gte("posting_date", filters.from);
+  if (filters.to) q = q.lte("posting_date", filters.to);
+  if (filters.site) q = q.eq("site", filters.site);
+
+  const { data, error } = await q.order("posting_date", { ascending: true }).limit(2000);
+  if (error) throw error;
+  const docs = (data || []).map(mapMb51RowToLegacyStockTx);
+  return { success: true, material: matCode, transactions: docs };
 }
 
 export async function getNutritionDashboardData() {
@@ -1423,6 +2054,192 @@ export async function getNutritionDashboardData() {
   };
 }
 
+export const EST_SELECT_COLS = "id,ma_cua_hang,ten_cua_hang,ten_kh,billing_date,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,vung_mien,loai_cua_hang,so_hoa_don,loai_chung_tu_billing,ly_do_tra_hang,reference,ghi_chu,ky_uoc_tinh";
+
+export async function getRevenueEstSummary(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  const granular = filters.granular || filters.gran || "week";
+  const recentBuckets = Number(filters.recentBuckets) || 4;
+
+  let maxDateStr = global._cachedMaxEstBillingDate || "";
+  if (!maxDateStr || Date.now() - (global._cachedMaxEstBillingDateAt || 0) > 60000) {
+    const { data: latestRow } = await supabase
+      .from("transactions_est")
+      .select("billing_date")
+      .order("billing_date", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    maxDateStr = latestRow?.billing_date || "2026-11-07";
+    global._cachedMaxEstBillingDate = maxDateStr;
+    global._cachedMaxEstBillingDateAt = Date.now();
+  }
+
+  let reqFrom = filters.from || "";
+  let reqTo = filters.to || "";
+  if (!reqFrom && !filters.all) {
+    const maxD = new Date(maxDateStr + "T00:00:00");
+    if (granular === "week") {
+      const dFrom = new Date(maxD.getTime() - (recentBuckets * 7 - 1) * 86400000);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    } else if (granular === "quarter") {
+      const curQ = Math.floor(maxD.getMonth() / 3) + 1;
+      const qStartMonth = (curQ - 1) * 3;
+      const dFrom = new Date(maxD.getFullYear(), qStartMonth - (recentBuckets - 1) * 3, 1);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    } else if (granular === "year") {
+      const dFrom = new Date(maxD.getFullYear() - (recentBuckets - 1), 0, 1);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    } else {
+      // month
+      const y = maxD.getFullYear();
+      const m = maxD.getMonth();
+      const dFrom = new Date(y, m - (recentBuckets - 1), 1);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    }
+    reqTo = reqTo || maxDateStr;
+  }
+
+  const [rawTx, plRows, keHoach] = await Promise.all([
+    fetchAllRows("transactions_est", EST_SELECT_COLS, "billing_date", reqFrom || null, reqTo || null, "billing_date"),
+    fetchAllRows("kehoach_pl_thang", "*", "ky"),
+    getKeHoachData(filtersParam)
+  ]);
+
+  // Aggregate raw transaction lines by (date, site, group, channel, dvt)
+  // to shrink response payload while preserving exact totals and UI contract
+  const aggMap = new Map();
+  (rawTx || []).forEach(r => {
+    const soLuong = Number(r.so_luong || 0);
+    const thanhTienTruocThue = Number(r.thanh_tien_truoc_thue || 0);
+    const chietKhau = Number(r.ck_truoc_thue || 0);
+    const netRevenue = thanhTienTruocThue - chietKhau;
+    const foodCost = Number(r.gia_von || 0);
+    const vungMien = (r.vung_mien !== null && r.vung_mien !== undefined) ? String(r.vung_mien).trim() : "";
+    const loaiCuaHang = (r.loai_cua_hang !== null && r.loai_cua_hang !== undefined) ? String(r.loai_cua_hang).trim() : "";
+    const tenKenhBanHang = (r.ten_kenh_ban_hang !== null && r.ten_kenh_ban_hang !== undefined && String(r.ten_kenh_ban_hang).trim())
+      ? String(r.ten_kenh_ban_hang).trim()
+      : (r.kenh_ban_hang ? String(r.kenh_ban_hang).trim() : "");
+    const ngay = formatDate(r.billing_date);
+    const ky = (ngay ? ngay.substring(0, 7) : "") || r.ky_uoc_tinh || "";
+    const site = r.ten_cua_hang || "";
+    const maSite = r.ma_cua_hang || "";
+    const nhomSP = r.nhom_sp || "";
+    const dvt = r.dvt || "";
+
+    const key = `${ngay}|${site}|${nhomSP}|${tenKenhBanHang}|${dvt}`;
+    let item = aggMap.get(key);
+    if (!item) {
+      item = {
+        id: r.id,
+        maSite,
+        ma_cua_hang: maSite,
+        site,
+        ten_cua_hang: site,
+        tenKH: r.ten_kh || "",
+        ten_kh: r.ten_kh || "",
+        ngay,
+        billing_date: ngay,
+        ky,
+        soLuong: 0,
+        so_luong: 0,
+        dvt,
+        netRevenue: 0,
+        thanhTien: 0,
+        thanh_tien: 0,
+        foodCost: 0,
+        giaVon: 0,
+        gia_von: 0,
+        nhomSP,
+        nhom_sp: nhomSP,
+        nganhHang: r.nganh_hang || "",
+        nganh_hang: r.nganh_hang || "",
+        kenhBanHang: r.kenh_ban_hang || "",
+        kenh_ban_hang: r.kenh_ban_hang || "",
+        tenKenhBanHang,
+        ten_kenh_ban_hang: tenKenhBanHang,
+        vungMien,
+        vung_mien: vungMien,
+        loaiCuaHang,
+        loai_cua_hang: loaiCuaHang,
+        soHoaDon: r.so_hoa_don || "",
+        isReturn: computeIsReturn(r),
+        is_return: computeIsReturn(r),
+        reference: r.reference || "",
+        ghiChu: r.ghi_chu || ""
+      };
+      aggMap.set(key, item);
+    }
+    item.soLuong += soLuong;
+    item.so_luong += soLuong;
+    item.netRevenue += netRevenue;
+    item.thanhTien += netRevenue;
+    item.thanh_tien += netRevenue;
+    item.foodCost += foodCost;
+    item.giaVon += foodCost;
+    item.gia_von += foodCost;
+  });
+
+  const rows = Array.from(aggMap.values());
+
+  const planBySiteKy = [];
+  const personnelBySiteKy = [];
+  (plRows || []).forEach(p => {
+    const s = String(p.site || "").trim();
+    const k = String(p.ky || "").trim();
+    const amount = Number(p.gia_tri || 0);
+    if (!s || !k) return;
+    if (p.hang_muc === "DoanhThu") {
+      planBySiteKy.push({ site: s, ky: k, amount, period: k });
+    }
+    if (p.hang_muc === "ChiPhiNhanSu") {
+      personnelBySiteKy.push({ site: s, ky: k, amount, period: k });
+    }
+  });
+
+  const siteSet = new Set(), kySet = new Set(), vungSet = new Set(), loaiSet = new Set(), kenhSet = new Set(), nhomSet = new Set(), dateSet = new Set();
+  rows.forEach(r => {
+    if (r.site) siteSet.add(r.site);
+    if (r.ky) kySet.add(r.ky);
+    if (r.ngay) dateSet.add(r.ngay);
+    if (r.vungMien) vungSet.add(r.vungMien);
+    if (r.loaiCuaHang) loaiSet.add(r.loaiCuaHang);
+    if (r.tenKenhBanHang) kenhSet.add(r.tenKenhBanHang);
+    if (r.nhomSP) nhomSet.add(r.nhomSP);
+  });
+  const viSort = (a, b) => a.localeCompare(b, "vi");
+  const sortedPeriods = Array.from(kySet).sort().reverse();
+  const sortedDates = Array.from(dateSet).sort();
+
+  return {
+    ok: true,
+    isSummary: true,
+    rows,
+    planBySiteKy,
+    personnelBySiteKy,
+    keHoach,
+    dims: {
+      sites: Array.from(siteSet).sort(viSort),
+      periods: sortedPeriods,
+      dates: sortedDates,
+      allDates: sortedDates,
+      vungMien: Array.from(vungSet).sort(viSort),
+      loaiCuaHang: Array.from(loaiSet).sort(viSort),
+      kenh: Array.from(kenhSet).sort(viSort),
+      nhomSP: Array.from(nhomSet).sort(viSort)
+    },
+    loadedGranular: granular,
+    loadedFrom: reqFrom,
+    loadedTo: reqTo,
+    updatedAt: new Date().toISOString()
+  };
+}
+
 export async function getRevenueEstData(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
@@ -1432,7 +2249,7 @@ export async function getRevenueEstData(filtersParam) {
   }
 
   const [rawTx, plRows, keHoach] = await Promise.all([
-    fetchAllRows("transactions_est", "*", "billing_date"),
+    fetchAllRows("transactions_est", EST_SELECT_COLS, "billing_date", filters.from || null, filters.to || null, "billing_date"),
     fetchAllRows("kehoach_pl_thang", "*", "ky"),
     getKeHoachData(filtersParam)
   ]);
@@ -1717,3 +2534,155 @@ export async function getMb51GoodsIssue(filtersParam) {
 }
 
 export const getMb51MaterialDocsDisposal = getMb51GoodsIssue;
+
+export async function getDiscardNvlSummary(filtersParam) {
+  let filters = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  let reqFrom = filters.from || "";
+  let reqTo = filters.to || "";
+  const isSacn = Boolean(filters.sacn || filters.tab === "sacn");
+  const siteFilter = filters.site || filters.sites || null;
+
+  let mbQuery = supabase
+    .from("mb51_material_docs")
+    .select("posting_date, site, site_name, quantity, amount_lc, mov_type, entry_unit")
+    .in("mov_type", ["551", "552"]);
+
+  if (reqFrom) mbQuery = mbQuery.gte("posting_date", reqFrom);
+  if (reqTo) mbQuery = mbQuery.lte("posting_date", reqTo);
+
+  const [mbRes, txRows] = await Promise.all([
+    mbQuery,
+    fetchAllRows("transactions", TX_SELECT_COLS, "billing_date", reqFrom || null, reqTo || null, "billing_date")
+  ]);
+
+  if (mbRes.error) {
+    console.error("getDiscardNvlSummary error:", mbRes.error);
+    throw mbRes.error;
+  }
+
+  let mbDocs = mbRes.data || [];
+  let txList = txRows || [];
+
+  const SACN_EXCLUDE = new Set(["K502", "K003", "K800", "D007"]);
+  if (isSacn) {
+    mbDocs = mbDocs.filter(r => {
+      if (SACN_EXCLUDE.has(r.site)) return false;
+      if (/megafar/i.test(r.site_name || "")) return false;
+      return true;
+    });
+    txList = txList.filter(r => {
+      if (SACN_EXCLUDE.has(r.ma_cua_hang)) return false;
+      if (/megafar/i.test(r.ten_cua_hang || "")) return false;
+      return true;
+    });
+  }
+
+  if (siteFilter) {
+    const sArr = (Array.isArray(siteFilter) ? siteFilter : [siteFilter]).map(s => String(s).trim()).filter(Boolean);
+    if (sArr.length > 0) {
+      const sSet = new Set(sArr);
+      mbDocs = mbDocs.filter(r => sSet.has(r.site) || sSet.has(r.site_name));
+      txList = txList.filter(r => sSet.has(r.ma_cua_hang) || sSet.has(r.ten_cua_hang));
+    }
+  }
+
+  const getNet = r => Number(r.thanh_tien !== undefined && r.thanh_tien !== null ? r.thanh_tien : (Number(r.thanh_tien_truoc_thue || 0) - Number(r.ck_truoc_thue || 0)));
+  let totalNetRev = 0;
+  const siteNetRevMap = {};
+
+  txList.forEach(r => {
+    const net = getNet(r);
+    totalNetRev += net;
+    const nameKey = r.ten_cua_hang || r.ma_cua_hang || "Khác";
+    const codeKey = r.ma_cua_hang || "";
+    siteNetRevMap[nameKey] = (siteNetRevMap[nameKey] || 0) + net;
+    if (codeKey && codeKey !== nameKey) {
+      siteNetRevMap[codeKey] = (siteNetRevMap[codeKey] || 0) + net;
+    }
+  });
+
+  let totalQtyKg = 0;
+  let totalValue = 0;
+  const siteMap = {};
+  const dayMap = {};
+  const otherUnitsMap = {};
+
+  mbDocs.forEach(r => {
+    const movType = String(r.mov_type || "").trim();
+    const sign = movType === "551" ? 1 : -1;
+    const qty = Math.abs(Number(r.quantity || 0)) * sign;
+    const val = Math.abs(Number(r.amount_lc || 0)) * sign;
+    const unit = String(r.entry_unit || "").trim().toUpperCase();
+
+    totalValue += val;
+
+    if (unit === "KG") {
+      totalQtyKg += qty;
+    } else if (unit && unit !== "PHA") {
+      otherUnitsMap[unit] = (otherUnitsMap[unit] || 0) + qty;
+    }
+
+    const siteCode = r.site || "";
+    const siteName = r.site_name || siteCode || "Khác";
+    const siteKey = siteName;
+
+    if (!siteMap[siteKey]) {
+      siteMap[siteKey] = { site: siteCode, siteName, qtyKg: 0, value: 0 };
+    }
+    if (unit === "KG") siteMap[siteKey].qtyKg += qty;
+    siteMap[siteKey].value += val;
+
+    const d = formatDate(r.posting_date);
+    if (d) {
+      if (!dayMap[d]) dayMap[d] = { date: d, qtyKg: 0, value: 0 };
+      if (unit === "KG") dayMap[d].qtyKg += qty;
+      dayMap[d].value += val;
+    }
+  });
+
+  const pctOfNetRev = totalNetRev > 0 ? (totalValue / totalNetRev) * 100 : 0;
+
+  const topUnitsText = Object.keys(otherUnitsMap)
+    .filter(u => otherUnitsMap[u] > 0)
+    .sort((a, b) => otherUnitsMap[b] - otherUnitsMap[a])
+    .slice(0, 3)
+    .map(u => `${(Math.round(otherUnitsMap[u] * 10) / 10).toLocaleString("vi-VN")} ${u}`)
+    .join(" · ");
+
+  const bySite = Object.values(siteMap).map(s => {
+    const netRev = siteNetRevMap[s.siteName] || siteNetRevMap[s.site] || 0;
+    const pctOfRev = netRev > 0 ? (s.value / netRev) * 100 : 0;
+    return {
+      site: s.site,
+      siteName: s.siteName,
+      qtyKg: Math.round(s.qtyKg * 1000) / 1000,
+      value: Math.round(s.value),
+      pctOfRev: Math.round(pctOfRev * 100) / 100
+    };
+  }).sort((a, b) => b.value - a.value);
+
+  const byDay = Object.values(dayMap).map(d => ({
+    date: d.date,
+    qtyKg: Math.round(d.qtyKg * 1000) / 1000,
+    value: Math.round(d.value)
+  })).sort((a, b) => a.date.localeCompare(b.date));
+
+  return {
+    ok: true,
+    kpis: {
+      totalQtyKg: Math.round(totalQtyKg * 1000) / 1000,
+      totalValue: Math.round(totalValue),
+      pctOfNetRev: Math.round(pctOfNetRev * 100) / 100,
+      topUnitsText
+    },
+    bySite,
+    byDay
+  };
+}
+

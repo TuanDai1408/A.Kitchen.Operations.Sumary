@@ -280,8 +280,43 @@ export async function handleGetRevenueFoodCostData(): Promise<any> {
  * Đọc transactions_est và kehoach_pl_thang phục vụ giao ban tuần/tháng
  */
 export async function handleGetRevenueEstData(filtersParam?: any): Promise<any> {
+  let filters: any = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  const granular = filters.granular || filters.gran || "week";
+  const recentBuckets = Number(filters.recentBuckets) || 4;
+  const maxDateStr = "2026-11-07";
+
+  let reqFrom = filters.from || "";
+  let reqTo = filters.to || "";
+  if (!reqFrom && !filters.all) {
+    const maxD = new Date(maxDateStr + "T00:00:00");
+    if (granular === "week") {
+      const dFrom = new Date(maxD.getTime() - (recentBuckets * 7 - 1) * 86400000);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    } else if (granular === "quarter") {
+      const curQ = Math.floor(maxD.getMonth() / 3) + 1;
+      const qStartMonth = (curQ - 1) * 3;
+      const dFrom = new Date(maxD.getFullYear(), qStartMonth - (recentBuckets - 1) * 3, 1);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    } else if (granular === "year") {
+      const dFrom = new Date(maxD.getFullYear() - (recentBuckets - 1), 0, 1);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    } else {
+      const y = maxD.getFullYear();
+      const m = maxD.getMonth();
+      const dFrom = new Date(y, m - (recentBuckets - 1), 1);
+      reqFrom = dFrom.toISOString().slice(0, 10);
+    }
+    reqTo = reqTo || maxDateStr;
+  }
+
   const [rawTx, plRows] = await Promise.all([
-    fetchAllRows("transactions_est", "*", "billing_date"),
+    fetchAllRows("transactions_est", "*", "billing_date", reqFrom || null, reqTo || null, "billing_date"),
     fetchAllRows("kehoach_pl_thang", "*", "ky"),
   ]);
 
@@ -382,12 +417,16 @@ export async function handleGetRevenueEstData(filtersParam?: any): Promise<any> 
 
   const planBySiteKy = Object.values(planMap);
 
+  const sortedDates = Array.from(dateSet).sort();
+  const sortedPeriods = Array.from(kySet).sort().reverse();
   const dims = {
     sites: Array.from(siteSet).sort(viSort),
-    dates: Array.from(dateSet).sort(),
+    dates: sortedDates,
+    allDates: sortedDates,
+    periods: sortedPeriods,
     vungMien: Array.from(vungSet).sort(viSort),
     loaiCuaHang: Array.from(loaiSet).sort(viSort),
-    kyOptions: Array.from(kySet).sort(),
+    kyOptions: sortedPeriods,
     kenh: Array.from(kenhSet).sort(viSort),
     nhomSP: Array.from(nhomSet).sort(viSort),
   };
@@ -406,5 +445,224 @@ export async function handleGetRevenueEstData(filtersParam?: any): Promise<any> 
       planPctMin: 95,
       huyPct: DEFAULT_NGUONG.huyPct || 1.5,
     },
+  };
+}
+
+export async function handleGetRevenueSummary(filtersParam?: any): Promise<any> {
+  const full = await handleGetRevenueRawData(filtersParam);
+  const rows = full.rows || [];
+
+  // 1. byCustomer
+  const khMap: Record<string, any> = {};
+  rows.forEach((r: any) => {
+    const kh = r.tenKH || r.ten_kh || "(Không tên KH)";
+    if (!khMap[kh]) khMap[kh] = { key: kh, customer: kh, ten_kh: kh, ma_kh: r.ma_kh || "", netRevenue: 0, netRev: 0, foodCost: 0, cogs: 0, salesQty: 0, qty: 0 };
+    const net = Number(r.netRevenue || r.thanhTien || 0);
+    const fc = Number(r.foodCost || r.giaVon || 0);
+    const sl = Number(r.soLuong || r.so_luong || 0);
+    khMap[kh].netRevenue += net;
+    khMap[kh].netRev += net;
+    khMap[kh].foodCost += fc;
+    khMap[kh].cogs += fc;
+    khMap[kh].salesQty += sl;
+    khMap[kh].qty += sl;
+  });
+  const byCustomer = Object.values(khMap).sort((a: any, b: any) => b.netRevenue - a.netRevenue).map((c: any) => ({
+    ...c,
+    grossProfit: c.netRevenue - c.foodCost,
+    foodCostPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0,
+    fcPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0
+  })).slice(0, 50);
+
+  // 2. topProductsByRev & topProductsByFc
+  const prodMap: Record<string, any> = {};
+  rows.forEach((r: any) => {
+    const p = r.tenSP || r.ten_sp || "Sản phẩm";
+    if (!prodMap[p]) prodMap[p] = { key: p, name: p, ma_sp: r.ma_sp || "", ten_sp: p, group: r.nhomSP || r.nhom_sp || "", netRevenue: 0, netRev: 0, foodCost: 0, cogs: 0, salesQty: 0, qty: 0, dvt: r.dvt || "" };
+    const net = Number(r.netRevenue || r.thanhTien || 0);
+    const fc = Number(r.foodCost || r.giaVon || 0);
+    const sl = Number(r.soLuong || r.so_luong || 0);
+    prodMap[p].netRevenue += net;
+    prodMap[p].netRev += net;
+    prodMap[p].foodCost += fc;
+    prodMap[p].cogs += fc;
+    prodMap[p].salesQty += sl;
+    prodMap[p].qty += sl;
+  });
+  const prods = Object.values(prodMap).map((p: any) => ({
+    ...p,
+    grossProfit: p.netRevenue - p.foodCost,
+    foodCostPct: p.netRevenue > 0 ? (p.foodCost / p.netRevenue) * 100 : 0,
+    fcPct: p.netRevenue > 0 ? (p.foodCost / p.netRevenue) * 100 : 0
+  }));
+  const topProductsByRev = prods.slice().sort((a: any, b: any) => b.netRevenue - a.netRevenue).slice(0, 20);
+  const topProductsByFc = prods.filter((p: any) => p.netRevenue >= 100000).sort((a: any, b: any) => b.foodCostPct - a.foodCostPct).slice(0, 20);
+
+  // 3. siteDetail
+  const siteDetail: Record<string, any> = {};
+  (full.bySite || []).forEach((s: any) => {
+    const sRows = rows.filter((r: any) => (r.site || r.ten_cua_hang || "Chưa rõ") === s.site);
+    const sProds: Record<string, any> = {};
+    const sCusts: Record<string, any> = {};
+    sRows.forEach((r: any) => {
+      const p = r.tenSP || r.ten_sp || "SP";
+      if (!sProds[p]) sProds[p] = { key: p, name: p, ten_sp: p, netRevenue: 0, foodCost: 0, soLuong: 0, salesQty: 0 };
+      const net = Number(r.netRevenue || r.thanhTien || 0);
+      const fc = Number(r.foodCost || r.giaVon || 0);
+      const sl = Number(r.soLuong || r.so_luong || 0);
+      sProds[p].netRevenue += net;
+      sProds[p].foodCost += fc;
+      sProds[p].soLuong += sl;
+      sProds[p].salesQty += sl;
+
+      const c = r.tenKH || r.ten_kh || "(Không tên KH)";
+      if (!sCusts[c]) sCusts[c] = { key: c, customer: c, ten_kh: c, netRevenue: 0, foodCost: 0, grossProfit: 0, cogs: 0, foodCostPct: 0 };
+      sCusts[c].netRevenue += net;
+      sCusts[c].foodCost += fc;
+      sCusts[c].cogs += fc;
+    });
+    const sProdList = Object.values(sProds).map((p: any) => ({
+      ...p,
+      grossProfit: p.netRevenue - p.foodCost,
+      foodCostPct: p.netRevenue > 0 ? (p.foodCost / p.netRevenue) * 100 : 0
+    }));
+    const sCustList = Object.values(sCusts).map((c: any) => ({
+      ...c,
+      grossProfit: c.netRevenue - c.foodCost,
+      foodCostPct: c.netRevenue > 0 ? (c.foodCost / c.netRevenue) * 100 : 0
+    })).sort((a: any, b: any) => b.netRevenue - a.netRevenue);
+
+    siteDetail[s.site] = {
+      kpi: s,
+      byKhachHang: sCustList,
+      byCustomer: sCustList,
+      topSanPham: sProdList.slice().sort((a: any, b: any) => b.netRevenue - a.netRevenue).slice(0, 20),
+      topFoodCost: sProdList.filter((p: any) => p.netRevenue >= 100000).sort((a: any, b: any) => b.foodCostPct - a.foodCostPct).slice(0, 15),
+      huyChiTiet: (full.discardByDay || []).filter((h: any) => h.site === s.site),
+      discardByDay: (full.discardByDay || []).filter((h: any) => h.site === s.site)
+    };
+  });
+
+  const aggRowsMap = new Map<string, any>();
+  rows.forEach((r: any) => {
+    const k = `${r.ngay}|${r.site}|${r.nhomSP}|${r.tenKenhBanHang}|${r.dvt || ""}`;
+    let it = aggRowsMap.get(k);
+    if (!it) {
+      it = {
+        id: r.id,
+        ngay: r.ngay,
+        billing_date: r.billing_date,
+        site: r.site,
+        ten_cua_hang: r.site,
+        maSite: r.maSite,
+        ma_cua_hang: r.maSite,
+        nhomSP: r.nhomSP,
+        nhom_sp: r.nhomSP,
+        tenKenhBanHang: r.tenKenhBanHang,
+        vungMien: r.vungMien,
+        loaiCuaHang: r.loaiCuaHang,
+        dvt: r.dvt,
+        soLuong: 0,
+        so_luong: 0,
+        thanhTien: 0,
+        thanh_tien: 0,
+        netRevenue: 0,
+        foodCost: 0,
+        giaVon: 0,
+        gia_von: 0,
+        isReturn: false,
+        is_return: false
+      };
+      aggRowsMap.set(k, it);
+    }
+    it.soLuong += (r.soLuong || 0);
+    it.so_luong += (r.soLuong || 0);
+    it.thanhTien += (r.netRevenue || 0);
+    it.thanh_tien += (r.netRevenue || 0);
+    it.netRevenue += (r.netRevenue || 0);
+    it.foodCost += (r.foodCost || 0);
+    it.giaVon += (r.foodCost || 0);
+    it.gia_von += (r.foodCost || 0);
+  });
+
+  return {
+    ...full,
+    isSummary: true,
+    rows: Array.from(aggRowsMap.values()),
+    byCustomer,
+    byKhachHang: byCustomer,
+    topProductsByRev,
+    topProductsByFc,
+    topSanPham: topProductsByRev,
+    topFoodCost: topProductsByFc,
+    discardNvlBySite: full.discardNvlBySite || full.discardBySite || [],
+    discardBySite: full.discardNvlBySite || full.discardBySite || [],
+    discardByDay: full.discardByDay || full.huyChiTiet || [],
+    huyChiTiet: full.discardByDay || full.huyChiTiet || [],
+    siteDetail: Object.keys(siteDetail).length ? siteDetail : (full.siteDetail || {})
+  };
+}
+
+export async function handleGetRevenueEstSummary(filtersParam?: any): Promise<any> {
+  const full = await handleGetRevenueEstData(filtersParam);
+  const aggMap = new Map<string, any>();
+  (full.rows || []).forEach((r: any) => {
+    const k = `${r.ngay}|${r.site}|${r.nhomSP}|${r.tenKenhBanHang}|${r.dvt || ""}`;
+    let it = aggMap.get(k);
+    if (!it) {
+      it = {
+        id: r.id,
+        maSite: r.maSite,
+        ma_cua_hang: r.maSite,
+        site: r.site,
+        ten_cua_hang: r.site,
+        tenKH: r.tenKH || "",
+        ten_kh: r.ten_kh || "",
+        ngay: r.ngay,
+        billing_date: r.ngay,
+        ky: r.ky,
+        soLuong: 0,
+        so_luong: 0,
+        dvt: r.dvt,
+        netRevenue: 0,
+        thanhTien: 0,
+        thanh_tien: 0,
+        foodCost: 0,
+        giaVon: 0,
+        gia_von: 0,
+        nhomSP: r.nhomSP,
+        nhom_sp: r.nhomSP,
+        nganhHang: r.nganhHang || "",
+        nganh_hang: r.nganhHang || "",
+        kenhBanHang: r.kenhBanHang || "",
+        kenh_ban_hang: r.kenhBanHang || "",
+        tenKenhBanHang: r.tenKenhBanHang,
+        ten_kenh_ban_hang: r.tenKenhBanHang,
+        vungMien: r.vungMien,
+        vung_mien: r.vungMien,
+        loaiCuaHang: r.loaiCuaHang,
+        loai_cua_hang: r.loaiCuaHang,
+        soHoaDon: r.soHoaDon || "",
+        isReturn: false,
+        is_return: false,
+        reference: r.reference || "",
+        ghiChu: r.ghiChu || ""
+      };
+      aggMap.set(k, it);
+    }
+    it.soLuong += (r.soLuong || 0);
+    it.so_luong += (r.soLuong || 0);
+    it.netRevenue += (r.netRevenue || 0);
+    it.thanhTien += (r.netRevenue || 0);
+    it.thanh_tien += (r.netRevenue || 0);
+    it.foodCost += (r.foodCost || 0);
+    it.giaVon += (r.foodCost || 0);
+    it.gia_von += (r.foodCost || 0);
+  });
+
+  return {
+    ...full,
+    isSummary: true,
+    rows: Array.from(aggMap.values())
   };
 }

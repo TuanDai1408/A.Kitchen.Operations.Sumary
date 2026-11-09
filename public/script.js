@@ -83,6 +83,7 @@ function getGroupColor(groupName, fallbackIdx) {
    ANIMATED LOADING MANAGER (MINIMALIST STATUS PILL & TOP BAR)
    ========================================================================= */
 let akLoadingActive = false;
+let akLoadingCount = 0;
 let akLoadingTimeout = null;
 
 function akStartTopLoader() {
@@ -106,7 +107,18 @@ function akFinishTopLoader() {
   }, 180);
 }
 
+var _tabLoadSeq = {
+  overview: 0,
+  revenue: 0,
+  sacn: 0,
+  est: 0,
+  kho: 0,
+  kehoach: 0,
+  dinhduong: 0
+};
+
 function akShowLoading(title, sub) {
+  akLoadingCount++;
   akLoadingActive = true;
   clearTimeout(akLoadingTimeout);
   akStartTopLoader();
@@ -118,13 +130,20 @@ function akShowLoading(title, sub) {
   if (box) {
     box.classList.remove('hide');
   }
-  // Tự động tắt sau tối đa 3.5 giây để tuyệt đối không bao giờ bị treo
+  // Watchdog an toàn: chỉ tự ẩn sau 60s phòng sự cố mạng cực đoan (không tắt sớm)
   akLoadingTimeout = setTimeout(function() {
-    akHideLoading();
-  }, 3500);
+    akForceHideLoading();
+  }, 60000);
 }
 
 function akHideLoading() {
+  if (akLoadingCount > 0) akLoadingCount--;
+  if (akLoadingCount > 0) return;
+  akForceHideLoading();
+}
+
+function akForceHideLoading() {
+  akLoadingCount = 0;
   akLoadingActive = false;
   clearTimeout(akLoadingTimeout);
   akFinishTopLoader();
@@ -157,51 +176,122 @@ function akSkeletonHTML(title) {
   '</div>';
 }
 
+var _apiInFlight = new Map();
+var _apiCache = new Map();
+var _DEFAULT_API_CACHE_TTL = 60000; // 60 giây
+
+function getApiCacheKey(action, extraParams) {
+  if (!extraParams || typeof extraParams !== 'object') return String(action);
+  var sortedKeys = Object.keys(extraParams).sort();
+  var sortedObj = {};
+  sortedKeys.forEach(function (k) {
+    var v = extraParams[k];
+    if (v !== null && v !== undefined) {
+      sortedObj[k] = (typeof v === 'object') ? JSON.stringify(v) : v;
+    }
+  });
+  return action + '?' + JSON.stringify(sortedObj);
+}
+
+function clearAPICache(prefix) {
+  if (!prefix) {
+    _apiCache.clear();
+    return;
+  }
+  for (var k of _apiCache.keys()) {
+    if (k.startsWith(prefix)) {
+      _apiCache.delete(k);
+    }
+  }
+}
+window.clearAPICache = clearAPICache;
+
+var _akDebounceTimers = {};
+function akDebounce(key, fn, delay) {
+  delay = delay || 350;
+  if (_akDebounceTimers[key]) clearTimeout(_akDebounceTimers[key]);
+  _akDebounceTimers[key] = setTimeout(function () {
+    delete _akDebounceTimers[key];
+    fn();
+  }, delay);
+}
+window.akDebounce = akDebounce;
+
 async function callAPI(action, extraParams) {
   const isBackground = action === 'getDataVersion';
+  const cacheKey = getApiCacheKey(action, extraParams);
+
+  // 1. Kiểm tra cache nếu không phải background polling
+  if (!isBackground) {
+    const cached = _apiCache.get(cacheKey);
+    if (cached && (Date.now() - cached.time < cached.ttl)) {
+      return Promise.resolve(cached.data);
+    }
+  }
+
+  // 2. Kiểm tra in-flight request trùng để deduplicate
+  if (_apiInFlight.has(cacheKey)) {
+    return _apiInFlight.get(cacheKey);
+  }
+
   if (!isBackground) {
     akStartTopLoader();
   }
-  try {
-    let url = `${API_URL}?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
-    if (extraParams) {
-      for (const [key, value] of Object.entries(extraParams)) {
-        if (value !== null && value !== undefined) {
-          url += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
-        }
-      }
-    }
-    let response;
+
+  const fetchPromise = (async function () {
     try {
-      response = await fetch(url);
-    } catch (netErr) {
-      let localUrl = `/api?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
+      let url = `${API_URL}?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
       if (extraParams) {
         for (const [key, value] of Object.entries(extraParams)) {
           if (value !== null && value !== undefined) {
-            localUrl += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
+            url += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
           }
         }
       }
-      response = await fetch(localUrl);
-    }
+      let response;
+      try {
+        response = await fetch(url);
+      } catch (netErr) {
+        let localUrl = `/api?action=${encodeURIComponent(action)}&token=${encodeURIComponent(API_TOKEN)}`;
+        if (extraParams) {
+          for (const [key, value] of Object.entries(extraParams)) {
+            if (value !== null && value !== undefined) {
+              localUrl += `&${encodeURIComponent(key)}=${encodeURIComponent(typeof value === 'object' ? JSON.stringify(value) : value)}`;
+            }
+          }
+        }
+        response = await fetch(localUrl);
+      }
 
-    const json = await response.json();
-    if (!response.ok || (json && json.status === 'error') || (json && json.code === 'NOT_FOUND')) {
-      throw new Error((json && json.message) || `Lỗi API (${response.status})`);
+      const json = await response.json();
+      if (!response.ok || (json && json.status === 'error') || (json && json.code === 'NOT_FOUND')) {
+        throw new Error((json && json.message) || `Lỗi API (${response.status})`);
+      }
+      if (!json || json.data === undefined) {
+        throw new Error((json && json.message) || 'Dữ liệu API trả về không hợp lệ');
+      }
+
+      // Lưu kết quả vào cache (30–60s)
+      if (!isBackground) {
+        const ttl = (action === 'getDashboardData' || action === 'getRevenueSummary' || action === 'getRevenueEstSummary' || action === 'getWarehouseSummary')
+          ? 60000 : 30000;
+        _apiCache.set(cacheKey, { data: json.data, time: Date.now(), ttl });
+      }
+
+      return json.data;
+    } catch (err) {
+      console.log('API call failed:', action, err);
+      throw err;
+    } finally {
+      _apiInFlight.delete(cacheKey);
+      if (!isBackground) {
+        akFinishTopLoader();
+      }
     }
-    if (!json || json.data === undefined) {
-      throw new Error((json && json.message) || 'Dữ liệu API trả về không hợp lệ');
-    }
-    return json.data;
-  } catch (err) {
-    console.log('API call failed:', action, err);
-    throw err;
-  } finally {
-    if (!isBackground) {
-      akFinishTopLoader();
-    }
-  }
+  })();
+
+  _apiInFlight.set(cacheKey, fetchPromise);
+  return fetchPromise;
 }
 
 async function callPostAPI(action, payload) {
@@ -1097,9 +1187,6 @@ function renderOverview(){
   drawKN(rows);
   bindOverviewEvents(rows, sl);
   bindPivotEvents(rows, sl);
-  if (!REV_RAW && !REV_LOADING) {
-    loadRevenue({ silent: true });
-  }
 }
 
 /* =========================================================================
@@ -3222,26 +3309,57 @@ function computeAndDrawRevenueSacn(){
   var siteDetail = rev_buildSiteDetail(dims, cur, f, opexItems, huy);
 
 
-  // ===== Tiêu hủy NVL-BTP từ MB51 Goods Issue =====
-  var allMb51Sacn = (REV_RAW.mb51Rows && REV_RAW.mb51Rows.length)
-    ? REV_RAW.mb51Rows
-    : (REV_RAW.disposalRows || []).concat(REV_RAW.mb51PhaRows || []);
-  var disp = rev_aggDisposal(allMb51Sacn, f, sacnSiteNames);
+  // ===== Tiêu hủy NVL-BTP từ MB51 Goods Issue / mb51_material_docs =====
+  var disp = { qtyKg: 0, value: 0, pctRev: 0, bySite: {}, byDate: {} };
+  if (REV_RAW.discardNvlSummary && REV_RAW.discardNvlSummary.kpis) {
+    var dSum = REV_RAW.discardNvlSummary;
+    disp.qtyKg = dSum.kpis.totalQtyKg || 0;
+    disp.value = dSum.kpis.totalValue || 0;
+    disp.pctRev = (kpi.netRevenue > 0) ? (disp.value / kpi.netRevenue) * 100 : (dSum.kpis.pctOfNetRev || 0);
+    (dSum.bySite || []).forEach(function(s){
+      var siteObj = {
+        key: s.siteName || s.site || "Khác",
+        site: s.site || "",
+        siteName: s.siteName || s.site || "Khác",
+        qtyKg: s.qtyKg || 0,
+        value: s.value || 0,
+        pctOfRev: s.pctOfRev || 0,
+        dispQtyKg: s.qtyKg || 0,
+        dispValue: s.value || 0,
+        dispPctRev: s.pctOfRev || 0
+      };
+      disp.bySite[siteObj.key] = siteObj;
+      if (s.site && s.site !== siteObj.key) disp.bySite[s.site] = siteObj;
+    });
+    (dSum.byDay || []).forEach(function(d){
+      disp.byDate[d.date] = { date: d.date, ngay: d.date, qtyKg: d.qtyKg || 0, value: d.value || 0 };
+    });
+  } else {
+    var allMb51Sacn = (REV_RAW.mb51Rows && REV_RAW.mb51Rows.length)
+      ? REV_RAW.mb51Rows
+      : (REV_RAW.disposalRows || []).concat(REV_RAW.mb51PhaRows || []);
+    disp = rev_aggDisposal(allMb51Sacn, f, sacnSiteNames);
+  }
+
   kpi.dispQtyKg = disp.qtyKg;
   kpi.dispValue = disp.value;
-  kpi.dispPctRev = (kpi.netRevenue > 0) ? (disp.value / kpi.netRevenue) * 100 : 0;
-  kpi.dispRows = disp.rows;
-  kpi.dispTopUnitsText = disp.topUnitsText;
+  kpi.dispPctRev = disp.pctRev;
+  kpi.dispRows = (REV_RAW.discardNvlSummary && REV_RAW.discardNvlSummary.bySite) ? REV_RAW.discardNvlSummary.bySite.length : (disp.rows || 0);
+  kpi.dispTopUnitsText = (REV_RAW.discardNvlSummary && REV_RAW.discardNvlSummary.kpis && REV_RAW.discardNvlSummary.kpis.topUnitsText)
+    ? REV_RAW.discardNvlSummary.kpis.topUnitsText
+    : (disp.topUnitsText || (Math.round(disp.qtyKg * 10) / 10 + ' kg'));
 
   var dispPrev = { qtyKg:0, value:0, pctRev:0, topUnitsText: '' };
   if (pr) {
-    var dispP = rev_aggDisposal(allMb51Sacn, {
+    var allMb51SacnPrev = (REV_RAW.mb51Rows && REV_RAW.mb51Rows.length)
+      ? REV_RAW.mb51Rows
+      : (REV_RAW.disposalRows || []).concat(REV_RAW.mb51PhaRows || []);
+    var dispP = rev_aggDisposal(allMb51SacnPrev, {
       from: pr.from, to: pr.to, sites: f.sites
     }, sacnSiteNames);
     dispPrev.qtyKg = dispP.qtyKg;
     dispPrev.value = dispP.value;
     dispPrev.topUnitsText = dispP.topUnitsText;
-    // dùng net revenue kỳ trước nếu có
     var prevNet = (kpiPrev && kpiPrev.netRevenue) || 0;
     dispPrev.pctRev = prevNet > 0 ? (dispP.value / prevNet) * 100 : 0;
   }
@@ -3252,7 +3370,7 @@ function computeAndDrawRevenueSacn(){
 
   // Gắn tiêu hủy theo site (khớp mềm tên site)
   bySite.forEach(function (s) {
-    var d0 = disp.bySite[s.key];
+    var d0 = disp.bySite[s.key] || disp.bySite[s.site] || disp.bySite[s.siteName];
     if (!d0) {
       var nk = String(s.key||'').toLowerCase().replace(/\s+/g,' ').trim();
       Object.keys(disp.bySite).forEach(function(k){
@@ -3263,18 +3381,31 @@ function computeAndDrawRevenueSacn(){
     if (d0) {
       s.dispQtyKg = d0.qtyKg;
       s.dispValue = d0.value;
-      s.dispPctRev = s.netRevenue > 0 ? (d0.value / s.netRevenue) * 100 : 0;
+      s.dispPctRev = d0.pctOfRev !== undefined ? d0.pctOfRev : (s.netRevenue > 0 ? (d0.value / s.netRevenue) * 100 : 0);
     } else {
       s.dispQtyKg = 0; s.dispValue = 0; s.dispPctRev = 0;
     }
   });
 
 
+  var byKHSacnFinal = (byKH && byKH.length && byKH[0].key !== '(Chưa phân loại)')
+    ? byKH.slice(0, 50)
+    : ((REV_RAW.byCustomer || []).map(function(x){
+        return {
+          key: x.key || x.ten_kh || x.tenKH || '(Không tên)',
+          tenKH: x.key || x.ten_kh || x.tenKH || '(Không tên)',
+          netRevenue: x.netRevenue !== undefined ? x.netRevenue : (x.netRev || 0),
+          grossProfit: x.grossProfit !== undefined ? x.grossProfit : (x.netRev ? x.netRev - (x.cogs || 0) : 0),
+          cogs: x.cogs || 0,
+          foodCostPct: x.foodCostPct !== undefined ? x.foodCostPct : (x.fcPct || 0)
+        };
+      }));
+
   REV_SACN = {
     ok: true, dims: dims, kpi: kpi, kpiPrev: kpiPrev, byDate: byDate,
     periodCompare: periodCompare, bySite: bySite, byNhomSP: byNhom, byKenh: byKenh,
     byVung: byVung, byLoaiCH: byLoaiCH,
-    byNVKD: byNVKD, byKhachHang: byKH.slice(0, 50), byLyDoTraHang: byLyDo,
+    byNVKD: byNVKD, byKhachHang: byKHSacnFinal, byLyDoTraHang: byLyDo,
     siteDetail: siteDetail, opexItems: opexItems, nguong: REV_RAW.nguong,
     disposal: disp,
     updatedAt: REV_RAW.updatedAt, totalLines: base.length, filteredLines: cur.length, prevRange: pr
@@ -3420,6 +3551,77 @@ function computeAndDrawRevenue() {
   // ===== THÊM MỚI: dữ liệu cho "Chi tiết theo cửa hàng / site" =====
   var siteDetail = rev_buildSiteDetail(REV_RAW.dims, cur, f, opexItems, huy);
 
+  var byKHAllFinal = (byKH && byKH.length && byKH[0].key !== '(Chưa phân loại)')
+    ? byKH.slice(0, 50)
+    : ((REV_RAW.byCustomer || []).map(function(x){
+        return {
+          key: x.key || x.ten_kh || x.tenKH || '(Không tên)',
+          tenKH: x.key || x.ten_kh || x.tenKH || '(Không tên)',
+          netRevenue: x.netRevenue !== undefined ? x.netRevenue : (x.netRev || 0),
+          grossProfit: x.grossProfit !== undefined ? x.grossProfit : (x.netRev ? x.netRev - (x.cogs || 0) : 0),
+          cogs: x.cogs || 0,
+          foodCostPct: x.foodCostPct !== undefined ? x.foodCostPct : (x.fcPct || 0)
+        };
+      }));
+
+  // ===== Tiêu hủy NVL-BTP từ MB51 Goods Issue / mb51_material_docs (ALL tab) =====
+  var disp = { qtyKg: 0, value: 0, pctRev: 0, bySite: {}, byDate: {} };
+  if (REV_RAW.discardNvlSummary && REV_RAW.discardNvlSummary.kpis) {
+    var dSum = REV_RAW.discardNvlSummary;
+    disp.qtyKg = dSum.kpis.totalQtyKg || 0;
+    disp.value = dSum.kpis.totalValue || 0;
+    disp.pctRev = (kpi.netRevenue > 0) ? (disp.value / kpi.netRevenue) * 100 : (dSum.kpis.pctOfNetRev || 0);
+    (dSum.bySite || []).forEach(function(s){
+      var siteObj = {
+        key: s.siteName || s.site || "Khác",
+        site: s.site || "",
+        siteName: s.siteName || s.site || "Khác",
+        qtyKg: s.qtyKg || 0,
+        value: s.value || 0,
+        pctOfRev: s.pctOfRev || 0,
+        dispQtyKg: s.qtyKg || 0,
+        dispValue: s.value || 0,
+        dispPctRev: s.pctOfRev || 0
+      };
+      disp.bySite[siteObj.key] = siteObj;
+      if (s.site && s.site !== siteObj.key) disp.bySite[s.site] = siteObj;
+    });
+    (dSum.byDay || []).forEach(function(d){
+      disp.byDate[d.date] = { date: d.date, ngay: d.date, qtyKg: d.qtyKg || 0, value: d.value || 0 };
+    });
+  } else {
+    var allMb51All = (REV_RAW.mb51Rows && REV_RAW.mb51Rows.length)
+      ? REV_RAW.mb51Rows
+      : (REV_RAW.disposalRows || []).concat(REV_RAW.mb51PhaRows || []);
+    disp = rev_aggDisposal(allMb51All, f, allSiteNames);
+  }
+
+  kpi.dispQtyKg = disp.qtyKg;
+  kpi.dispValue = disp.value;
+  kpi.dispPctRev = disp.pctRev;
+  kpi.dispRows = (REV_RAW.discardNvlSummary && REV_RAW.discardNvlSummary.bySite) ? REV_RAW.discardNvlSummary.bySite.length : (disp.rows || 0);
+  kpi.dispTopUnitsText = (REV_RAW.discardNvlSummary && REV_RAW.discardNvlSummary.kpis && REV_RAW.discardNvlSummary.kpis.topUnitsText)
+    ? REV_RAW.discardNvlSummary.kpis.topUnitsText
+    : (disp.topUnitsText || (Math.round(disp.qtyKg * 10) / 10 + ' kg'));
+
+  bySite.forEach(function (s) {
+    var d0 = disp.bySite[s.key] || disp.bySite[s.site] || disp.bySite[s.siteName];
+    if (!d0) {
+      var nk = String(s.key||'').toLowerCase().replace(/\s+/g,' ').trim();
+      Object.keys(disp.bySite).forEach(function(k){
+        var kk = k.toLowerCase().replace(/\s+/g,' ').trim();
+        if (!d0 && (kk === nk || kk.indexOf(nk)>=0 || nk.indexOf(kk)>=0)) d0 = disp.bySite[k];
+      });
+    }
+    if (d0) {
+      s.dispQtyKg = d0.qtyKg;
+      s.dispValue = d0.value;
+      s.dispPctRev = d0.pctOfRev !== undefined ? d0.pctOfRev : (s.netRevenue > 0 ? (d0.value / s.netRevenue) * 100 : 0);
+    } else {
+      s.dispQtyKg = 0; s.dispValue = 0; s.dispPctRev = 0;
+    }
+  });
+
   // Gán vào REV đúng shape mà drawRevenue đang dùng
   REV = {
     ok: true,
@@ -3434,11 +3636,12 @@ function computeAndDrawRevenue() {
     byVung: byVung,
     byLoaiCH: byLoaiCH,
     byNVKD: byNVKD,
-    byKhachHang: byKH.slice(0, 50),
+    byKhachHang: byKHAllFinal,
     byLyDoTraHang: byLyDo,
     siteDetail: siteDetail,
     opexItems: opexItems,
     nguong: REV_RAW.nguong,
+    disposal: disp,
     updatedAt: REV_RAW.updatedAt,
     totalLines: REV_RAW.totalLines,
     filteredLines: cur.length,
@@ -3481,11 +3684,13 @@ function loadFoodcostData(opts) {
   opts = opts || {};
   var targetTab = opts.tab || (TAB === 'sacn' ? 'sacn' : 'revenue');
   var isSacn = (targetTab === 'sacn');
+  var tabKey = isSacn ? 'sacn' : 'revenue';
   var fFrom = (opts && opts.from) !== undefined ? opts.from : (isSacn ? RF_SACN.from : RF.from);
   var fTo = (opts && opts.to) !== undefined ? opts.to : (isSacn ? RF_SACN.to : RF.to);
   var fSite = (opts && opts.site) !== undefined ? opts.site : (isSacn ? RF_SACN.sites : RF.sites);
 
   var box = document.getElementById(isSacn ? 'tab-sacn' : 'tab-revenue');
+  var seq = ++_tabLoadSeq[tabKey];
 
   // Loading state rõ ràng khi người dùng chuyển kỳ hoặc lọc
   if (!opts.silent) {
@@ -3511,17 +3716,27 @@ function loadFoodcostData(opts) {
   if (fFrom) filtersObj.from = fFrom;
   if (fTo) filtersObj.to = fTo;
   if (fSite && fSite.length) filtersObj.site = fSite;
-
+  if (isSacn) filtersObj.sacn = true;
   if (Object.keys(filtersObj).length > 0) {
     params.filters = JSON.stringify(filtersObj);
   } else if (opts && opts.all) {
     params.filters = JSON.stringify({ all: true });
   }
 
-  return callAPI('getRevenueRawData', params)
-    .then(function (res) {
-      REV_LOADING = false;
-      akHideLoading('Đã cập nhật doanh thu');
+  return Promise.all([
+    callAPI('getRevenueSummary', params),
+    callAPI('getDiscardNvlSummary', params)
+  ])
+    .then(function (results) {
+      var res = results[0];
+      var discardRes = results[1];
+
+      if (seq !== _tabLoadSeq[tabKey]) return res;
+
+      if (discardRes && discardRes.ok) {
+        if (res) res.discardNvlSummary = discardRes;
+      }
+
       if (res && res.updatedAt) {
         var updEl = document.getElementById('updAt');
         if (updEl) updEl.textContent = fmtUpdatedAt(res.updatedAt);
@@ -3561,13 +3776,20 @@ function loadFoodcostData(opts) {
       return res;
     })
     .catch(function (err) {
-      REV_LOADING = false;
-      akHideLoading('Lỗi tải dữ liệu');
+      if (seq !== _tabLoadSeq[tabKey]) return;
       if (box && !REV_RAW) {
-        box.innerHTML = '<div class="card"><div class="empty">Lỗi tải: ' +
+        box.innerHTML = '<div class="card"><div class="empty">Lỗi tải dữ liệu doanh thu: ' +
           esc(String(err && err.message ? err.message : err)) + '</div></div>';
       }
       throw err;
+    })
+    .finally(function () {
+      if (seq === _tabLoadSeq[tabKey]) {
+        REV_LOADING = false;
+        if (!opts.silent) {
+          akHideLoading();
+        }
+      }
     });
 }
 
@@ -3818,15 +4040,35 @@ function akComputeRangeFromPreset(gran, scope, periods, allDates, periodMap) {
   };
 }
 
-function akGetAllDates() {
+function akGetAllDates(tabKey) {
+  if (tabKey === 'est' || (typeof TAB !== 'undefined' && TAB === 'revenue-est')) {
+    if (REV_EST_RAW && REV_EST_RAW.dims && Array.isArray(REV_EST_RAW.dims.allDates) && REV_EST_RAW.dims.allDates.length) {
+      return REV_EST_RAW.dims.allDates.slice().sort();
+    }
+    if (REV_EST_RAW && REV_EST_RAW.dims && Array.isArray(REV_EST_RAW.dims.dates) && REV_EST_RAW.dims.dates.length) {
+      return REV_EST_RAW.dims.dates.slice().sort();
+    }
+    if (REV_EST_RAW && Array.isArray(REV_EST_RAW.rows) && REV_EST_RAW.rows.length) {
+      var dSet = {};
+      REV_EST_RAW.rows.forEach(function(r) { if (r.ngay) dSet[r.ngay] = 1; });
+      var k = Object.keys(dSet).sort();
+      if (k.length) return k;
+    }
+  }
   if (REV_RAW && REV_RAW.dims && Array.isArray(REV_RAW.dims.allDates) && REV_RAW.dims.allDates.length) {
     return REV_RAW.dims.allDates.slice().sort();
   }
+  if (REV_EST_RAW && REV_EST_RAW.dims && Array.isArray(REV_EST_RAW.dims.allDates) && REV_EST_RAW.dims.allDates.length) {
+    return REV_EST_RAW.dims.allDates.slice().sort();
+  }
+  if (REV_EST_RAW && REV_EST_RAW.dims && Array.isArray(REV_EST_RAW.dims.dates) && REV_EST_RAW.dims.dates.length) {
+    return REV_EST_RAW.dims.dates.slice().sort();
+  }
   if (REV_EST_RAW && Array.isArray(REV_EST_RAW.rows) && REV_EST_RAW.rows.length) {
-    var dSet = {};
-    REV_EST_RAW.rows.forEach(function(r) { if (r.ngay) dSet[r.ngay] = 1; });
-    var k = Object.keys(dSet).sort();
-    if (k.length) return k;
+    var dSet2 = {};
+    REV_EST_RAW.rows.forEach(function(r) { if (r.ngay) dSet2[r.ngay] = 1; });
+    var k2 = Object.keys(dSet2).sort();
+    if (k2.length) return k2;
   }
   if (REV_RAW && REV_RAW.dims && Array.isArray(REV_RAW.dims.dates) && REV_RAW.dims.dates.length) {
     return REV_RAW.dims.dates.slice().sort();
@@ -4447,12 +4689,13 @@ function rev_huyFromReport(huyRows, f, mb51PhaRows) {
 
   if (huyRows && huyRows.length) {
     huyRows.forEach(function (r) {
-      if (from && r.ngay < from) return;
-      if (to && r.ngay > to) return;
-      if (sites && !siteMatches(r.tenSite, sites)) return;
+      var sName = r.tenSite || r.ten_site || r.site || '';
+      var ngay = r.ngay || r.date || r.ngay_bao_cao || '';
+      if (from && ngay < from) return;
+      if (to && ngay > to) return;
+      if (sites && !siteMatches(sName, sites)) return;
 
-      var sk = resolveCanonicalKey(r.tenSite);
-      var ngay = r.ngay || '';
+      var sk = resolveCanonicalKey(sName);
       if (!ngay) return;
 
       if (!reportBySiteDay[sk]) reportBySiteDay[sk] = {};
@@ -4472,12 +4715,13 @@ function rev_huyFromReport(huyRows, f, mb51PhaRows) {
   var mb51BySiteDay = {};
   if (mb51PhaRows && mb51PhaRows.length) {
     mb51PhaRows.forEach(function (p) {
-      if (from && p.ngay < from) return;
-      if (to && p.ngay > to) return;
-      if (sites && !siteMatches(p.tenSite, sites)) return;
+      var sName = p.tenSite || p.ten_site || p.site || '';
+      var ngay = p.ngay || p.date || p.posting_date || '';
+      if (from && ngay < from) return;
+      if (to && ngay > to) return;
+      if (sites && !siteMatches(sName, sites)) return;
 
-      var sk = resolveCanonicalKey(p.tenSite);
-      var ngay = p.ngay || '';
+      var sk = resolveCanonicalKey(sName);
       if (!ngay) return;
 
       var suat = Number(p.suatHuy !== undefined && p.suatHuy !== null ? p.suatHuy : (p.quantity || 0));
@@ -4580,9 +4824,14 @@ function rev_huyFromReport(huyRows, f, mb51PhaRows) {
 // Port từ khối build siteDetail trong getRevenueFoodCostData (Code.gs)
 function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
   var siteDetail = {};
+  var rawSdAll = (REV_RAW && REV_RAW.siteDetail) ? REV_RAW.siteDetail : {};
   (dims.sites || []).forEach(function (s) {
+    var rawSd = rawSdAll[s] || null;
     var rs = cur.filter(function (r) { return r.site === s; });
-    if (!rs.length) return;
+    if (!rs.length) {
+      if (rawSd) siteDetail[s] = rawSd;
+      return;
+    }
     var a = rev_agg(); rs.forEach(function (r) { rev_push(a, r); });
     var m = rev_finalize(a);
 
@@ -4616,20 +4865,36 @@ function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
     } else {
       m.huyHasReport = false;
     }
+    if (!huyChiTiet.length && rawSd && rawSd.huyChiTiet) {
+      huyChiTiet = rawSd.huyChiTiet;
+    }
 
     var ds = {}; rs.forEach(function (r) { if (r.ngay) ds[r.ngay] = 1; });
     m.operatingDays = Object.keys(ds).length;
     m.netPerDay = m.operatingDays > 0 ? m.netRevenue / m.operatingDays : 0;
 
+    var byKh = rev_groupBy(rs, function (r) { return r.tenKH; }, 'netRevenue', 50);
+    if ((!byKh.length || (byKh.length === 1 && (byKh[0].key === '(Chưa phân loại)' || !byKh[0].key))) && rawSd && rawSd.byKhachHang) {
+      byKh = rawSd.byKhachHang;
+    }
+    var topSp = rev_groupBy(rs, function (r) { return r.tenSP; }, 'netRevenue', 20);
+    if ((!topSp.length || (topSp.length === 1 && (topSp[0].key === '(Chưa phân loại)' || !topSp[0].key))) && rawSd && rawSd.topSanPham) {
+      topSp = rawSd.topSanPham;
+    }
+    var topFc = rev_groupBy(rs, function (r) { return r.tenSP; }, 'foodCostPct', 100)
+      .filter(function (x) { return x.netRevenue > 0 && x.foodCostPct > 0; })
+      .sort(function (a, b) { return b.foodCostPct - a.foodCostPct; })
+      .slice(0, 15);
+    if (!topFc.length && rawSd && rawSd.topFoodCost) {
+      topFc = rawSd.topFoodCost;
+    }
+
     siteDetail[s] = {
       kpi: m,
       huyChiTiet: huyChiTiet,
-      byKhachHang: rev_groupBy(rs, function (r) { return r.tenKH; }, 'netRevenue', 50),
-      topSanPham: rev_groupBy(rs, function (r) { return r.tenSP; }, 'netRevenue', 20),
-      topFoodCost: rev_groupBy(rs, function (r) { return r.tenSP; }, 'foodCostPct', 100)
-        .filter(function (x) { return x.netRevenue > 0 && x.foodCostPct > 0; })
-        .sort(function (a, b) { return b.foodCostPct - a.foodCostPct; })
-        .slice(0, 15),
+      byKhachHang: byKh,
+      topSanPham: topSp,
+      topFoodCost: topFc,
       byNhomSP: rev_groupBy(rs, function (r) { return r.nhomSP; }, 'netRevenue'),
       byDate: (function () {
         var d = rev_groupBy(rs, function (r) { return r.ngay; });
@@ -5116,9 +5381,21 @@ function drawRevenue(){
       '</div>')+
     '<div class="cbox"><canvas id="chRevMix"></canvas></div></div>';
 
-  html += '<div class="card">'+cardHead(IC.trash,'Tỷ lệ hủy hàng theo cửa hàng (ngưỡng '+
-      ng.huyPct.toFixed(2).replace('.',',')+'%)','')+
-    '<div class="cbox"><canvas id="chRevHuy"></canvas></div></div>';
+  html += '<div class="card">'+cardHead(IC.trash,
+      (RUI.huyMode==='nvl'
+        ? 'Tỷ lệ hủy NVL-BTP'+(RUI.huyDim==='day'?' theo ngày':' theo cửa hàng')
+        : 'Tỷ lệ hủy hàng theo cửa hàng (ngưỡng '+ng.huyPct.toFixed(2).replace('.',',')+'%)'),
+      '<div class="tg" id="rTgHuyMode" style="margin-right:6px">'+
+        '<button data-v="suat" class="'+(RUI.huyMode!=='nvl'?'on':'')+'">Suất hủy</button>'+
+        '<button data-v="nvl" class="'+(RUI.huyMode==='nvl'?'on':'')+'">NVL-BTP</button></div>'+
+      '<div class="tg'+(RUI.huyMode==='nvl'?'':' hide')+'" id="rTgHuyDim">'+
+        '<button data-v="site" class="'+(RUI.huyDim!=='day'?'on':'')+'">Theo site</button>'+
+        '<button data-v="day" class="'+(RUI.huyDim==='day'?'on':'')+'">Theo ngày</button></div>')+
+    '<div class="cbox"><canvas id="chRevHuy"></canvas></div>'+
+    (RUI.huyMode==='nvl'
+      ? '<div style="font-size:11px;color:#A8A8A8;margin-top:6px">Kg tiêu hủy · Giá trị · % trên doanh thu thuần (MB51 551/552)</div>'
+      : '')+
+    '</div>';
 
   var isFcNhom = RUI.mixChartMode === 'fcNhom';
   html += '<div class="card">'+cardHead(
@@ -5535,13 +5812,13 @@ function drawRevHuySacn(){
     position:'left', beginAtZero:true,
     ticks:{ font:{size:10}, callback:function(v){ return v; } },
     grid:{ color:'#F0F0F0' },
-    title:{ display:true, text:'Kg tiêu hủy', font:{size:10}, color:'#9A9A9A' }
+    title:{ display:true, text:'Kg tiêu hủy', font:{size:10}, color:C.brand }
   };
   o2.scales.y1 = {
     position:'right', beginAtZero:true,
-    ticks:{ font:{size:10}, callback:function(v){ return v+'%'; }, color:'#7C3AED' },
+    ticks:{ font:{size:10}, callback:function(v){ return v+'%'; }, color:C.gold },
     grid:{ drawOnChartArea:false },
-    title:{ display:true, text:'% DT thuần', font:{size:10}, color:'#7C3AED' }
+    title:{ display:true, text:'% DT thuần', font:{size:10}, color:C.gold }
   };
   o2.plugins.tooltip.callbacks = {
     label: function(c){
@@ -5560,8 +5837,8 @@ function drawRevHuySacn(){
         {
           label: 'Kg tiêu hủy',
           data: qtyArr,
-          borderColor: '#C0342C',
-          backgroundColor: dim==='day' ? 'rgba(192,52,44,.12)' : '#C0342CCC',
+          borderColor: C.brand,
+          backgroundColor: dim==='day' ? 'rgba(4,106,56,.12)' : C.brand+'CC',
           borderWidth: 2, tension: 0.3, fill: dim==='day',
           yAxisID: 'y', borderRadius: 3, barPercentage: 0.65,
           pointRadius: dim==='day' ? 3 : 0
@@ -5569,8 +5846,8 @@ function drawRevHuySacn(){
         {
           label: '% trên DT thuần',
           data: pctArr,
-          borderColor: '#7C3AED',
-          backgroundColor: dim==='day' ? 'rgba(124,58,237,.12)' : '#7C3AED99',
+          borderColor: C.gold,
+          backgroundColor: dim==='day' ? 'rgba(255,103,32,.12)' : C.gold+'99',
           borderWidth: 2, tension: 0.3, fill: false,
           yAxisID: 'y1', borderRadius: 3, barPercentage: 0.65,
           borderDash: dim==='day' ? [5,4] : [],
@@ -5608,7 +5885,7 @@ function drawRevFcNhomSacn(){
   var bandLine = { id:'sacnFcBand', afterDatasetsDraw:function(chart){
     if (chart.canvas.id !== 'sChRevFcNhom') return;
     var x = chart.scales.x, c = chart.ctx;
-    [[FC_MARKS.ok,'#16A34A'],[FC_MARKS.warn,'#C9A227'],[FC_MARKS.bad,'#EA580C']].forEach(function(pair){
+    [[FC_MARKS.ok, C.brand],[FC_MARKS.warn, C.gold],[FC_MARKS.bad, '#C0342C']].forEach(function(pair){
       var xp = x.getPixelForValue(pair[0]); if (isNaN(xp)) return;
       c.save(); c.beginPath(); c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
       c.lineWidth = 1.4; c.strokeStyle = pair[1]; c.setLineDash([5,4]); c.stroke(); c.setLineDash([]);
@@ -5620,9 +5897,8 @@ function drawRevFcNhomSacn(){
     data:{ labels: data.map(function(x){ return x.key; }),
       datasets:[{ data:data.map(function(x){ return r1(x.foodCostPct); }), borderRadius:3,
         backgroundColor:data.map(function(x){
-          if (x.foodCostPct <= FC_MARKS.ok)   return '#16A34ACC';
+          if (x.foodCostPct <= FC_MARKS.ok)   return C.brand+'CC';
           if (x.foodCostPct <= FC_MARKS.warn) return C.gold+'CC';
-          if (x.foodCostPct <= FC_MARKS.bad)  return '#EA580CCC';
           return '#C0342CCC';
         }) }] }, options:o, plugins:[bandLine] });
 }
@@ -5665,8 +5941,13 @@ function drawRevPeriodSacn(){
 }
 function renderRevDrillSacn(site){
   var box = document.getElementById('sDrill'); if (!box) return;
-  var sd = REV_SACN.siteDetail[site];
+  var sd = REV_SACN.siteDetail ? REV_SACN.siteDetail[site] : null;
   if (!sd){ box.innerHTML = '<div class="empty">Cửa hàng này không có dữ liệu trong kỳ</div>'; return; }
+
+  var byKhachHang = (sd.byKhachHang && sd.byKhachHang.length && sd.byKhachHang[0].key !== '(Chưa phân loại)') ? sd.byKhachHang : (sd.byCustomer || []);
+  var topSanPham = (sd.topSanPham && sd.topSanPham.length && sd.topSanPham[0].key !== '(Chưa phân loại)') ? sd.topSanPham : (sd.topProductsByRev || []);
+  var topFoodCost = (sd.topFoodCost && sd.topFoodCost.length) ? sd.topFoodCost : (sd.topProductsByFc || []);
+  var huyChiTiet = (sd.huyChiTiet && sd.huyChiTiet.length) ? sd.huyChiTiet : (sd.discardByDay || []);
 
   var k = sd.kpi, ng = REV_SACN.nguong; var h = '';
   h += '<div class="grid g6">'+
@@ -5701,8 +5982,9 @@ function renderRevDrillSacn(site){
     cardHead(IC.smile,'Doanh thu theo khách hàng','')+
     '<div class="tw" style="max-height:330px"><table><thead><tr><th>Khách hàng</th><th class="num">DT thuần</th>'+
       '<th class="num">%</th><th class="num">Food cost %</th><th class="num">Lãi gộp</th></tr></thead><tbody>'+
-    sd.byKhachHang.map(function(x){
-      return '<tr><td>'+esc(x.key)+'</td><td class="num">'+fmtMoney(x.netRevenue)+'</td>'+
+    byKhachHang.map(function(x){
+      var name = x.key || x.ten_kh || x.tenKH || '(Không tên)';
+      return '<tr><td>'+esc(name)+'</td><td class="num">'+fmtMoney(x.netRevenue)+'</td>'+
         '<td class="num">'+fmtPct(totNet>0?(x.netRevenue/totNet)*100:0)+'</td>'+
         '<td class="num '+fcCls(x.foodCostPct,ng)+'">'+fmtPct(x.foodCostPct)+'</td>'+
         '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+fmtMoney(x.grossProfit)+'</td></tr>';
@@ -5712,29 +5994,33 @@ function renderRevDrillSacn(site){
     cardHead(IC.meal,'Top sản phẩm theo doanh thu','')+
     '<div class="tw" style="max-height:330px"><table><thead><tr><th>Sản phẩm</th><th class="num">SL</th>'+
       '<th class="num">DT thuần</th><th class="num">Food cost %</th></tr></thead><tbody>'+
-    sd.topSanPham.map(function(x, idx){
+    topSanPham.map(function(x, idx){
       var isTop3 = idx < 3;
-      return '<tr><td>'+esc(x.key)+'</td><td class="num">'+fmt(x.salesQty)+'</td>'+
+      var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+      var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
+      return '<tr><td>'+esc(name)+'</td><td class="num">'+fmt(qty)+'</td>'+
         '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
   h += '</div>';
 
-  if (sd.topFoodCost.length){
-    var top3FcRevThreshold = sd.topFoodCost.slice().map(function(r){ return r.netRevenue || 0; }).sort(function(a,b){ return b-a; })[2] || 0;
+  if (topFoodCost.length){
+    var top3FcRevThreshold = topFoodCost.slice().map(function(r){ return r.netRevenue || 0; }).sort(function(a,b){ return b-a; })[2] || 0;
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
       cardHead(IC.trash,'Sản phẩm có food cost % cao nhất','')+
       '<div class="tw"><table><thead><tr><th>Sản phẩm</th><th class="num">Food cost %</th><th class="num">DT thuần</th>'+
         '<th class="num">Giá vốn</th><th class="num">Lãi gộp</th><th class="num">SL</th></tr></thead><tbody>'+
-      sd.topFoodCost.map(function(x){
+      topFoodCost.map(function(x){
         var isTop3Dt = (top3FcRevThreshold > 0 && (x.netRevenue || 0) >= top3FcRevThreshold);
-        return '<tr><td>'+esc(x.key)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
-          '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td><td class="num">'+fmtMoney(x.foodCost)+'</td>'+
+        var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+        var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
+        return '<tr><td>'+esc(name)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
+          '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td><td class="num">'+fmtMoney(x.foodCost || x.cogs || 0)+'</td>'+
           '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+fmtMoney(x.grossProfit)+'</td>'+
-          '<td class="num">'+fmt(x.salesQty)+'</td></tr>';
+          '<td class="num">'+fmt(qty)+'</td></tr>';
       }).join('')+'</tbody></table></div></div>';
   }
 
-  var huyCt = sd.huyChiTiet || [];
+  var huyCt = huyChiTiet || [];
   if (huyCt.length){
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
       cardHead(IC.trash,'Chi tiết suất hủy theo ngày ('+huyCt.length+' ngày có hủy)','')+
@@ -6050,67 +6336,169 @@ function drawRevKenh(){
 function drawRevHuy(){
   destroyChart('chRevHuy');
   var ctx = ctxOf('chRevHuy'); if (!ctx) return;
-  var ng = REV.nguong;
-  // Chỉ lấy site có dữ liệu hủy từ Report (huyReportPct != null)
-  var data = REV.bySite.slice()
-    .filter(function(x){ return x.huyReportPct !== null && x.huyReportPct !== undefined; })
-    .sort(function(a,b){ return b.huyQtyPct - a.huyQtyPct; })
-    .slice(0, 12);
-  if (!data.length){
-    var el = document.getElementById('chRevHuy');
-    if (el && el.parentNode) el.parentNode.innerHTML =
-      '<div class="empty">Sheet Report chưa có dữ liệu suất hủy cho các cửa hàng trong kỳ này</div>';
+  var ng = (REV && REV.nguong) || { huyPct: 1.5 };
+  var mode = (RUI && RUI.huyMode) || 'suat';
+  var dim = (RUI && RUI.huyDim) || 'site';
+
+  if (mode !== 'nvl') {
+    var data = ((REV && REV.bySite) || []).slice()
+      .filter(function(x){ return x.huyReportPct !== null && x.huyReportPct !== undefined; })
+      .sort(function(a,b){ return b.huyQtyPct - a.huyQtyPct; })
+      .slice(0, 12);
+    if (!data.length){
+      var el = document.getElementById('chRevHuy');
+      if (el && el.parentNode) el.parentNode.innerHTML =
+        '<div class="empty">Sheet Report chưa có dữ liệu suất hủy cho các cửa hàng trong kỳ này</div>';
+      return;
+    }
+
+    var o = cloneOpt();
+    o.plugins.legend = { display:false };
+    o.scales.y.ticks.callback = function(v){ return v+'%'; };
+    o.plugins.tooltip.callbacks = {
+      label:function(c){
+        var x = data[c.dataIndex];
+        var over = x.huyQtyPct - ng.huyPct;
+        return ['Tỷ lệ suất hủy: '+fmtPct(x.huyReportPct),
+                fmt(x.huySuatHuy||0)+' / '+fmt(x.huyTongSuat||0)+' suất (Report)',
+                over > 0 ? '▲ Vượt '+fmtPct(over)+' so định mức' : '✓ Trong định mức'];
+      }
+    };
+
+    var thrLine = {
+      id:'akThrLine',
+      afterDatasetsDraw:function(chart){
+        var y = chart.scales.y, c = chart.ctx;
+        var yPos = y.getPixelForValue(ng.huyPct);
+        if (isNaN(yPos)) return;
+        c.save();
+        c.beginPath();
+        c.moveTo(chart.chartArea.left, yPos);
+        c.lineTo(chart.chartArea.right, yPos);
+        c.lineWidth = 1.6; c.strokeStyle = '#C0342C';
+        c.setLineDash([6,4]); c.stroke();
+        c.setLineDash([]);
+        c.fillStyle = '#C0342C';
+        c.font = 'bold 10px Segoe UI';
+        c.textAlign = 'right';
+        c.fillText('Định mức '+ng.huyPct.toFixed(2).replace('.',',')+'%',
+                   chart.chartArea.right - 4, yPos - 5);
+        c.restore();
+      }
+    };
+
+    CHARTS.chRevHuy = new Chart(ctx, {
+      type:'bar',
+      data:{
+        labels: data.map(function(x){ return x.key; }),
+        datasets:[{ data:data.map(function(x){ return r1(x.huyQtyPct); }), borderRadius:3,
+          barPercentage:.68,
+          backgroundColor:data.map(function(x){
+            return x.huyQtyPct <= ng.huyPct ? '#16A34ACC' : '#C0342CCC';
+          }) }]
+      },
+      options:o,
+      plugins:[thrLine]
+    });
     return;
   }
 
-  var o = cloneOpt();
-  o.plugins.legend = { display:false };
-  o.scales.y.ticks.callback = function(v){ return v+'%'; };
-  o.plugins.tooltip.callbacks = {
-    label:function(c){
-      var x = data[c.dataIndex];
-      var over = x.huyQtyPct - ng.huyPct;
-      return ['Tỷ lệ suất hủy: '+fmtPct(x.huyReportPct),
-              fmt(x.huySuatHuy||0)+' / '+fmt(x.huyTongSuat||0)+' suất (Report)',
-              over > 0 ? '▲ Vượt '+fmtPct(over)+' so định mức' : '✓ Trong định mức'];
-    }
-  };
+  // ===== Mode: NVL-BTP (MB51 551/552) =====
+  var disp = (REV && REV.disposal) || { bySite:{}, byDate:{} };
+  var labels = [], qtyArr = [], valArr = [], pctArr = [];
 
-  // Plugin vẽ đường ngưỡng nằm ngang
-  var thrLine = {
-    id:'akThrLine',
-    afterDatasetsDraw:function(chart){
-      var y = chart.scales.y, c = chart.ctx;
-      var yPos = y.getPixelForValue(ng.huyPct);
-      if (isNaN(yPos)) return;
-      c.save();
-      c.beginPath();
-      c.moveTo(chart.chartArea.left, yPos);
-      c.lineTo(chart.chartArea.right, yPos);
-      c.lineWidth = 1.6; c.strokeStyle = '#C0342C';
-      c.setLineDash([6,4]); c.stroke();
-      c.setLineDash([]);
-      c.fillStyle = '#C0342C';
-      c.font = 'bold 10px Segoe UI';
-      c.textAlign = 'right';
-      c.fillText('Định mức '+ng.huyPct.toFixed(2).replace('.',',')+'%',
-                 chart.chartArea.right - 4, yPos - 5);
-      c.restore();
+  if (dim === 'day') {
+    labels = Object.keys(disp.byDate || {}).sort();
+    var revByDate = {};
+    ((REV && REV.byDate) || []).forEach(function(x){ revByDate[x.key] = x.netRevenue || 0; });
+    labels.forEach(function(d){
+      var row = disp.byDate[d] || { qtyKg:0, value:0 };
+      qtyArr.push(r1(row.qtyKg));
+      valArr.push(Math.round(row.value));
+      var rev = revByDate[d] || 0;
+      pctArr.push(rev > 0 ? r1((row.value / rev) * 100) : 0);
+    });
+  } else {
+    var sites = ((REV && REV.bySite) || []).slice().map(function(s){
+      return {
+        key: s.key,
+        qtyKg: s.dispQtyKg || 0,
+        value: s.dispValue || 0,
+        pct: s.dispPctRev || 0
+      };
+    }).filter(function(x){ return x.qtyKg > 0 || x.value > 0; })
+      .sort(function(a,b){ return b.value - a.value; }).slice(0, 12);
+
+    Object.keys(disp.bySite || {}).forEach(function(k){
+      if (sites.some(function(x){ return x.key === k; })) return;
+      var d0 = disp.bySite[k];
+      if ((d0.qtyKg||0) > 0 || (d0.value||0) > 0)
+        sites.push({ key:k, qtyKg:d0.qtyKg, value:d0.value, pct:0 });
+    });
+    sites.sort(function(a,b){ return b.value - a.value; });
+    sites = sites.slice(0, 12);
+    labels = sites.map(function(x){ return x.key; });
+    qtyArr = sites.map(function(x){ return r1(x.qtyKg); });
+    valArr = sites.map(function(x){ return Math.round(x.value); });
+    pctArr = sites.map(function(x){ return r1(x.pct); });
+  }
+
+  if (!labels.length){
+    var el2 = document.getElementById('chRevHuy');
+    if (el2 && el2.parentNode) el2.parentNode.innerHTML = '<div class="empty">Chưa có dữ liệu tiêu hủy NVL-BTP (MB51 551/552) trong kỳ / filter hiện tại</div>';
+    return;
+  }
+
+  var o2 = cloneOpt();
+  o2.plugins.legend = { display:true, labels:{ font:{size:11}, boxWidth:12, usePointStyle:true } };
+  o2.scales.y = {
+    position:'left', beginAtZero:true,
+    ticks:{ font:{size:10}, callback:function(v){ return v; } },
+    grid:{ color:'#F0F0F0' },
+    title:{ display:true, text:'Kg tiêu hủy', font:{size:10}, color:C.brand }
+  };
+  o2.scales.y1 = {
+    position:'right', beginAtZero:true,
+    ticks:{ font:{size:10}, callback:function(v){ return v+'%'; }, color:C.gold },
+    grid:{ drawOnChartArea:false },
+    title:{ display:true, text:'% DT thuần', font:{size:10}, color:C.gold }
+  };
+  o2.plugins.tooltip.callbacks = {
+    label: function(c){
+      var i = c.dataIndex;
+      if (c.dataset.label === 'Kg tiêu hủy')
+        return ' Kg: ' + qtyArr[i].toLocaleString('vi-VN') + ' · Giá trị: ' + fmtMoney(valArr[i]);
+      return ' % DT: ' + fmtPct(pctArr[i]) + ' · Giá trị: ' + fmtMoney(valArr[i]);
     }
   };
 
   CHARTS.chRevHuy = new Chart(ctx, {
-    type:'bar',
-    data:{
-      labels: data.map(function(x){ return x.key; }),
-      datasets:[{ data:data.map(function(x){ return r1(x.huyQtyPct); }), borderRadius:3,
-        barPercentage:.68,
-        backgroundColor:data.map(function(x){
-          return x.huyQtyPct <= ng.huyPct ? '#16A34ACC' : '#C0342CCC';
-        }) }]
+    type: dim === 'day' ? 'line' : 'bar',
+    data: {
+      labels: labels.map(function(l){ return dim==='day' ? dm(l) : l; }),
+      datasets: [
+        {
+          label: 'Kg tiêu hủy',
+          data: qtyArr,
+          borderColor: C.brand,
+          backgroundColor: dim==='day' ? 'rgba(4,106,56,.12)' : C.brand+'CC',
+          borderWidth: 2, tension: 0.3, fill: dim==='day',
+          yAxisID: 'y', borderRadius: 3, barPercentage: 0.65,
+          pointRadius: dim==='day' ? 3 : 0
+        },
+        {
+          label: '% trên DT thuần',
+          data: pctArr,
+          borderColor: C.gold,
+          backgroundColor: dim==='day' ? 'rgba(255,103,32,.12)' : C.gold+'99',
+          borderWidth: 2, tension: 0.3, fill: false,
+          yAxisID: 'y1', borderRadius: 3, barPercentage: 0.65,
+          borderDash: dim==='day' ? [5,4] : [],
+          pointRadius: dim==='day' ? 3 : 0
+        }
+      ]
     },
-    options:o,
-    plugins:[thrLine]
+    options: o2
   });
 }
 
@@ -6118,8 +6506,7 @@ function drawRevHuy(){
 function drawRevFcNhom(){
   destroyChart('chRevFcNhom');
   var ctx = ctxOf('chRevFcNhom'); if (!ctx) return;
-  var ng = REV.nguong;
-  var FC_MARKS = { ok:58, warn:62, bad:65 };   // ← thêm dòng này, thay cho ng.foodCostMin/Max
+  var FC_MARKS = { ok:58, warn:62, bad:65 };
   var data = REV.byNhomSP.slice()
     .filter(function(x){ return x.netRevenue > 0; })
     .sort(function(a,b){ return b.foodCostPct - a.foodCostPct; })
@@ -6127,110 +6514,48 @@ function drawRevFcNhom(){
   if (!data.length) return;
 
   var o = cloneOpt({ indexAxis:'y' });
-  // Bar NGANG: trục index là Y -> đổi interaction sang trục y để hover đúng cột.
   o.interaction = { mode:'index', intersect:false, axis:'y' };
   o.hover = { mode:'index', intersect:false, axis:'y' };
   o.plugins.legend = { display:false };
   o.scales = {
-    x:{ beginAtZero:true, grid:{color:'#F0F0F0'},
+    x:{ beginAtZero:true, grid:{color:'#F0F0F0'}, suggestedMax:70,
         ticks:{font:{size:10}, callback:function(v){ return v+'%'; }} },
     y:{ grid:{display:false}, ticks:{font:{size:10}} }
   };
-  // o.plugins.tooltip.callbacks = {
-  //   label:function(c){
-  //     var x = data[c.dataIndex];
-  //     return ['Food cost: '+fmtPct(x.foodCostPct),
-  //             'DT thuần: '+fmt(x.netRevenue)+'₫',
-  //             'Lãi gộp: '+fmt(x.grossProfit)+'₫',
-  //             x.foodCostPct > ng.foodCostMax ? '▲ Trên mục tiêu '+ng.foodCostMax+'%'
-  //               : (x.foodCostPct < ng.foodCostMin ? '✓ Dưới mục tiêu' : '~ Trong dải mục tiêu')];
-  //   }
-  // };
   o.plugins.tooltip.callbacks = {
-  label:function(c){
-    var x = data[c.dataIndex];
-    var trangThai;
-    if (x.foodCostPct <= FC_MARKS.ok)        trangThai = '✓ An toàn (≤'+FC_MARKS.ok+'%)';
-    else if (x.foodCostPct <= FC_MARKS.warn) trangThai = '~ Cần lưu ý ('+FC_MARKS.ok+'-'+FC_MARKS.warn+'%)';
-    else if (x.foodCostPct <= FC_MARKS.bad)  trangThai = '▲ Cảnh báo ('+FC_MARKS.warn+'-'+FC_MARKS.bad+'%)';
-    else                                      trangThai = '✕ Vượt ngưỡng (>'+FC_MARKS.bad+'%)';
-    return ['Food cost: '+fmtPct(x.foodCostPct),
-            'DT thuần: '+fmt(x.netRevenue)+'₫',
-            'Lãi gộp: '+fmt(x.grossProfit)+'₫',
-            trangThai];
-  }
+    label:function(c){
+      var x = data[c.dataIndex];
+      var trangThai;
+      if (x.foodCostPct <= FC_MARKS.ok)        trangThai = '✓ An toàn (≤'+FC_MARKS.ok+'%)';
+      else if (x.foodCostPct <= FC_MARKS.warn) trangThai = '~ Cần lưu ý ('+FC_MARKS.ok+'-'+FC_MARKS.warn+'%)';
+      else if (x.foodCostPct <= FC_MARKS.bad)  trangThai = '▲ Cảnh báo ('+FC_MARKS.warn+'-'+FC_MARKS.bad+'%)';
+      else                                      trangThai = '✕ Vượt ngưỡng (>'+FC_MARKS.bad+'%)';
+      return ['Food cost: '+fmtPct(x.foodCostPct),
+              'DT thuần: '+fmt(x.netRevenue)+'₫',
+              'Lãi gộp: '+fmt(x.grossProfit)+'₫',
+              trangThai];
+    }
   };
 
-  // Vẽ 2 đường mốc biên dải mục tiêu
-  // var bandLine = {
-  //   id:'akFcBand',
-  //   afterDatasetsDraw:function(chart){
-  //     var x = chart.scales.x, c = chart.ctx;
-  //     [[ng.foodCostMin,'#16A34A'],[ng.foodCostMax,'#C0342C']].forEach(function(pair){
-  //       var xp = x.getPixelForValue(pair[0]);
-  //       if (isNaN(xp)) return;
-  //       c.save();
-  //       c.beginPath();
-  //       c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
-  //       c.lineWidth = 1.4; c.strokeStyle = pair[1];
-  //       c.setLineDash([5,4]); c.stroke();
-  //       c.setLineDash([]);
-  //       c.fillStyle = pair[1]; c.font = 'bold 9.5px Segoe UI'; c.textAlign = 'center';
-  //       c.fillText(pair[0]+'%', xp, chart.chartArea.top - 2);
-  //       c.restore();
-  //     });
-  //   }
-  // };
-  // Vẽ 3 đường mốc cảnh báo food cost
-  // var bandLine = {
-  //   id:'akFcBand',
-  //   afterDatasetsDraw:function(chart){
-  //     o.scales = {
-  //       x:{ beginAtZero:true, grid:{color:'#F0F0F0'}, suggestedMax:70,   // ← thêm dòng này
-  //           ticks:{font:{size:10}, callback:function(v){ return v+'%'; }} },
-  //       y:{ grid:{display:false}, ticks:{font:{size:10}} }
-  //     };
-  //     //Scale
-  //     var x = chart.scales.x, c = chart.ctx;
-  //     [[58,'#16A34A'],[62,'#C9A227'],[65,'#C0342C']].forEach(function(pair){
-  //       var xp = x.getPixelForValue(pair[0]);
-  //       if (isNaN(xp)) return;
-  //       c.save();
-  //       c.beginPath();
-  //       c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
-  //       c.lineWidth = 1.4; c.strokeStyle = pair[1];
-  //       c.setLineDash([5,4]); c.stroke();
-  //       c.setLineDash([]);
-  //       c.fillStyle = pair[1]; c.font = 'bold 9.5px Segoe UI'; c.textAlign = 'center';
-  //       c.fillText(pair[0]+'%', xp, chart.chartArea.top - 2);
-  //       c.restore();
-  //     });
-  //   }
-  // };
   var bandLine = {
-  id:'akFcBand',
-  afterDatasetsDraw:function(chart){
-    o.scales = {
-        x:{ beginAtZero:true, grid:{color:'#F0F0F0'}, suggestedMax:70,   // ← thêm dòng này
-            ticks:{font:{size:10}, callback:function(v){ return v+'%'; }} },
-        y:{ grid:{display:false}, ticks:{font:{size:10}} }
-      };
-      //Scale
-    var x = chart.scales.x, c = chart.ctx;
-    [[FC_MARKS.ok,'#16A34A'],[FC_MARKS.warn,'#C9A227'],[FC_MARKS.bad,'#EA580C']].forEach(function(pair){
-      var xp = x.getPixelForValue(pair[0]);
-      if (isNaN(xp)) return;
-      c.save();
-      c.beginPath();
-      c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
-      c.lineWidth = 1.4; c.strokeStyle = pair[1];
-      c.setLineDash([5,4]); c.stroke();
-      c.setLineDash([]);
-      c.fillStyle = pair[1]; c.font = 'bold 9.5px Segoe UI'; c.textAlign = 'center';
-      c.fillText(pair[0]+'%', xp, chart.chartArea.top - 2);
-      c.restore();
-    });
-  }
+    id:'akFcBand',
+    afterDatasetsDraw:function(chart){
+      if (chart.canvas.id !== 'chRevFcNhom') return;
+      var x = chart.scales.x, c = chart.ctx;
+      [[FC_MARKS.ok, C.brand],[FC_MARKS.warn, C.gold],[FC_MARKS.bad, '#C0342C']].forEach(function(pair){
+        var xp = x.getPixelForValue(pair[0]);
+        if (isNaN(xp)) return;
+        c.save();
+        c.beginPath();
+        c.moveTo(xp, chart.chartArea.top); c.lineTo(xp, chart.chartArea.bottom);
+        c.lineWidth = 1.4; c.strokeStyle = pair[1];
+        c.setLineDash([5,4]); c.stroke();
+        c.setLineDash([]);
+        c.fillStyle = pair[1]; c.font = 'bold 9.5px Segoe UI'; c.textAlign = 'center';
+        c.fillText(pair[0]+'%', xp, chart.chartArea.top - 2);
+        c.restore();
+      });
+    }
   };
 
   CHARTS.chRevFcNhom = new Chart(ctx, {
@@ -6238,7 +6563,11 @@ function drawRevFcNhom(){
     data:{
       labels: data.map(function(x){ return x.key; }),
       datasets:[{ data:data.map(function(x){ return r1(x.foodCostPct); }), borderRadius:3,
-        backgroundColor:data.map(function(x){ return getGroupColor(x.key || x.nhomSP); }) }]
+        backgroundColor:data.map(function(x){
+          if (x.foodCostPct <= FC_MARKS.ok)   return C.brand+'CC';
+          if (x.foodCostPct <= FC_MARKS.warn) return C.gold+'CC';
+          return '#C0342CCC';
+        }) }]
     },
     options:o,
     plugins:[bandLine]
@@ -6459,8 +6788,13 @@ function drawRevPeriod(){
 function renderRevDrill(site){
   var box = document.getElementById('rDrill');
   if (!box) return;
-  var sd = REV.siteDetail[site];
+  var sd = REV.siteDetail ? REV.siteDetail[site] : null;
   if (!sd){ box.innerHTML = '<div class="empty">Cửa hàng này không có dữ liệu trong kỳ</div>'; return; }
+
+  var byKhachHang = (sd.byKhachHang && sd.byKhachHang.length && sd.byKhachHang[0].key !== '(Chưa phân loại)') ? sd.byKhachHang : (sd.byCustomer || []);
+  var topSanPham = (sd.topSanPham && sd.topSanPham.length && sd.topSanPham[0].key !== '(Chưa phân loại)') ? sd.topSanPham : (sd.topProductsByRev || []);
+  var topFoodCost = (sd.topFoodCost && sd.topFoodCost.length) ? sd.topFoodCost : (sd.topProductsByFc || []);
+  var huyChiTiet = (sd.huyChiTiet && sd.huyChiTiet.length) ? sd.huyChiTiet : (sd.discardByDay || []);
 
   var k = sd.kpi, ng = REV.nguong;
   var h = '';
@@ -6504,8 +6838,9 @@ function renderRevDrill(site){
       '<th>Khách hàng</th><th class="num">DT thuần</th><th class="num">%</th>'+
       '<th class="num">Food cost %</th><th class="num">Lãi gộp</th>'+
     '</tr></thead><tbody>'+
-    sd.byKhachHang.map(function(x){
-      return '<tr><td>'+esc(x.key)+'</td>'+
+    byKhachHang.map(function(x){
+      var name = x.key || x.ten_kh || x.tenKH || '(Không tên)';
+      return '<tr><td>'+esc(name)+'</td>'+
         '<td class="num">'+fmtMoney(x.netRevenue)+'</td>'+
         '<td class="num">'+fmtPct(totNet>0?(x.netRevenue/totNet)*100:0)+'</td>'+
         '<td class="num '+fcCls(x.foodCostPct,ng)+'">'+fmtPct(x.foodCostPct)+'</td>'+
@@ -6520,10 +6855,12 @@ function renderRevDrill(site){
       '<th>Sản phẩm</th><th class="num">SL</th><th class="num">DT thuần</th>'+
       '<th class="num">Food cost %</th>'+
     '</tr></thead><tbody>'+
-    sd.topSanPham.map(function(x, idx){
+    topSanPham.map(function(x, idx){
       var isTop3 = idx < 3;
-      return '<tr><td>'+esc(x.key)+'</td>'+
-        '<td class="num">'+fmt(x.salesQty)+'</td>'+
+      var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+      var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
+      return '<tr><td>'+esc(name)+'</td>'+
+        '<td class="num">'+fmt(qty)+'</td>'+
         '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td>'+
         '<td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
     }).join('')+
@@ -6532,32 +6869,33 @@ function renderRevDrill(site){
   h += '</div>';
 
   /* Sản phẩm ăn mòn biên lợi nhuận */
-  if (sd.topFoodCost.length){
-    var top3FcRevThreshold = sd.topFoodCost.slice().map(function(r){ return r.netRevenue || 0; }).sort(function(a,b){ return b-a; })[2] || 0;
+  if (topFoodCost.length){
+    var top3FcRevThreshold = topFoodCost.slice().map(function(r){ return r.netRevenue || 0; }).sort(function(a,b){ return b-a; })[2] || 0;
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
       cardHead(IC.trash,'Sản phẩm có food cost % cao nhất','')+
       '<div class="tw"><table><thead><tr>'+
         '<th>Sản phẩm</th><th class="num">Food cost %</th><th class="num">DT thuần</th>'+
         '<th class="num">Giá vốn</th><th class="num">Lãi gộp</th><th class="num">SL</th>'+
       '</tr></thead><tbody>'+
-      sd.topFoodCost.map(function(x){
+      topFoodCost.map(function(x){
         var isTop3Dt = (top3FcRevThreshold > 0 && (x.netRevenue || 0) >= top3FcRevThreshold);
-        return '<tr><td>'+esc(x.key)+'</td>'+
+        var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+        var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
+        return '<tr><td>'+esc(name)+'</td>'+
           '<td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
           '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td>'+
-          '<td class="num">'+fmtMoney(x.foodCost)+'</td>'+
+          '<td class="num">'+fmtMoney(x.foodCost || x.cogs || 0)+'</td>'+
           '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+
             fmtMoney(x.grossProfit)+'</td>'+
-          '<td class="num">'+fmt(x.salesQty)+'</td></tr>';
+          '<td class="num">'+fmt(qty)+'</td></tr>';
       }).join('')+
       '</tbody></table></div>'+
       '<div style="margin-top:8px;font-size:11px;color:#A08000">'+
-        //'Lưu ý: food cost % bất thường cao (>60%) hoặc âm thường là dấu hiệu nhập sai giá vốn trong master data.'+
       '</div></div>';
   }
 
   /* Chi tiết suất hủy theo ngày */
-  var huyCt = sd.huyChiTiet || [];
+  var huyCt = huyChiTiet || [];
   if (huyCt.length){
     h += '<div class="card" style="margin-top:13px;box-shadow:none;border-color:#EFEFEF">'+
       cardHead(IC.trash,'Chi tiết suất hủy theo ngày ('+huyCt.length+' ngày có hủy)','')+
@@ -6608,20 +6946,31 @@ function bindRevenueEvents(){
     tgM.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
     drawRevMix();
   });
-    // Toggle chart: Khách hàng (default) | Cửa hàng
+  // Toggle chart: Khách hàng (default) | Cửa hàng
   var tgBar = document.getElementById('rTgBarDim');
   if (tgBar) tgBar.addEventListener('click', function(e){
     var b = e.target.closest('button'); if (!b) return;
     RUI.barDim = b.dataset.v;
     tgBar.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
-    // Đổi tiêu đề card
-    var title = tgBar.closest('.card') && tgBar.closest('.card').querySelector('.card-t h3');
-    if (title){
-      // giữ icon SVG nếu có — chỉ sửa text node cuối
-      var txt = 'Doanh thu thuần & Lãi gộp theo ' + (RUI.barDim==='site' ? 'cửa hàng' : 'khách hàng');
-      // Cách an toàn: vẽ lại chart là đủ; title cập nhật khi drawRevenue lần sau
-    }
     drawRevSite();
+  });
+
+  // Toggle Suất hủy / NVL-BTP mode
+  var tgHuyMode = document.getElementById('rTgHuyMode');
+  if (tgHuyMode) tgHuyMode.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI.huyMode = b.dataset.v;
+    tgHuyMode.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var dimEl = document.getElementById('rTgHuyDim');
+    if (dimEl) dimEl.classList.toggle('hide', RUI.huyMode !== 'nvl');
+    drawRevenue();
+  });
+  var tgHuyDim = document.getElementById('rTgHuyDim');
+  if (tgHuyDim) tgHuyDim.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI.huyDim = b.dataset.v;
+    tgHuyDim.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    drawRevHuy();
   });
 
 
@@ -6797,7 +7146,10 @@ function bindRevenueFiltersSacn(){
         if (sToEl) sToEl.value = RF_SACN.to;
       }
       updateRevSacnPeriodLabel();
-      loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
+      akDebounce('sacnFilter', function(){
+        if (TAB !== 'sacn') return;
+        loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
+      }, 350);
     });
   }
 
@@ -6816,7 +7168,10 @@ function bindRevenueFiltersSacn(){
       if (pBtnText && RF_SACN.from && RF_SACN.to) {
         pBtnText.textContent = RF_SACN.from + ' → ' + RF_SACN.to;
       }
-      loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
+      akDebounce('sacnFilter', function(){
+        if (TAB !== 'sacn') return;
+        loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
+      }, 350);
     });
   }
   var sToInput = document.getElementById('sTo');
@@ -6833,7 +7188,10 @@ function bindRevenueFiltersSacn(){
       if (pBtnText && RF_SACN.from && RF_SACN.to) {
         pBtnText.textContent = RF_SACN.from + ' → ' + RF_SACN.to;
       }
-      loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
+      akDebounce('sacnFilter', function(){
+        if (TAB !== 'sacn') return;
+        loadFoodcostData({ tab: 'sacn', force: true, from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites });
+      }, 350);
     });
   }
 
@@ -7068,7 +7426,10 @@ function bindRevenueFilters(){
         if (rToEl) rToEl.value = RF.to;
       }
       updateRevPeriodLabel();
-      loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
+      akDebounce('revFilter', function(){
+        if (TAB !== 'revenue') return;
+        loadFoodcostData({ tab: 'revenue', from: RF.from, to: RF.to, site: RF.sites, force: true });
+      }, 350);
     });
   }
 
@@ -7087,7 +7448,10 @@ function bindRevenueFilters(){
       if (pBtnText && RF.from && RF.to) {
         pBtnText.textContent = RF.from + ' → ' + RF.to;
       }
-      loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites });
+      akDebounce('revFilter', function(){
+        if (TAB !== 'revenue') return;
+        loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites });
+      }, 350);
     });
   }
   var rToInput = document.getElementById('rTo');
@@ -7104,7 +7468,10 @@ function bindRevenueFilters(){
       if (pBtnText && RF.from && RF.to) {
         pBtnText.textContent = RF.from + ' → ' + RF.to;
       }
-      loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites });
+      akDebounce('revFilter', function(){
+        if (TAB !== 'revenue') return;
+        loadFoodcostData({ tab: 'revenue', force: true, from: RF.from, to: RF.to, site: RF.sites });
+      }, 350);
     });
   }
 
@@ -7280,24 +7647,7 @@ function renderRevenueEst(opts){
   var box = document.getElementById('tab-revenue-est');
   if (!REV_EST_RAW){
     if (box) box.innerHTML = akSkeletonHTML('Doanh thu ước tính');
-    akShowLoading('Đang tải dữ liệu Doanh thu ước tính...', 'Đang xử lý giao dịch ước tính và kế hoạch P&L...');
     loadRevenueEst(opts);
-    return;
-  }
-  // Animation mượt mà khi người dùng mở tab
-  if (!REV_EST_RENDERED) {
-    if (box) box.innerHTML = akSkeletonHTML('Doanh thu ước tính');
-    akShowLoading('Đang chuẩn bị dữ liệu Doanh thu ước tính...', 'Đang tính toán chỉ số AM1, AM2 và tỷ lệ đạt KH...');
-    setTimeout(function(){
-      akHideLoading();
-      if (!REV_EST_INIT){
-        buildRevEstFilters();
-        bindRevEstFilters();
-        REV_EST_INIT = true;
-      }
-      REV_EST_RENDERED = true;
-      computeAndDrawRevenueEst();
-    }, 280);
     return;
   }
   if (!REV_EST_INIT){
@@ -7310,29 +7660,52 @@ function renderRevenueEst(opts){
 
 function loadRevenueEst(opts){
   opts = opts || {};
-  if (REV_EST_LOADING) return;
-  REV_EST_LOADING = true;
-
+  var tabKey = 'est';
+  var seq = ++_tabLoadSeq[tabKey];
   var box = document.getElementById('tab-revenue-est');
-  if (box && !REV_EST_RAW) {
+
+  var gran = opts.granular || RF_EST.gran || 'week';
+  RF_EST.gran = gran;
+  RF_EST.siteMetricGran = gran;
+
+  var isAll = opts.all || (RF_EST.scope === 'all');
+  var recentBuckets = opts.recentBuckets !== undefined ? opts.recentBuckets : (RF_EST.scope === '4' ? 4 : undefined);
+
+  if (box && (!REV_EST_RAW || opts.force)) {
     box.innerHTML = akSkeletonHTML('Doanh thu ước tính');
   }
   if (!opts.silent) {
-    akShowLoading('Đang tải dữ liệu Doanh thu ước tính...', 'Đang xử lý giao dịch ước tính và kế hoạch P&L...');
+    var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
+    akShowLoading('Đang tải dữ liệu Doanh thu ước tính...', 'Đang xử lý số liệu ước tính theo ' + granWord + '...');
   }
 
-  callAPI('getRevenueEstData')
+  var estParams = { granular: gran };
+  if (isAll) {
+    estParams.all = true;
+  } else if (recentBuckets) {
+    estParams.recentBuckets = recentBuckets;
+  }
+  if (opts && opts.from && opts.to) {
+    estParams.from = opts.from;
+    estParams.to = opts.to;
+  } else if (RF_EST.scope === 'custom' && RF_EST.from && RF_EST.to) {
+    estParams.from = RF_EST.from;
+    estParams.to = RF_EST.to;
+  }
+
+  return callAPI('getRevenueEstSummary', estParams)
     .then(function(res){
-      REV_EST_LOADING = false;
-      akHideLoading();
+      if (seq !== _tabLoadSeq[tabKey]) return res;
+
       if (res && res.updatedAt) {
-        document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
+        var updEl = document.getElementById('updAt');
+        if (updEl) updEl.textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
       }
       if (!res || !res.ok){
         if (box) box.innerHTML = '<div class="card"><div class="empty">'+
           esc((res && res.message) || 'Không đọc được dữ liệu doanh thu ước tính')+'</div></div>';
-        return;
+        return res;
       }
       REV_EST_RAW = res;
       if (res && res.keHoach && !KH) {
@@ -7345,16 +7718,25 @@ function loadRevenueEst(opts){
         REV_EST_INIT = true;
       }
       REV_EST_RENDERED = true;
+      updateEstPeriodDropdown(true);
       if (TAB === 'revenue-est'){
         computeAndDrawRevenueEst();
       }
+      return res;
     })
     .catch(function(err){
-      REV_EST_LOADING = false;
-      akHideLoading();
+      if (seq !== _tabLoadSeq[tabKey]) return;
       if (box && !REV_EST_RAW){
         box.innerHTML = '<div class="card"><div class="empty">Lỗi tải dữ liệu doanh thu ước tính: '+
           esc(String(err && err.message ? err.message : err))+'</div></div>';
+      }
+    })
+    .finally(function(){
+      if (seq === _tabLoadSeq[tabKey]) {
+        REV_EST_LOADING = false;
+        if (!opts.silent) {
+          akHideLoading();
+        }
       }
     });
 }
@@ -7421,9 +7803,11 @@ function updateEstPeriodDropdown(isDefaultInit) {
   var btnScope4 = document.getElementById('btnEstScope4');
   var btnScopeAll = document.getElementById('btnEstScopeAll');
 
-  var allDates = akGetAllDates();
+  var allDates = (REV_EST_RAW && REV_EST_RAW.dims && (REV_EST_RAW.dims.allDates || REV_EST_RAW.dims.dates)) || akGetAllDates('est');
   if ((!allDates || !allDates.length) && REV_EST_RAW && REV_EST_RAW.rows) {
-    allDates = REV_EST_RAW.rows.map(function(r){ return r.ngay; }).filter(Boolean).sort();
+    var dSet = {};
+    REV_EST_RAW.rows.forEach(function(r){ if (r.ngay) dSet[r.ngay] = 1; });
+    allDates = Object.keys(dSet).sort();
   }
   var gran = RF_EST.gran || 'week';
   var granWord = gran === 'week' ? 'tuần' : (gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng'));
@@ -7435,6 +7819,7 @@ function updateEstPeriodDropdown(isDefaultInit) {
 
   if (isDefaultInit && RF_EST.scope !== 'all') {
     RF_EST.scope = '4';
+    RF_EST.periods = [];
   }
 
   var res = akComputeRangeFromPreset(gran, RF_EST.scope, RF_EST.periods, allDates);
@@ -7599,10 +7984,32 @@ function bindRevEstFilters(){
     granBox.addEventListener('click', function(e){
       var btn = e.target.closest('button');
       if (!btn) return;
+      var newGran = btn.dataset.v || 'week';
+      if (newGran === RF_EST.gran && REV_EST_RAW) return;
       granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
-      RF_EST.gran = btn.dataset.v || 'week';
-      updateEstPeriodDropdown(false);
-      computeAndDrawRevenueEst();
+
+      // 1. Set state mới TRƯỚC
+      RF_EST.gran = newGran;
+      RF_EST.siteMetricGran = newGran;
+      RF_EST.periods = [];
+      RF_EST.scope = '4';
+
+      // Đồng bộ nút gran trong biểu đồ Số lượng/Doanh thu/Food cost/AM1/AM2
+      var smGranBox = document.getElementById('estSiteMetricGran');
+      if (smGranBox) {
+        smGranBox.querySelectorAll('button').forEach(function(b){
+          b.classList.toggle('on', b.dataset.v === newGran);
+        });
+      }
+
+      // 2. Clear cache API liên quan est
+      clearAPICache('getRevenueEstSummary');
+
+      // 3. Đồng bộ label dropdown và nút scope
+      updateEstPeriodDropdown(true);
+
+      // 4. Gọi lại loadRevenueEst với granular mới và redraw toàn bộ
+      loadRevenueEst({ force: true, granular: newGran, recentBuckets: 4 });
     });
   }
 
@@ -7615,8 +8022,13 @@ function bindRevEstFilters(){
       var scopeVal = btn.dataset.scope || '4';
       RF_EST.scope = scopeVal;
       scopeBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
-      updateEstPeriodDropdown(false);
-      computeAndDrawRevenueEst();
+      RF_EST.periods = [];
+      clearAPICache('getRevenueEstSummary');
+      if (scopeVal === 'all') {
+        loadRevenueEst({ force: true, granular: RF_EST.gran, all: true });
+      } else {
+        loadRevenueEst({ force: true, granular: RF_EST.gran, recentBuckets: 4 });
+      }
     });
   }
 
@@ -8937,7 +9349,7 @@ function drawEstTrendCombined(rows, planMap, nsMap, planSites) {
     } else if (RF_EST.gran === 'quarter') {
       var q = est_getQuarterInfo(r.ngay);
       k = q.key;
-      lbl = q.label;
+      lbl = 'Q' + q.quarter + '/' + q.year;
       var qStartMonth = (q.quarter - 1) * 3 + 1;
       mArr = [
         q.year + '-' + ('0' + qStartMonth).slice(-2),
@@ -8945,16 +9357,16 @@ function drawEstTrendCombined(rows, planMap, nsMap, planSites) {
         q.year + '-' + ('0' + (qStartMonth + 2)).slice(-2)
       ];
     } else if (RF_EST.gran === 'year') {
-      var yr = r.ngay.substring(0, 4);
+      var yr = (r.ngay || '').substring(0, 4);
       k = yr;
-      lbl = 'Năm ' + yr;
+      lbl = yr;
       for (var mi = 1; mi <= 12; mi++) {
         mArr.push(yr + '-' + ('0' + mi).slice(-2));
       }
     } else {
       // month
       k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
-      lbl = k ? ('T' + k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
+      lbl = k ? (k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
       mArr = [k];
     }
 
@@ -9487,7 +9899,7 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
     } else if (currentGran === 'quarter') {
       var q = est_getQuarterInfo(r.ngay);
       k = q.key;
-      lbl = q.label;
+      lbl = 'Q' + q.quarter + '/' + q.year;
       var qStartMonth = (q.quarter - 1) * 3 + 1;
       mArr = [
         q.year + '-' + ('0' + qStartMonth).slice(-2),
@@ -9497,14 +9909,14 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
     } else if (currentGran === 'year') {
       var yr = (r.ngay || r.ky || '').substring(0, 4);
       k = yr;
-      lbl = 'Năm ' + yr;
+      lbl = yr;
       for (var mi = 1; mi <= 12; mi++) {
         mArr.push(yr + '-' + ('0' + mi).slice(-2));
       }
     } else {
       // month
       k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
-      lbl = k ? ('T' + k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
+      lbl = k ? (k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
       mArr = [k];
     }
 
@@ -10067,6 +10479,8 @@ function kh_applyGranular(rawKH, gran) {
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
 function loadKeHoach(){
   if (KH_LOADING) return;
+  var tabKey = 'kehoach';
+  var seq = ++_tabLoadSeq[tabKey];
   KH_LOADING = true;
   akShowLoading('Đang tải dữ liệu Kế hoạch...', 'Đang xử lý số liệu P&L và kết nối chỉ số thực tế...');
   var box = document.getElementById('tab-kehoach');
@@ -10074,9 +10488,8 @@ function loadKeHoach(){
 
   callAPI('getKeHoachData', {filters: JSON.stringify({ gran: 'month', nPeriods: 36, sites: PF.site ? [PF.site] : [] })})
     .then(function(res){
-      KH_LOADING = false;
-      akHideLoading();
-      if (res.updatedAt) {
+      if (seq !== _tabLoadSeq[tabKey]) return;
+      if (res && res.updatedAt) {
         document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
         setLive(true, liveLabel(res.updatedAt));
       }
@@ -10102,10 +10515,15 @@ function loadKeHoach(){
       }
     })
     .catch(function(err){
-      KH_LOADING = false;
-      akHideLoading();
+      if (seq !== _tabLoadSeq[tabKey]) return;
       if (box) box.innerHTML = '<div class="card"><div class="empty">'+
         'Lỗi tải dữ liệu từ server: '+esc(String(err && err.message ? err.message : err))+'</div></div>';
+    })
+    .finally(function(){
+      if (seq === _tabLoadSeq[tabKey]) {
+        KH_LOADING = false;
+        akHideLoading();
+      }
     });
 }
 
@@ -11018,6 +11436,7 @@ function setLive(ok, txt){
 }
 /** Xóa cache mọi tab để lần render tới buộc gọi server */
 function invalidateAllCaches(){
+  try { clearAPICache(); } catch(e){}
   try { REV_RAW = null; } catch(e){}
   try { REV = null; } catch(e){}
   try { if (typeof RUI !== 'undefined') RUI.drillSite = ''; } catch(e){}
@@ -11067,19 +11486,26 @@ function refreshAllTabs(manual){
 }
 
 function loadData(manual){
-  if (manual || firstLoad) {
+  var isForeground = Boolean(manual || firstLoad);
+  var seq = ++_tabLoadSeq.overview;
+  if (isForeground) {
     setLive(true, 'Đang tải dữ liệu...');
     akShowLoading('Đang nạp dữ liệu Báo cáo vận hành...', 'Đang kết nối hệ thống Supabase & tính toán chỉ số sự cố...');
   }
   callAPI('getDashboardData')
     .then(function(res){
-      if (manual || firstLoad) akHideLoading();
+      if (seq !== _tabLoadSeq.overview) return;
       onData(res);
     })
     .catch(function(e){
-      if (manual || firstLoad) akHideLoading();
+      if (seq !== _tabLoadSeq.overview) return;
       setLive(false, 'Lỗi kết nối');
       showError('Không tải được dữ liệu', e && e.message ? e.message : String(e));
+    })
+    .finally(function(){
+      if (seq === _tabLoadSeq.overview && isForeground) {
+        akHideLoading();
+      }
     });
 }
 
@@ -11126,9 +11552,6 @@ function onData(res){
   }
   // Tab doanh thu đọc sheet Transactions riêng -> không redraw theo version của Report
   renderCurrent();
-  if (!REV_RAW && !REV_LOADING) {
-    loadRevenue({ silent: true });
-  }
 }
 
 function showError(title, detail){
@@ -11474,6 +11897,8 @@ var QLK = (function(){
   function render(){ injectCss(); if(D){ if(!built) buildSkeleton(); update(); return; } if(loading) return; load(); }
   function load(opts){
     opts = opts || {};
+    var tabKey = 'kho';
+    var seq = ++_tabLoadSeq[tabKey];
     loading = true;
     akShowLoading('Đang tải dữ liệu Quản lý kho...', 'Đang nạp tồn kho, đơn giá và thẻ kho...');
     var box = document.getElementById('tab-quanlykho');
@@ -11494,11 +11919,23 @@ var QLK = (function(){
       params.filters = JSON.stringify({ from: reqFrom, to: reqTo });
     }
 
-    callAPI('getWarehouseDashboardData', params).then(function(res){
-      done = true; clearTimeout(wd); akHideLoading(); onData(res, opts);
-    }).catch(function(e){
-      done = true; clearTimeout(wd); akHideLoading(); showError(e);
-    });
+    callAPI('getWarehouseSummary', params)
+      .then(function(res){
+        done = true; clearTimeout(wd);
+        if (seq !== _tabLoadSeq[tabKey]) return;
+        onData(res, opts);
+      })
+      .catch(function(e){
+        done = true; clearTimeout(wd);
+        if (seq !== _tabLoadSeq[tabKey]) return;
+        showError(e);
+      })
+      .finally(function(){
+        if (seq === _tabLoadSeq[tabKey]) {
+          loading = false;
+          akHideLoading();
+        }
+      });
     loadMb51Disposal({ from: reqFrom, to: reqTo });
   }
 
@@ -12648,6 +13085,23 @@ var QLK = (function(){
     }
     if (!matchingItems.length && !artTx.length) return;
 
+    if (D && D.isSummary && (!artTx.length || !artTx[0].art_doc)) {
+      callAPI('getWarehouseDetail', { material: code, from: f.from, to: f.to }).then(function(detailRes){
+        if (detailRes && detailRes.transactions && detailRes.transactions.length) {
+          // Merge fetched ledger documents into memory cache
+          if (!D._detailCache) D._detailCache = {};
+          D._detailCache[code] = detailRes.transactions;
+          var ov = document.getElementById('qlkModal');
+          if (ov && ov.classList.contains('open')) {
+            openArticleModal(code);
+          }
+        }
+      }).catch(function(){});
+      if (D._detailCache && D._detailCache[code]) {
+        artTx = D._detailCache[code];
+      }
+    }
+
     var firstIt = matchingItems[0] || {};
     var firstTx = artTx[0] || {};
     var matCode = code;
@@ -13238,19 +13692,28 @@ var CAS=['Sáng','Trưa','Tối'];
 var selDays=[],selCas=[],selMealIdx=0,ddCharts={};
 
 function render(){if(D){if(!built)build();renderAll();return;}if(loading)return;load();}
-function load(){loading=true;
+function load(){
+  var tabKey = 'dinhduong';
+  var seq = ++_tabLoadSeq[tabKey];
+  loading=true;
   akShowLoading('Đang tải dữ liệu Dinh dưỡng...', 'Đang nạp thực đơn tuần và bảng thành phần dinh dưỡng...');
   var box = document.getElementById('tab-dinhduong');
-  if (box) box.innerHTML = akSkeletonHTML('Dinh dưỡng');
-  callAPI('getNutritionDashboardData').then(function(res){
-    loading=false;
-    akHideLoading();
-    onData(res);
-  }).catch(function(e){
-    loading=false;
-    akHideLoading();
-    if (box) box.innerHTML='<div class="err"><h2>Lỗi</h2><p>'+esc(e&&e.message?e.message:String(e))+'</p></div>';
-  });
+  if (box && !D) box.innerHTML = akSkeletonHTML('Dinh dưỡng');
+  callAPI('getNutritionDashboardData')
+    .then(function(res){
+      if (seq !== _tabLoadSeq[tabKey]) return;
+      onData(res);
+    })
+    .catch(function(e){
+      if (seq !== _tabLoadSeq[tabKey]) return;
+      if (box) box.innerHTML='<div class="err"><h2>Lỗi</h2><p>'+esc(e&&e.message?e.message:String(e))+'</p></div>';
+    })
+    .finally(function(){
+      if (seq === _tabLoadSeq[tabKey]) {
+        loading=false;
+        akHideLoading();
+      }
+    });
 }
 function onData(res){loading=false;
   if(!res||!res.success){document.getElementById('tab-dinhduong').innerHTML='<div class="err"><h2>Lỗi</h2><p>'+esc((res&&res.error)||'')+'</p></div>';return;}

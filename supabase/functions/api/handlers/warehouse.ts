@@ -905,3 +905,59 @@ export async function handleGetMb51GoodsIssue(filtersParam?: any): Promise<any> 
 }
 
 export const handleGetMb51MaterialDocsDisposal = handleGetMb51GoodsIssue;
+
+export async function handleGetWarehouseSummary(filtersParam?: any): Promise<any> {
+  const full = await handleGetWarehouseDashboardData(filtersParam);
+  const aggTx = new Map<string, any>();
+  (full.transactions || []).forEach((t: any) => {
+    const k = `${t.date}|${t.sloc}|${t.mvt}|${t.site}`;
+    let item = aggTx.get(k);
+    if (!item) {
+      item = {
+        date: t.date,
+        sloc: t.sloc,
+        mvt: t.mvt,
+        mvt_label: t.mvt_label,
+        site: t.site,
+        site_name: t.site_name,
+        category: t.category,
+        type: t.type,
+        qty: 0,
+        value: 0,
+        count: 0
+      };
+      aggTx.set(k, item);
+    }
+    item.qty += (t.qty || 0);
+    item.value += (t.value || 0);
+    item.count++;
+  });
+
+  return {
+    ...full,
+    isSummary: true,
+    totalTransactions: full.transactions ? full.transactions.length : 0,
+    transactions: Array.from(aggTx.values())
+  };
+}
+
+export async function handleGetWarehouseDetail(filtersParam?: any): Promise<any> {
+  let filters: any = {};
+  if (typeof filtersParam === "string") {
+    try { filters = JSON.parse(filtersParam); } catch {}
+  } else if (typeof filtersParam === "object" && filtersParam !== null) {
+    filters = filtersParam;
+  }
+
+  const matCode = filters.material || filters.article || filters.code || "";
+  let q = supabase.from("mb51_material_docs").select("*");
+  if (matCode) q = q.eq("material", matCode);
+  if (filters.from) q = q.gte("posting_date", filters.from);
+  if (filters.to) q = q.lte("posting_date", filters.to);
+  if (filters.site) q = q.eq("site", filters.site);
+
+  const { data, error } = await q.order("posting_date", { ascending: true }).limit(2000);
+  if (error) throw error;
+  const docs = (data || []).map(mapMb51RowToLegacyStockTx);
+  return { success: true, material: matCode, transactions: docs };
+}

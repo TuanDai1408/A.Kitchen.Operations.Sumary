@@ -7,9 +7,19 @@
 import { corsHeaders, verifyToken, jsonResponse, errorResponse } from "./auth.ts";
 import { supabase } from "./lib/db.ts";
 import { handleGetDataVersion, handleGetDashboardData } from "./handlers/dashboard.ts";
-import { handleGetRevenueRawData, handleGetRevenueFoodCostData, handleGetRevenueEstData } from "./handlers/revenue.ts";
+import {
+  handleGetRevenueRawData,
+  handleGetRevenueFoodCostData,
+  handleGetRevenueSummary,
+  handleGetRevenueEstData,
+  handleGetRevenueEstSummary
+} from "./handlers/revenue.ts";
 import { handleGetKeHoachData } from "./handlers/kehoach.ts";
-import { handleGetWarehouseDashboardData } from "./handlers/warehouse.ts";
+import {
+  handleGetWarehouseDashboardData,
+  handleGetWarehouseSummary,
+  handleGetWarehouseDetail
+} from "./handlers/warehouse.ts";
 import { handleGetNutritionDashboardData } from "./handlers/nutrition.ts";
 
 /**
@@ -98,6 +108,13 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case "getRevenueSummary": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        result = await handleGetRevenueSummary(filters);
+        cacheSeconds = 60;
+        break;
+      }
+
       case "getRevenueFoodCostData": {
         const filters = url.searchParams.get("filters") || bodyPayload?.filters;
         result = await handleGetRevenueFoodCostData();
@@ -112,6 +129,13 @@ Deno.serve(async (req: Request) => {
         break;
       }
 
+      case "getRevenueEstSummary": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        result = await handleGetRevenueEstSummary(filters);
+        cacheSeconds = 60;
+        break;
+      }
+
       case "getKeHoachData": {
         const filters = url.searchParams.get("filters") || bodyPayload?.filters;
         result = await handleGetKeHoachData(filters);
@@ -123,6 +147,20 @@ Deno.serve(async (req: Request) => {
         result = await handleGetWarehouseDashboardData();
         cacheSeconds = 30;
         break;
+
+      case "getWarehouseSummary": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        result = await handleGetWarehouseSummary(filters);
+        cacheSeconds = 60;
+        break;
+      }
+
+      case "getWarehouseDetail": {
+        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        result = await handleGetWarehouseDetail(filters);
+        cacheSeconds = 30;
+        break;
+      }
 
       case "getNutritionDashboardData":
         result = await handleGetNutritionDashboardData();

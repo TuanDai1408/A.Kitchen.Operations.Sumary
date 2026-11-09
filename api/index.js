@@ -41,15 +41,30 @@ export default async function handler(req, res) {
       case "getDashboardData":
         data = await api.getDashboardData();
         break;
+      case "getRevenueSummary":
+        data = await api.getRevenueSummary(req.query.filters || payload?.filters);
+        break;
+      case "getDiscardNvlSummary":
+        data = await api.getDiscardNvlSummary(req.query.filters || payload?.filters);
+        break;
       case "getRevenueRawData":
       case "getRevenueFoodCostData":
         data = await api.getRevenueRawData(req.query.filters || payload?.filters);
+        break;
+      case "getRevenueEstSummary":
+        data = await api.getRevenueEstSummary(req.query.filters || payload?.filters);
         break;
       case "getRevenueEstData":
         data = await api.getRevenueEstData(req.query.filters || payload?.filters);
         break;
       case "getKeHoachData":
         data = await api.getKeHoachData(req.query.filters || payload?.filters);
+        break;
+      case "getWarehouseSummary":
+        data = await api.getWarehouseSummary(req.query.filters || payload?.filters);
+        break;
+      case "getWarehouseDetail":
+        data = await api.getWarehouseDetail(req.query.filters || payload?.filters);
         break;
       case "getWarehouseDashboardData":
         data = await api.getWarehouseDashboardData(req.query.filters || payload?.filters);
@@ -80,6 +95,7 @@ export default async function handler(req, res) {
       default:
         return res.status(404).json({ status: "error", message: `Unknown action: ${action}` });
     }
+    res.setHeader("Cache-Control", "private, max-age=60");
     return res.status(200).json({ status: "ok", data });
   } catch (err) {
     console.error("Vercel API Error:", err);

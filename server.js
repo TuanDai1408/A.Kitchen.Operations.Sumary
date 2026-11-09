@@ -1,6 +1,7 @@
 import express from 'express';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import compression from 'compression';
 import * as api from './server-api.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -9,6 +10,7 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+app.use(compression());
 app.use(express.json());
 app.use(express.text());
 app.use(express.urlencoded({ extended: true }));
@@ -43,15 +45,30 @@ async function handleApiRequest(req, res) {
       case 'getDashboardData':
         data = await api.getDashboardData();
         break;
+      case 'getRevenueSummary':
+        data = await api.getRevenueSummary(req.query.filters || payload?.filters);
+        break;
+      case 'getDiscardNvlSummary':
+        data = await api.getDiscardNvlSummary(req.query.filters || payload?.filters);
+        break;
       case 'getRevenueRawData':
       case 'getRevenueFoodCostData':
         data = await api.getRevenueRawData(req.query.filters || payload?.filters);
+        break;
+      case 'getRevenueEstSummary':
+        data = await api.getRevenueEstSummary(req.query.filters || payload?.filters);
         break;
       case 'getRevenueEstData':
         data = await api.getRevenueEstData(req.query.filters || payload?.filters);
         break;
       case 'getKeHoachData':
         data = await api.getKeHoachData(req.query.filters || payload?.filters);
+        break;
+      case 'getWarehouseSummary':
+        data = await api.getWarehouseSummary(req.query.filters || payload?.filters);
+        break;
+      case 'getWarehouseDetail':
+        data = await api.getWarehouseDetail(req.query.filters || payload?.filters);
         break;
       case 'getWarehouseDashboardData':
         data = await api.getWarehouseDashboardData(req.query.filters || payload?.filters);
@@ -82,6 +99,7 @@ async function handleApiRequest(req, res) {
       default:
         return res.status(404).json({ status: "error", message: `Unknown action: ${action}` });
     }
+    res.setHeader('Cache-Control', 'private, max-age=60');
     return res.json({ status: "ok", data });
   } catch (err) {
     console.error("API Error:", err);
