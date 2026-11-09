@@ -2,6 +2,12 @@
   "version": 2,
   "outputDirectory": "public",
   "cleanUrls": true,
+  "functions": {
+    "api/**/*.js": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
   "headers": [
     {
       "source": "/(.*)",

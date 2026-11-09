@@ -62,48 +62,93 @@ export const supabase = createClient(SUPABASE_URL, SUPABASE_KEY, {
   auth: { persistSession: false, autoRefreshToken: false }
 });
 
+// In-memory cache & promise deduplication
+const _apiCache = new Map();
+const _inFlightPromises = new Map();
+
+export function clearApiCache() {
+  _apiCache.clear();
+  _inFlightPromises.clear();
+  delete global._cachedMaxBillingDate;
+  delete global._cachedMaxBillingDateAt;
+  delete global._cachedAllBillingDates;
+  delete global._cachedAllBillingDatesAt;
+  delete global._cachedMaxEstBillingDate;
+  delete global._cachedMaxEstBillingDateAt;
+  delete global._cachedAllEstBillingDates;
+  delete global._cachedAllEstBillingDatesAt;
+}
+
+export async function withCache(cacheKey, ttlMs, fn) {
+  const cached = _apiCache.get(cacheKey);
+  if (cached && (Date.now() - cached.timestamp < ttlMs)) {
+    return cached.data;
+  }
+  if (_inFlightPromises.has(cacheKey)) {
+    return _inFlightPromises.get(cacheKey);
+  }
+  const promise = (async () => {
+    try {
+      const data = await fn();
+      _apiCache.set(cacheKey, { data, timestamp: Date.now() });
+      return data;
+    } finally {
+      _inFlightPromises.delete(cacheKey);
+    }
+  })();
+  _inFlightPromises.set(cacheKey, promise);
+  return promise;
+}
+
+
 /**
  * Lấy toàn bộ bản ghi vượt giới hạn mặc định 1000 dòng của Supabase PostgREST
  * Hỗ trợ lọc theo khoảng ngày trực tiếp trên database để tối ưu hiệu năng
  */
 async function fetchAllRows(table, select = "*", orderCol = null, fromDate = null, toDate = null, dateCol = null) {
-  let countQ = supabase.from(table).select("*", { count: "exact", head: true });
-  if (fromDate && dateCol) countQ = countQ.gte(dateCol, fromDate);
-  if (toDate && dateCol) countQ = countQ.lte(dateCol, toDate);
-  const { count, error } = await countQ;
-  if (error) throw error;
-  if (!count) return [];
+  const cacheKey = `fetchAllRows:${table}:${select}:${orderCol || ""}:${fromDate || ""}:${toDate || ""}:${dateCol || ""}`;
+  return withCache(cacheKey, 180000, async () => {
+    let countQ = supabase.from(table).select("*", { count: "exact", head: true });
+    if (fromDate && dateCol) countQ = countQ.gte(dateCol, fromDate);
+    if (toDate && dateCol) countQ = countQ.lte(dateCol, toDate);
+    const { count, error } = await countQ;
+    if (error) throw error;
+    if (!count) return [];
 
-  const step = 1000;
-  if (count <= step) {
-    let q = supabase.from(table).select(select).range(0, count - 1);
-    if (orderCol) q = q.order(orderCol, { ascending: true });
-    if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
-    if (toDate && dateCol) q = q.lte(dateCol, toDate);
-    const { data, error: qErr } = await q;
-    if (qErr) throw qErr;
-    return data || [];
-  }
+    const step = 1000;
+    if (count <= step) {
+      let q = supabase.from(table).select(select).range(0, count - 1);
+      if (orderCol) q = q.order(orderCol, { ascending: true });
+      if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
+      if (toDate && dateCol) q = q.lte(dateCol, toDate);
+      const { data, error: qErr } = await q;
+      if (qErr) throw qErr;
+      return data || [];
+    }
 
-  // Parallel pagination for large datasets
-  const pages = Math.ceil(count / step);
-  const promises = [];
-  for (let i = 0; i < pages; i++) {
-    const from = i * step;
-    const to = Math.min(from + step - 1, count - 1);
-    let q = supabase.from(table).select(select).range(from, to);
-    if (orderCol) q = q.order(orderCol, { ascending: true });
-    if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
-    if (toDate && dateCol) q = q.lte(dateCol, toDate);
-    promises.push(q);
-  }
-  const results = await Promise.all(promises);
-  let all = [];
-  for (const r of results) {
-    if (r.error) throw r.error;
-    if (r.data) all.push(...r.data);
-  }
-  return all;
+    // Chunked parallel pagination (concurrency of 5 to avoid connection pool exhaustion)
+    const pages = Math.ceil(count / step);
+    const all = [];
+    const CONCURRENCY = 5;
+    for (let i = 0; i < pages; i += CONCURRENCY) {
+      const chunkPromises = [];
+      for (let j = i; j < Math.min(i + CONCURRENCY, pages); j++) {
+        const from = j * step;
+        const to = Math.min(from + step - 1, count - 1);
+        let q = supabase.from(table).select(select).range(from, to);
+        if (orderCol) q = q.order(orderCol, { ascending: true });
+        if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
+        if (toDate && dateCol) q = q.lte(dateCol, toDate);
+        chunkPromises.push(q);
+      }
+      const chunkResults = await Promise.all(chunkPromises);
+      for (const r of chunkResults) {
+        if (r.error) throw r.error;
+        if (r.data) all.push(...r.data);
+      }
+    }
+    return all;
+  });
 }
 
 const DEFAULT_NGUONG = {
@@ -411,15 +456,24 @@ export function mapTransactionRow(r) {
 }
 
 // Handlers
+export async function getDashboardData() {
+  return withCache("getDashboardData", 180000, () => _getDashboardData());
+}
+
 export async function getDataVersion() {
   const now = new Date().toISOString();
   const { data } = await supabase.from("data_version").select("version, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle();
-  return { version: String(data?.version || "1.0.0"), updatedAt: data?.updated_at || now, serverTime: now };
+  const currentUpdatedAt = data?.updated_at || now;
+  if (global._lastKnownDataUpdatedAt && global._lastKnownDataUpdatedAt !== currentUpdatedAt) {
+    clearApiCache();
+  }
+  global._lastKnownDataUpdatedAt = currentUpdatedAt;
+  return { version: String(data?.version || "1.0.0"), updatedAt: currentUpdatedAt, serverTime: now };
 }
 
 export const TX_SELECT_COLS = "billing_date,ten_cua_hang,ma_cua_hang,ten_kh,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,nv_kinh_doanh,ten_sp,so_hoa_don,so_billing_goc,ly_do_tra_hang,vung_mien,loai_cua_hang";
 
-export async function getDashboardData() {
+async function _getDashboardData() {
   const REPORT_COLS = "id,dau_thoi_gian,ten_site,ngay_bao_cao,nguoi_bao_cao,suat_sang,suat_trua,suat_chieu,suat_nhan_vien,suat_huy,tong_suat,gio_giao,ly_do_tre,tinh_trang_nvl,su_co_thiet_bi,so_that_thoat,nguyen_nhan_that_thoat,ns_co_mat,ns_vang,ns_tang_ca,su_co_nhan_su,so_khieu_nai,so_khen_ngoi,phan_loai_kn,muc_do_nghiem_trong,chi_tiet_y_kien,co_chi_phi_ngoai,so_tien_ly_do_chi_phi,hinh_anh,de_xuat,suat_luu_mau,suat_giao_vien,ten_khach_hang";
   const [versionRes, reportRes] = await Promise.all([
     supabase.from("data_version").select("version, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
@@ -491,6 +545,11 @@ async function fetchMb51GoodsIssue(fromDate = null, toDate = null, siteFilter = 
 }
 
 export async function getRevenueSummary(filtersParam) {
+  const cacheKey = "getRevenueSummary:" + (typeof filtersParam === "string" ? filtersParam : JSON.stringify(filtersParam || {}));
+  return withCache(cacheKey, 180000, () => _getRevenueSummary(filtersParam));
+}
+
+async function _getRevenueSummary(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
     try { filters = JSON.parse(filtersParam); } catch {}
@@ -2590,6 +2649,11 @@ export async function getMb51GoodsIssue(filtersParam) {
 export const getMb51MaterialDocsDisposal = getMb51GoodsIssue;
 
 export async function getDiscardNvlSummary(filtersParam) {
+  const cacheKey = "getDiscardNvlSummary:" + (typeof filtersParam === "string" ? filtersParam : JSON.stringify(filtersParam || {}));
+  return withCache(cacheKey, 180000, () => _getDiscardNvlSummary(filtersParam));
+}
+
+async function _getDiscardNvlSummary(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
     try { filters = JSON.parse(filtersParam); } catch {}
