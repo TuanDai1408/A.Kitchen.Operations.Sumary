@@ -57,11 +57,11 @@ jobs:
 
           # Cài đặt secrets trên Supabase nếu có
           if [ -n "$SERVICE_ROLE_KEY" ]; then
-            supabase secrets set API_TOKEN="$API_TOKEN" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" --project-ref "$PROJECT_ID" || true
+            supabase secrets set API_TOKEN="$API_TOKEN" SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY" --project-ref "$PROJECT_ID" --yes || true
           else
-            supabase secrets set API_TOKEN="$API_TOKEN" --project-ref "$PROJECT_ID" || true
+            supabase secrets set API_TOKEN="$API_TOKEN" --project-ref "$PROJECT_ID" --yes || true
           fi
 
           # Deploy Edge Function
-          supabase functions deploy api --no-verify-jwt --project-ref "$PROJECT_ID"
+          supabase functions deploy api --no-verify-jwt --project-ref "$PROJECT_ID" --yes
           echo "✅ Đã deploy thành công Edge Function 'api'!"
