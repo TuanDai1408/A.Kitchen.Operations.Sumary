@@ -103,7 +103,11 @@ async function handleApiRequest(req, res) {
       default:
         return res.status(404).json({ status: "error", message: `Unknown action: ${action}` });
     }
-    res.setHeader('Cache-Control', 'private, max-age=60');
+    if (action === "exportIncidents" || action === "exportKeHoach") {
+      res.setHeader("Cache-Control", "no-store");
+    } else {
+      res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=300");
+    }
     return res.json({ status: "ok", data });
   } catch (err) {
     console.error("API Error:", err);

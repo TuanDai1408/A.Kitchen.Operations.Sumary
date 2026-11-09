@@ -2,6 +2,7 @@
   "version": 2,
   "outputDirectory": "public",
   "cleanUrls": true,
+  "regions": ["sin1"],
   "functions": {
     "api/**/*.js": {
       "maxDuration": 60,

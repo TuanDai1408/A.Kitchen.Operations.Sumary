@@ -1019,14 +1019,19 @@ async function _getRevenueSummary(filtersParam) {
 
   // Nạp toàn bộ danh mục ngày có dữ liệu bán hàng để dropdown kỳ (Tuần/Tháng/Quý/Năm) luôn có đủ dữ liệu
   if (!global._cachedAllBillingDates || Date.now() - (global._cachedAllBillingDatesAt || 0) > 300000) {
-    try {
-      const allDatesRows = await fetchAllRows("transactions", "billing_date", "billing_date");
-      const dSet = new Set();
-      (allDatesRows || []).forEach(r => { if (r.billing_date) dSet.add(r.billing_date.slice(0, 10)); });
-      global._cachedAllBillingDates = Array.from(dSet).sort();
+    if (!reqFrom && !reqTo && dateSet.size > 0) {
+      global._cachedAllBillingDates = Array.from(dateSet).sort();
       global._cachedAllBillingDatesAt = Date.now();
-    } catch (e) {
-      console.warn("fetch all billing dates error:", e);
+    } else {
+      try {
+        const allDatesRows = await fetchAllRows("transactions", "billing_date", "billing_date");
+        const dSet = new Set();
+        (allDatesRows || []).forEach(r => { if (r.billing_date) dSet.add(r.billing_date.slice(0, 10)); });
+        global._cachedAllBillingDates = Array.from(dSet).sort();
+        global._cachedAllBillingDatesAt = Date.now();
+      } catch (e) {
+        console.warn("fetch all billing dates error:", e);
+      }
     }
   }
   const allAvailableDates = (global._cachedAllBillingDates && global._cachedAllBillingDates.length)
