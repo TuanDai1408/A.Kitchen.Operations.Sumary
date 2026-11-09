@@ -498,6 +498,8 @@ export async function getRevenueSummary(filtersParam) {
     filters = filtersParam;
   }
 
+  const granular = filters.granular || filters.gran || "week";
+
   // 1. Xác định ngày lớn nhất có dữ liệu
   let maxDateStr = global._cachedMaxBillingDate;
   if (!maxDateStr || Date.now() - (global._cachedMaxBillingDateAt || 0) > 300000) {
