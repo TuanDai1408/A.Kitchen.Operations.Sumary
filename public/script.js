@@ -3938,6 +3938,57 @@ function akBuildPeriodMap(gran, dates) {
   });
 
   var sortedKeys = Object.keys(periodMap).sort().reverse();
+
+  // Đảm bảo luôn sinh đủ các kỳ quá khứ (ít nhất 12 kỳ) từ kỳ mới nhất
+  // để khi chuyển sang Tuần / Tháng / Quý và chọn "4 kỳ gần nhất",
+  // không bị thiếu kỳ do tập ngày của query trước đó quá hẹp
+  if (sortedKeys.length > 0) {
+    var latestKey = sortedKeys[0];
+    if (gran === 'month') {
+      var y = parseInt(latestKey.substring(0, 4), 10);
+      var m = parseInt(latestKey.substring(5, 7), 10);
+      for (var mi = 1; mi <= 12; mi++) {
+        var prevD = new Date(y, m - 1 - mi, 1);
+        var prevDateStr = akFormatLocalDate(prevD);
+        var prevInfo = akGetMonthInfo(prevDateStr);
+        if (prevInfo && prevInfo.key && !periodMap[prevInfo.key]) {
+          periodMap[prevInfo.key] = prevInfo;
+        }
+      }
+    } else if (gran === 'quarter') {
+      var partsQ = latestKey.split('-Q');
+      if (partsQ.length === 2) {
+        var yQ = parseInt(partsQ[0], 10);
+        var qNum = parseInt(partsQ[1], 10);
+        for (var qi = 1; qi <= 8; qi++) {
+          var totalQ = yQ * 4 + (qNum - 1) - qi;
+          var newY = Math.floor(totalQ / 4);
+          var newQ = (totalQ % 4) + 1;
+          var qStartMonth = (newQ - 1) * 3 + 1;
+          var qDateStr = newY + '-' + ('0' + qStartMonth).slice(-2) + '-01';
+          var qInfo = akGetQuarterInfo(qDateStr);
+          if (qInfo && qInfo.key && !periodMap[qInfo.key]) {
+            periodMap[qInfo.key] = qInfo;
+          }
+        }
+      }
+    } else if (gran === 'week') {
+      var latestWInfo = periodMap[latestKey];
+      if (latestWInfo && latestWInfo.startDate) {
+        var curD = new Date(latestWInfo.startDate + 'T00:00:00');
+        for (var wi = 1; wi <= 12; wi++) {
+          var prevWDate = new Date(curD.getTime() - wi * 7 * 86400000);
+          var prevWDateStr = akFormatLocalDate(prevWDate);
+          var wInfo = akGetWeekInfo(prevWDateStr);
+          if (wInfo && wInfo.key && !periodMap[wInfo.key]) {
+            periodMap[wInfo.key] = wInfo;
+          }
+        }
+      }
+    }
+    sortedKeys = Object.keys(periodMap).sort().reverse();
+  }
+
   return { periodMap: periodMap, sortedKeys: sortedKeys };
 }
 
