@@ -521,7 +521,16 @@ export async function getRevenueSummary(filtersParam) {
   let reqTo = filters.to || "";
   if (!reqFrom && !filters.all) {
     reqFrom = defaultFrom;
-    reqTo = reqTo || maxDateStr;
+    if (!reqTo) {
+    if (granular === "month") {
+      const maxD = new Date(maxDateStr + "T00:00:00");
+      const lastDayOfMonth = new Date(maxD.getFullYear(), maxD.getMonth() + 1, 0).getDate();
+      const maxM = String(maxD.getMonth() + 1).padStart(2, "0");
+      reqTo = `${maxD.getFullYear()}-${maxM}-${String(lastDayOfMonth).padStart(2, "0")}`;
+    } else {
+      reqTo = maxDateStr;
+    }
+  }
   }
 
   let queryFrom = reqFrom;
@@ -2121,7 +2130,16 @@ export async function getRevenueEstSummary(filtersParam) {
       const fromM = String(dFrom.getMonth() + 1).padStart(2, "0");
       reqFrom = `${fromY}-${fromM}-01`;
     }
-    reqTo = reqTo || maxDateStr;
+    if (!reqTo) {
+      if (granular === "month") {
+        const maxD = new Date(maxDateStr + "T00:00:00");
+        const lastDayOfMonth = new Date(maxD.getFullYear(), maxD.getMonth() + 1, 0).getDate();
+        const maxM = String(maxD.getMonth() + 1).padStart(2, "0");
+        reqTo = `${maxD.getFullYear()}-${maxM}-${String(lastDayOfMonth).padStart(2, "0")}`;
+      } else {
+        reqTo = maxDateStr;
+      }
+    }
   }
 
   const [rawTx, plRows, keHoach] = await Promise.all([

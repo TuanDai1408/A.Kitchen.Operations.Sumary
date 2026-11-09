@@ -7746,19 +7746,31 @@ function loadRevenueEst(opts){
     akShowLoading('Đang tải dữ liệu Doanh thu ước tính...', 'Đang xử lý số liệu ước tính theo ' + granWord + '...');
   }
 
-  var estParams = { granular: gran };
+  var filtersObj = {
+    granular: gran,
+    gran: gran
+  };
   if (isAll) {
-    estParams.all = true;
+    filtersObj.all = true;
   } else if (recentBuckets) {
-    estParams.recentBuckets = recentBuckets;
+    filtersObj.recentBuckets = recentBuckets;
   }
-  if (opts && opts.from && opts.to) {
-    estParams.from = opts.from;
-    estParams.to = opts.to;
-  } else if (RF_EST.scope === 'custom' && RF_EST.from && RF_EST.to) {
-    estParams.from = RF_EST.from;
-    estParams.to = RF_EST.to;
-  }
+
+  var fFrom = (opts && opts.from) || RF_EST.from;
+  var fTo = (opts && opts.to) || RF_EST.to;
+  if (fFrom) filtersObj.from = fFrom;
+  if (fTo) filtersObj.to = fTo;
+  if (RF_EST.sites && RF_EST.sites.length) filtersObj.site = RF_EST.sites;
+
+  var estParams = {
+    filters: JSON.stringify(filtersObj),
+    granular: gran,
+    gran: gran,
+    recentBuckets: recentBuckets || 4
+  };
+  if (fFrom) estParams.from = fFrom;
+  if (fTo) estParams.to = fTo;
+  if (isAll) estParams.all = true;
 
   return callAPI('getRevenueEstSummary', estParams)
     .then(function(res){
@@ -8074,7 +8086,7 @@ function bindRevEstFilters(){
       updateEstPeriodDropdown(true);
 
       // 4. Gọi lại loadRevenueEst với granular mới và redraw toàn bộ
-      loadRevenueEst({ force: true, granular: newGran, recentBuckets: 4 });
+      loadRevenueEst({ force: true, granular: newGran, recentBuckets: 4, from: RF_EST.from, to: RF_EST.to });
     });
   }
 
@@ -8089,10 +8101,11 @@ function bindRevEstFilters(){
       scopeBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
       RF_EST.periods = [];
       clearAPICache('getRevenueEstSummary');
+      updateEstPeriodDropdown(scopeVal === '4');
       if (scopeVal === 'all') {
         loadRevenueEst({ force: true, granular: RF_EST.gran, all: true });
       } else {
-        loadRevenueEst({ force: true, granular: RF_EST.gran, recentBuckets: 4 });
+        loadRevenueEst({ force: true, granular: RF_EST.gran, recentBuckets: 4, from: RF_EST.from, to: RF_EST.to });
       }
     });
   }
@@ -11548,7 +11561,7 @@ async function refreshAllTabs(manual){
     } else if (TAB === 'sacn') {
       promises.push(Promise.resolve(loadFoodcostData({ tab: 'sacn', force: true, silent: true })));
     } else if (TAB === 'revenue-est') {
-      promises.push(Promise.resolve(loadRevenueEst({ force: true, silent: true })));
+      promises.push(Promise.resolve(loadRevenueEst({ force: true, silent: true, from: RF_EST.from, to: RF_EST.to })));
     } else if (TAB === 'kehoach') {
       promises.push(Promise.resolve(loadKeHoach({ force: true, silent: true })));
     } else if (TAB === 'quanlykho') {

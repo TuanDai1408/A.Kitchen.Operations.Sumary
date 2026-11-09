@@ -130,7 +130,17 @@ Deno.serve(async (req: Request) => {
       }
 
       case "getRevenueEstSummary": {
-        const filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        let filters = url.searchParams.get("filters") || bodyPayload?.filters;
+        if (!filters) {
+          const gran = url.searchParams.get("granular") || url.searchParams.get("gran");
+          const buckets = url.searchParams.get("recentBuckets");
+          const from = url.searchParams.get("from");
+          const to = url.searchParams.get("to");
+          const all = url.searchParams.get("all");
+          if (gran || buckets || from || to || all) {
+            filters = { granular: gran, gran, recentBuckets: buckets, from, to, all: all === "true" };
+          }
+        }
         result = await handleGetRevenueEstSummary(filters);
         cacheSeconds = 60;
         break;

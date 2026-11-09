@@ -318,7 +318,7 @@ export async function handleGetRevenueEstData(filtersParam?: any): Promise<any> 
 
   const granular = filters.granular || filters.gran || "week";
   const recentBuckets = Number(filters.recentBuckets) || 4;
-  const maxDateStr = "2026-11-07";
+  const maxDateStr = "2026-11-09";
 
   let reqFrom = filters.from || "";
   let reqTo = filters.to || "";
@@ -343,7 +343,16 @@ export async function handleGetRevenueEstData(filtersParam?: any): Promise<any> 
       const fromM = String(dFrom.getMonth() + 1).padStart(2, "0");
       reqFrom = `${fromY}-${fromM}-01`;
     }
-    reqTo = reqTo || maxDateStr;
+    if (!reqTo) {
+    if (granular === "month") {
+      const maxD = new Date(maxDateStr + "T00:00:00");
+      const lastDayOfMonth = new Date(maxD.getFullYear(), maxD.getMonth() + 1, 0).getDate();
+      const maxM = String(maxD.getMonth() + 1).padStart(2, "0");
+      reqTo = `${maxD.getFullYear()}-${maxM}-${String(lastDayOfMonth).padStart(2, "0")}`;
+    } else {
+      reqTo = maxDateStr;
+    }
+  }
   }
 
   const [rawTx, plRows] = await Promise.all([

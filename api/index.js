@@ -51,12 +51,16 @@ export default async function handler(req, res) {
       case "getRevenueFoodCostData":
         data = await api.getRevenueRawData(req.query.filters || payload?.filters);
         break;
-      case "getRevenueEstSummary":
-        data = await api.getRevenueEstSummary(req.query.filters || payload?.filters);
+      case "getRevenueEstSummary": {
+        const estFilters = req.query.filters || payload?.filters || req.query;
+        data = await api.getRevenueEstSummary(estFilters);
         break;
-      case "getRevenueEstData":
-        data = await api.getRevenueEstData(req.query.filters || payload?.filters);
+      }
+      case "getRevenueEstData": {
+        const estFilters = req.query.filters || payload?.filters || req.query;
+        data = await api.getRevenueEstData(estFilters);
         break;
+      }
       case "getKeHoachData":
         data = await api.getKeHoachData(req.query.filters || payload?.filters);
         break;
