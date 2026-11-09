@@ -130,10 +130,10 @@ function akShowLoading(title, sub) {
   if (box) {
     box.classList.remove('hide');
   }
-  // Watchdog an toàn: chỉ tự ẩn sau 60s phòng sự cố mạng cực đoan (không tắt sớm)
+  // Watchdog an toàn: tự ẩn sau 15s phòng sự cố mạng cực đoan
   akLoadingTimeout = setTimeout(function() {
     akForceHideLoading();
-  }, 60000);
+  }, 15000);
 }
 
 function akHideLoading() {
@@ -3784,11 +3784,11 @@ function loadFoodcostData(opts) {
       throw err;
     })
     .finally(function () {
+      if (!opts.silent) {
+        akHideLoading();
+      }
       if (seq === _tabLoadSeq[tabKey]) {
         REV_LOADING = false;
-        if (!opts.silent) {
-          akHideLoading();
-        }
       }
     });
 }
@@ -7732,11 +7732,11 @@ function loadRevenueEst(opts){
       }
     })
     .finally(function(){
+      if (!opts.silent) {
+        akHideLoading();
+      }
       if (seq === _tabLoadSeq[tabKey]) {
         REV_EST_LOADING = false;
-        if (!opts.silent) {
-          akHideLoading();
-        }
       }
     });
 }
@@ -10477,16 +10477,19 @@ function kh_applyGranular(rawKH, gran) {
 }
 
 /* ---------- NẠP DỮ LIỆU TỪ BACKEND ---------- */
-function loadKeHoach(){
-  if (KH_LOADING) return;
+function loadKeHoach(opts){
+  opts = opts || {};
+  if (KH_LOADING && !opts.force) return Promise.resolve();
   var tabKey = 'kehoach';
   var seq = ++_tabLoadSeq[tabKey];
   KH_LOADING = true;
-  akShowLoading('Đang tải dữ liệu Kế hoạch...', 'Đang xử lý số liệu P&L và kết nối chỉ số thực tế...');
+  if (!opts.silent) {
+    akShowLoading('Đang tải dữ liệu Kế hoạch...', 'Đang xử lý số liệu P&L và kết nối chỉ số thực tế...');
+  }
   var box = document.getElementById('tab-kehoach');
-  if (box) box.innerHTML = akSkeletonHTML('Kế hoạch');
+  if (box && (!KH_RAW || opts.force)) box.innerHTML = akSkeletonHTML('Kế hoạch');
 
-  callAPI('getKeHoachData', {filters: JSON.stringify({ gran: 'month', nPeriods: 36, sites: PF.site ? [PF.site] : [] })})
+  return callAPI('getKeHoachData', {filters: JSON.stringify({ gran: 'month', nPeriods: 36, sites: PF.site ? [PF.site] : [] })})
     .then(function(res){
       if (seq !== _tabLoadSeq[tabKey]) return;
       if (res && res.updatedAt) {
@@ -10520,9 +10523,11 @@ function loadKeHoach(){
         'Lỗi tải dữ liệu từ server: '+esc(String(err && err.message ? err.message : err))+'</div></div>';
     })
     .finally(function(){
+      if (!opts.silent) {
+        akHideLoading();
+      }
       if (seq === _tabLoadSeq[tabKey]) {
         KH_LOADING = false;
-        akHideLoading();
       }
     });
 }
@@ -11454,34 +11459,39 @@ function invalidateAllCaches(){
  * Tải lại dữ liệu TẤT CẢ tab + cập nhật dòng "Dữ liệu được cập nhật lúc ..."
  * Gọi từ mọi nút ⟳ Tải lại / Làm mới
  */
-function refreshAllTabs(manual){
+async function refreshAllTabs(manual){
   invalidateAllCaches();
   if (manual) {
     setLive(true, 'Đang làm mới...');
+    akForceHideLoading();
     akShowLoading('Đang làm mới toàn bộ dữ liệu...', 'Đang đồng bộ số liệu mới nhất từ Supabase...');
   }
 
-  // Report luôn tải nhẹ (poll getDataVersion() mỗi 10s vốn đã dựa vào loadData())
-  loadData(!!manual);
+  var promises = [];
+  try {
+    // 1. Luôn tải dữ liệu overview (chạy ngầm, không lồng popup)
+    promises.push(Promise.resolve(loadData(false)));
 
-  // Các tab còn lại: CHỈ tải ngay nếu đang mở đúng tab đó.
-  if (TAB === 'revenue') {
-    try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
-  }
-  if (TAB === 'sacn') {
-    try { loadRevenue({ silent: !manual, force: true }); } catch(e){}
-  }
-  if (TAB === 'revenue-est') {
-    try { loadRevenueEst({ force: true }); } catch(e){}
-  }
-  if (TAB === 'kehoach') {
-    try { loadKeHoach(); } catch(e){}
-  }
-  if (TAB === 'quanlykho') {
-    try { if (typeof QLK !== 'undefined' && QLK.reload) QLK.reload(); } catch(e){}
-  }
-  if (TAB === 'dinhduong') {
-    try { if (typeof DD !== 'undefined' && DD.reload) DD.reload(); } catch(e){}
+    // 2. Tải dữ liệu cho tab đang được mở
+    if (TAB === 'revenue' || TAB === 'sacn') {
+      try { promises.push(Promise.resolve(loadRevenue({ silent: true, force: true }))); } catch(e){}
+    } else if (TAB === 'revenue-est') {
+      try { promises.push(Promise.resolve(loadRevenueEst({ silent: true, force: true }))); } catch(e){}
+    } else if (TAB === 'kehoach') {
+      try { promises.push(Promise.resolve(loadKeHoach({ silent: true, force: true }))); } catch(e){}
+    } else if (TAB === 'quanlykho') {
+      try { if (typeof QLK !== 'undefined' && QLK.reload) promises.push(Promise.resolve(QLK.reload())); } catch(e){}
+    } else if (TAB === 'dinhduong') {
+      try { if (typeof DD !== 'undefined' && DD.reload) promises.push(Promise.resolve(DD.reload())); } catch(e){}
+    }
+
+    await Promise.allSettled(promises);
+  } catch (err) {
+    console.error('Lỗi khi làm mới dữ liệu:', err);
+  } finally {
+    if (manual) {
+      akForceHideLoading();
+    }
   }
 }
 
@@ -11492,7 +11502,7 @@ function loadData(manual){
     setLive(true, 'Đang tải dữ liệu...');
     akShowLoading('Đang nạp dữ liệu Báo cáo vận hành...', 'Đang kết nối hệ thống Supabase & tính toán chỉ số sự cố...');
   }
-  callAPI('getDashboardData')
+  return callAPI('getDashboardData')
     .then(function(res){
       if (seq !== _tabLoadSeq.overview) return;
       onData(res);
@@ -11503,7 +11513,7 @@ function loadData(manual){
       showError('Không tải được dữ liệu', e && e.message ? e.message : String(e));
     })
     .finally(function(){
-      if (seq === _tabLoadSeq.overview && isForeground) {
+      if (isForeground) {
         akHideLoading();
       }
     });
@@ -11931,9 +11941,9 @@ var QLK = (function(){
         showError(e);
       })
       .finally(function(){
+        akHideLoading();
         if (seq === _tabLoadSeq[tabKey]) {
           loading = false;
-          akHideLoading();
         }
       });
     loadMb51Disposal({ from: reqFrom, to: reqTo });
@@ -13709,9 +13719,9 @@ function load(){
       if (box) box.innerHTML='<div class="err"><h2>Lỗi</h2><p>'+esc(e&&e.message?e.message:String(e))+'</p></div>';
     })
     .finally(function(){
+      akHideLoading();
       if (seq === _tabLoadSeq[tabKey]) {
         loading=false;
-        akHideLoading();
       }
     });
 }
@@ -14070,3 +14080,13 @@ loadData();
 // })();
 // startPolling();
 // startHardRefresh();     // refresh cứng toàn dashboard mỗi 60 giây
+
+// Cho phép click để đóng modal loading nếu người dùng không muốn đợi
+(function() {
+  var box = document.getElementById('akCenterLoading');
+  if (box) {
+    box.addEventListener('click', function(e) {
+      akForceHideLoading();
+    });
+  }
+})();
