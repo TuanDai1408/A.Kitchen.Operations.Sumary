@@ -3787,9 +3787,7 @@ function loadFoodcostData(opts) {
       if (!opts.silent) {
         akHideLoading();
       }
-      if (seq === _tabLoadSeq[tabKey]) {
-        REV_LOADING = false;
-      }
+      REV_LOADING = false;
     });
 }
 
@@ -7367,7 +7365,16 @@ function bindRevenueFiltersSacn(){
     loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: [], force: true });
     toast('Đã đặt lại bộ lọc');
   });
-  document.getElementById('sBtnRefresh').addEventListener('click', function(){ refreshAllTabs(true); });
+  var sRef = document.getElementById('sBtnRefresh');
+  if (sRef) {
+    sRef.addEventListener('click', function(){
+      var fEl = document.getElementById('sFrom');
+      var tEl = document.getElementById('sTo');
+      if (fEl && fEl.value) RF_SACN.from = fEl.value;
+      if (tEl && tEl.value) RF_SACN.to = tEl.value;
+      refreshAllTabs(true);
+    });
+  }
 }
 
 /* ---------- BIND BỘ LỌC TAB DOANH THU (gọi 1 lần khi khởi động) ---------- */
@@ -7660,9 +7667,16 @@ function bindRevenueFilters(){
     toast('Đã đặt lại bộ lọc');
   });
    
-  document.getElementById('rBtnRefresh').addEventListener('click', function(){
-    refreshAllTabs(true);
-  });
+  var rRef = document.getElementById('rBtnRefresh');
+  if (rRef) {
+    rRef.addEventListener('click', function(){
+      var fEl = document.getElementById('rFrom');
+      var tEl = document.getElementById('rTo');
+      if (fEl && fEl.value) RF.from = fEl.value;
+      if (tEl && tEl.value) RF.to = tEl.value;
+      refreshAllTabs(true);
+    });
+  }
 }
 
 /* =========================================================================
@@ -7711,6 +7725,8 @@ function renderRevenueEst(opts){
 
 function loadRevenueEst(opts){
   opts = opts || {};
+  if (REV_EST_LOADING && !opts.force) return Promise.resolve();
+  REV_EST_LOADING = true;
   var tabKey = 'est';
   var seq = ++_tabLoadSeq[tabKey];
   var box = document.getElementById('tab-revenue-est');
@@ -7786,9 +7802,7 @@ function loadRevenueEst(opts){
       if (!opts.silent) {
         akHideLoading();
       }
-      if (seq === _tabLoadSeq[tabKey]) {
-        REV_EST_LOADING = false;
-      }
+      REV_EST_LOADING = false;
     });
 }
 
@@ -8360,6 +8374,10 @@ function bindRevEstFilters(){
   var refBtn = document.getElementById('estBtnRefresh');
   if (refBtn){
     refBtn.addEventListener('click', function(){
+      var fEl = document.getElementById('estFrom');
+      var tEl = document.getElementById('estTo');
+      if (fEl && fEl.value) RF_EST.from = fEl.value;
+      if (tEl && tEl.value) RF_EST.to = tEl.value;
       refreshAllTabs(true);
     });
   }
@@ -10577,9 +10595,7 @@ function loadKeHoach(opts){
       if (!opts.silent) {
         akHideLoading();
       }
-      if (seq === _tabLoadSeq[tabKey]) {
-        KH_LOADING = false;
-      }
+      KH_LOADING = false;
     });
 }
 
@@ -11201,8 +11217,7 @@ function renderCurrent(){
   if (TAB === 'dinhduong'){ DD.render(); return; }
 
   if (!RAW.length){
-    document.getElementById('tab-'+TAB).innerHTML =
-      '<div class="card"><div class="empty">Chưa có dữ liệu trong sheet Report</div></div>';
+    loadData(true);
     return;
   }
   if (TAB === 'overview') renderOverview();
@@ -11495,15 +11510,21 @@ function invalidateAllCaches(){
   try { clearAPICache(); } catch(e){}
   try { REV_RAW = null; } catch(e){}
   try { REV = null; } catch(e){}
+  try { REV_LOADING = false; } catch(e){}
+  try { REV_LOADED_RANGE = null; } catch(e){}
   try { if (typeof RUI !== 'undefined') RUI.drillSite = ''; } catch(e){}
   try { KH = null; } catch(e){}
+  try { KH_RAW = null; } catch(e){}
+  try { KH_LOADING = false; } catch(e){}
   try { if (typeof QLK !== 'undefined' && QLK.invalidate) QLK.invalidate(); } catch(e){}
   try { if (typeof DD !== 'undefined' && DD.invalidate) DD.invalidate(); } catch(e){}
   try { REV_SACN = null; } catch(e){}
   try { if (typeof RUI_SACN !== 'undefined') RUI_SACN.drillSite = ''; } catch(e){}
   try { REV_EST_RAW = null; } catch(e){}
   try { REV_EST = null; } catch(e){}
+  try { REV_EST_LOADING = false; } catch(e){}
   try { REV_EST_RENDERED = false; } catch(e){}
+  try { RAW = []; } catch(e){}
 }
 
 /**
@@ -11515,25 +11536,29 @@ async function refreshAllTabs(manual){
   if (manual) {
     setLive(true, 'Đang làm mới...');
     akForceHideLoading();
-    akShowLoading('Đang làm mới toàn bộ dữ liệu...', 'Đang đồng bộ số liệu mới nhất từ Supabase...');
+    akShowLoading('Đang làm mới dữ liệu...', 'Đang đồng bộ số liệu mới nhất từ hệ thống...');
   }
 
   var promises = [];
   try {
-    // 1. Luôn tải dữ liệu overview (chạy ngầm, không lồng popup)
-    promises.push(Promise.resolve(loadData(false)));
-
-    // 2. Tải dữ liệu cho tab đang được mở
-    if (TAB === 'revenue' || TAB === 'sacn') {
-      try { promises.push(Promise.resolve(loadRevenue({ silent: true, force: true }))); } catch(e){}
+    if (TAB === 'overview' || TAB === 'site' || TAB === 'incident') {
+      promises.push(Promise.resolve(loadData(manual)));
+    } else if (TAB === 'revenue') {
+      promises.push(Promise.resolve(loadFoodcostData({ tab: 'revenue', force: true, silent: true })));
+    } else if (TAB === 'sacn') {
+      promises.push(Promise.resolve(loadFoodcostData({ tab: 'sacn', force: true, silent: true })));
     } else if (TAB === 'revenue-est') {
-      try { promises.push(Promise.resolve(loadRevenueEst({ silent: true, force: true }))); } catch(e){}
+      promises.push(Promise.resolve(loadRevenueEst({ force: true, silent: true })));
     } else if (TAB === 'kehoach') {
-      try { promises.push(Promise.resolve(loadKeHoach({ silent: true, force: true }))); } catch(e){}
+      promises.push(Promise.resolve(loadKeHoach({ force: true, silent: true })));
     } else if (TAB === 'quanlykho') {
-      try { if (typeof QLK !== 'undefined' && QLK.reload) promises.push(Promise.resolve(QLK.reload())); } catch(e){}
+      if (typeof QLK !== 'undefined' && QLK.reload) {
+        promises.push(Promise.resolve(QLK.reload()));
+      }
     } else if (TAB === 'dinhduong') {
-      try { if (typeof DD !== 'undefined' && DD.reload) promises.push(Promise.resolve(DD.reload())); } catch(e){}
+      if (typeof DD !== 'undefined' && DD.reload) {
+        promises.push(Promise.resolve(DD.reload()));
+      }
     }
 
     await Promise.allSettled(promises);
@@ -11611,8 +11636,10 @@ function onData(res){
     buildKhachFilter();
     buildMonthFilter();
   }
-  // Tab doanh thu đọc sheet Transactions riêng -> không redraw theo version của Report
-  renderCurrent();
+  // CHỈ vẽ lại khi người dùng đang ở các tab dùng dữ liệu RAW của Báo cáo vận hành:
+  if (TAB === 'overview' || TAB === 'site' || TAB === 'incident') {
+    renderCurrent();
+  }
 }
 
 function showError(title, detail){
@@ -11980,11 +12007,12 @@ var QLK = (function(){
       params.filters = JSON.stringify({ from: reqFrom, to: reqTo });
     }
 
-    callAPI('getWarehouseSummary', params)
+    return callAPI('getWarehouseSummary', params)
       .then(function(res){
         done = true; clearTimeout(wd);
-        if (seq !== _tabLoadSeq[tabKey]) return;
+        if (seq !== _tabLoadSeq[tabKey]) return res;
         onData(res, opts);
+        return res;
       })
       .catch(function(e){
         done = true; clearTimeout(wd);
@@ -11993,9 +12021,7 @@ var QLK = (function(){
       })
       .finally(function(){
         akHideLoading();
-        if (seq === _tabLoadSeq[tabKey]) {
-          loading = false;
-        }
+        loading = false;
       });
     loadMb51Disposal({ from: reqFrom, to: reqTo });
   }
@@ -12412,10 +12438,12 @@ var QLK = (function(){
       toggleSlocGroup(raw);
     });
 
-    document.getElementById('qlkRefresh').addEventListener('click', function(){
-      load({ from: f.from, to: f.to });
-      loadMb51Disposal({ from: f.from, to: f.to, force: true });
-    });
+    var qlkRef = document.getElementById('qlkRefresh');
+    if (qlkRef) {
+      qlkRef.addEventListener('click', function(){
+        refreshAllTabs(true);
+      });
+    }
 
     document.getElementById('qlkMoreToggle').addEventListener('click', function(){
       moreOpen = !moreOpen;
@@ -13738,7 +13766,7 @@ var QLK = (function(){
   return {
     render: render,
     invalidate: function(){ D = null; built = false; huyData = []; huyLoadedPeriod = { from: '', to: '' }; },
-    reload: function(){ D = null; built = false; huyData = []; huyLoadedPeriod = { from: '', to: '' }; render(); }
+    reload: function(){ D = null; built = false; huyData = []; huyLoadedPeriod = { from: '', to: '' }; return load({ from: f.from, to: f.to }); }
   };
 })();
 
@@ -13940,7 +13968,7 @@ function renderFilters(){
   if(!list.length) h+='<option>Không có</option>';
   h+='</select>';
   // Nút cùng hàng filter, đẩy sang phải
-  h+='<button class="btn btn-out" id="ddReload" style="margin-left:auto">⟳ Tải lại dữ liệu</button>';
+  h+='<button class="btn btn-out" id="ddReload" type="button" style="margin-left:auto">⟳ Tải lại dữ liệu</button>';
 
   document.getElementById('ddFilters').innerHTML=h;
   var sel=document.getElementById('ddMealSel');
@@ -14030,7 +14058,7 @@ function openPopup(idx){var list=filtered();var meal=list[idx];if(!meal)return;v
 return {
   render: render,
   invalidate: function(){ D = null; built = false; },
-  reload: function(){ D = null; built = false; load(); }
+  reload: function(){ D = null; built = false; return load(); }
 };
 })();
 
