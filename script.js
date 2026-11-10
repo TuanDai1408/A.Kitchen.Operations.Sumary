@@ -7966,10 +7966,8 @@ function buildRevEstFilters(isReset){
   var dims = (REV_EST_RAW && REV_EST_RAW.dims) || {};
   var isFirstInit = !REV_EST_INIT || isReset;
 
-  // Multi-select Sites: Chỉ lấy các site kinh doanh hoạt động (loại bỏ kho/site nội bộ)
-  var sites = (dims.sites || []).filter(function(s) {
-    return !est_isExcludedSite(s);
-  });
+  // Multi-select Sites: Hiển thị đầy đủ tất cả các site
+  var sites = dims.sites || [];
   if (isFirstInit) {
     RF_EST.sites = sites.slice();
   }
@@ -8550,9 +8548,6 @@ function computeAndDrawRevenueEst(){
       }
       if (RF_EST.periods.indexOf(pKey) < 0) return false;
     }
-    // Luôn loại trừ các site kho / đơn vị loại trừ không tính P&L bếp ăn
-    if (est_isExcludedSite(r.site, r.maSite)) return false;
-
     // Lọc theo Site
     if (!isAllSites) {
       if (RF_EST.sites.indexOf(r.site) < 0) return false;
@@ -9976,7 +9971,6 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
     var totalSitesCount = msList ? msList.querySelectorAll('input[type="checkbox"]').length : 0;
     var isAllSites = (!RF_EST.sites || RF_EST.sites.length === 0 || (totalSitesCount > 0 && RF_EST.sites.length >= totalSitesCount));
     dataRows = allRows.filter(function(r){
-      if (est_isExcludedSite(r.site, r.maSite)) return false;
       if (!isAllSites) {
         if (RF_EST.sites.indexOf(r.site) < 0) return false;
       }
