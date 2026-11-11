@@ -658,7 +658,11 @@ body.sb-collapsed .main-wrap {
   border-radius: 8px !important;
   padding: 0 10px !important;
   font-size: 12px !important;
-  line-height: 30px !important;
+  line-height: normal !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
+  box-sizing: border-box !important;
 }
 
 #fbarRev .tg,
@@ -686,8 +690,9 @@ body.sb-collapsed .main-wrap {
 }
 
 .fld {
-  min-width: 0;
+  min-width: 0 !important;
   width: 100%;
+  box-sizing: border-box !important;
 }
 
 .fld label {
@@ -700,15 +705,16 @@ body.sb-collapsed .main-wrap {
   margin-bottom: 4px;
   height: 14px;
   line-height: 14px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
 }
 
 .fld input,
 .fld select,
 .fld button.sel {
-  width: 100%;
+  width: 100% !important;
+  min-width: 0 !important;
   height: 40px !important;
   border: 1px solid var(--line);
   border-radius: 10px !important;
@@ -720,7 +726,10 @@ body.sb-collapsed .main-wrap {
   color: var(--text);
   outline: none;
   transition: all 0.16s ease;
-  box-sizing: border-box;
+  box-sizing: border-box !important;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  text-overflow: ellipsis !important;
 }
 
 .fld input:focus,
@@ -873,15 +882,50 @@ input[type="checkbox"]:checked {
 /* Multi-select Dropdowns */
 .ms {
   position: relative;
+  min-width: 0 !important;
+  width: 100%;
+  box-sizing: border-box !important;
 }
 
-.ms .sel {
-  min-width: 196px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
+.ms .sel,
+button.sel,
+.fld button.sel {
+  width: 100% !important;
+  min-width: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 6px !important;
   cursor: pointer;
+  overflow: hidden !important;
+  white-space: nowrap !important;
+  box-sizing: border-box !important;
+  text-align: left !important;
+}
+
+.ms .sel > span:first-child,
+button.sel > span:first-child,
+.fld button.sel > span:first-child {
+  flex: 1 1 auto !important;
+  min-width: 0 !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  white-space: nowrap !important;
+  text-align: left !important;
+  display: block !important;
+  line-height: normal !important;
+}
+
+.ms .sel > span:last-child,
+button.sel > span:last-child,
+.fld button.sel > span:last-child {
+  flex: 0 0 auto !important;
+  flex-shrink: 0 !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  color: #888888;
+  margin-left: 4px;
 }
 
 .ms-pop {
@@ -926,6 +970,17 @@ input[type="checkbox"]:checked {
   box-sizing: border-box !important;
   user-select: none !important;
   transition: background 0.12s ease !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+}
+
+.ms-pop label span,
+.ms-pop label span.ms-opt-text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
   white-space: nowrap !important;
 }
 

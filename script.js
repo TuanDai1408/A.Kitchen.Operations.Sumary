@@ -4201,6 +4201,8 @@ function updateRevSacnPeriodLabel(periodMap) {
   } else {
     el.textContent = n + ' ' + granWord + ' đã chọn';
   }
+  el.title = el.textContent;
+  if (el.parentElement) el.parentElement.title = el.textContent;
 
   var pAll = document.getElementById('sPeriodAll');
   if (pAll && pList) {
@@ -4278,6 +4280,8 @@ function updateRevPeriodLabel(periodMap) {
   } else {
     el.textContent = n + ' ' + granWord + ' đã chọn';
   }
+  el.title = el.textContent;
+  if (el.parentElement) el.parentElement.title = el.textContent;
 
   var pAll = document.getElementById('rPeriodAll');
   if (pAll && pList) {
@@ -4370,22 +4374,42 @@ function buildRevSacnFilters(){
 function updateRevSacnMsLabel(){
   var n = RF_SACN.sites.length;
   var el = document.getElementById('sMsLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF_SACN.sites[0] : n+' cửa hàng đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF_SACN.sites[0] : n+' cửa hàng đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 function updateRevSacnVungLabel(){
   var n = RF_SACN.vungMien.length;
   var el = document.getElementById('sVungLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF_SACN.vungMien[0] : n+' vùng miền đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF_SACN.vungMien[0] : n+' vùng miền đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 function updateRevSacnLoaiLabel(){
   var n = RF_SACN.loaiCuaHang.length;
   var el = document.getElementById('sLoaiLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả loại cửa hàng' : (n === 1 ? RF_SACN.loaiCuaHang[0] : n+' loại CH đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả loại cửa hàng' : (n === 1 ? RF_SACN.loaiCuaHang[0] : n+' loại CH đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 function updateRevSacnKhLabel(){
   var n = RF_SACN.khachHang.length;
   var el = document.getElementById('sKhLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? RF_SACN.khachHang[0] : n+' khách hàng đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? RF_SACN.khachHang[0] : n+' khách hàng đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 
 /* ---------- DỰNG DROPDOWN BỘ LỌC (chạy 1 lần sau khi có dims) ---------- */
@@ -4468,22 +4492,42 @@ function buildRevFilters(){
 function updateRevMsLabel(){
   var n = RF.sites.length;
   var el = document.getElementById('rMsLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF.sites[0] : n+' cửa hàng đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả cửa hàng' : (n === 1 ? RF.sites[0] : n+' cửa hàng đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 function updateRevVungLabel(){
   var n = RF.vungMien.length;
   var el = document.getElementById('rVungLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF.vungMien[0] : n+' vùng miền đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF.vungMien[0] : n+' vùng miền đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 function updateRevLoaiLabel(){
   var n = RF.loaiCuaHang.length;
   var el = document.getElementById('rLoaiLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả loại cửa hàng' : (n === 1 ? RF.loaiCuaHang[0] : n+' loại CH đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả loại cửa hàng' : (n === 1 ? RF.loaiCuaHang[0] : n+' loại CH đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 function updateRevKhLabel(){
   var n = RF.khachHang.length;
   var el = document.getElementById('rKhLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? RF.khachHang[0] : n+' khách hàng đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? RF.khachHang[0] : n+' khách hàng đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
 }
 
 /* ---------- RENDER CHÍNH TAB DOANH THU ---------- */
@@ -7955,6 +7999,8 @@ function updateEstPeriodLabel(periodMap) {
   } else {
     el.textContent = n + ' ' + granWord + ' đã chọn';
   }
+  el.title = el.textContent;
+  if (el.parentElement) el.parentElement.title = el.textContent;
 
   var pAll = document.getElementById('estPeriodAll');
   if (pAll && pList) {
@@ -8029,13 +8075,17 @@ function updateEstMsLabel(){
   var n = RF_EST.sites.length;
   var el = document.getElementById('estMsLabel');
   if (el) {
+    var txt = '';
     if (n === 0 || (total > 0 && n === total)) {
-      el.textContent = 'Tất cả site';
+      txt = 'Tất cả site';
     } else if (n === 1) {
-      el.textContent = RF_EST.sites[0];
+      txt = RF_EST.sites[0];
     } else {
-      el.textContent = n + ' site đã chọn';
+      txt = n + ' site đã chọn';
     }
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
   }
   var msAll = document.getElementById('estMsAll');
   if (msAll) {
@@ -8045,7 +8095,12 @@ function updateEstMsLabel(){
 function updateEstVungLabel(){
   var n = RF_EST.vungMien.length;
   var el = document.getElementById('estVungLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF_EST.vungMien[0] : n + ' vùng đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả vùng miền' : (n === 1 ? RF_EST.vungMien[0] : n + ' vùng đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
   var vungAll = document.getElementById('estVungAll');
   var vungList = document.getElementById('estVungList');
   if (vungAll && vungList) {
@@ -8056,7 +8111,12 @@ function updateEstVungLabel(){
 function updateEstLoaiLabel(){
   var n = RF_EST.loaiCuaHang.length;
   var el = document.getElementById('estLoaiLabel');
-  if (el) el.textContent = n === 0 ? 'Tất cả loại CH' : (n === 1 ? RF_EST.loaiCuaHang[0] : n + ' loại CH đã chọn');
+  if (el) {
+    var txt = n === 0 ? 'Tất cả loại CH' : (n === 1 ? RF_EST.loaiCuaHang[0] : n + ' loại CH đã chọn');
+    el.textContent = txt;
+    el.title = txt;
+    if (el.parentElement) el.parentElement.title = txt;
+  }
   var loaiAll = document.getElementById('estLoaiAll');
   var loaiList = document.getElementById('estLoaiList');
   if (loaiAll && loaiList) {
@@ -11263,8 +11323,12 @@ function buildSiteFilter(){
 }
 function updateMsLabel(){
   var n = F.sites.length;
-  document.getElementById('msLabel').textContent =
-    n === 0 ? 'Tất cả site' : (n === 1 ? F.sites[0] : n+' site đã chọn');
+  var el = document.getElementById('msLabel');
+  if (!el) return;
+  var txt = n === 0 ? 'Tất cả site' : (n === 1 ? F.sites[0] : n+' site đã chọn');
+  el.textContent = txt;
+  el.title = txt;
+  if (el.parentElement) el.parentElement.title = txt;
 }
 
 // Multi-select Người báo cáo + Khách hàng (checklist giống Site)
@@ -11272,14 +11336,20 @@ function updateNguoiLabel(){
   var n = F.nguoi.length;
   var el = document.getElementById('msNguoiLabel');
   if (!el) return;
-  el.textContent = n === 0 ? 'Tất cả người báo cáo' : (n === 1 ? F.nguoi[0] : n + ' người đã chọn');
+  var txt = n === 0 ? 'Tất cả người báo cáo' : (n === 1 ? F.nguoi[0] : n + ' người đã chọn');
+  el.textContent = txt;
+  el.title = txt;
+  if (el.parentElement) el.parentElement.title = txt;
 }
 
 function updateKhachLabel(){
   var n = F.khach.length;
   var el = document.getElementById('msKhachLabel');
   if (!el) return;
-  el.textContent = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? F.khach[0] : n + ' KH đã chọn');
+  var txt = n === 0 ? 'Tất cả khách hàng' : (n === 1 ? F.khach[0] : n + ' KH đã chọn');
+  el.textContent = txt;
+  el.title = txt;
+  if (el.parentElement) el.parentElement.title = txt;
 }
 
 function buildNguoiFilter(){
@@ -14195,3 +14265,12 @@ loadData();
     });
   }
 })();
+
+// Tự động gắn tooltip title cho tất cả dropdown native select khi thay đổi
+document.addEventListener('change', function(e) {
+  if (e.target && e.target.tagName === 'SELECT') {
+    var sel = e.target;
+    var opt = sel.options[sel.selectedIndex];
+    sel.title = opt ? opt.textContent.trim() : (sel.value || '');
+  }
+});
