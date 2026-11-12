@@ -2193,24 +2193,35 @@ tfoot tr td {
   font-weight: 700;
   font-size: 11px;
   text-transform: uppercase;
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-bottom: 2px solid var(--line);
   border-right: 1px solid #F0F4F2;
   white-space: nowrap;
+}
+.pvt-table th.pvt-num {
+  text-align: right;
 }
 .pvt-table th.site-col {
   position: sticky;
   left: 0;
   z-index: 3;
   background: #FAFBFB;
-  min-width: 200px;
+  min-width: 220px;
   border-right: 2px solid var(--line);
 }
+.pvt-table th.th-total {
+  background: #F1F5F9;
+  color: #0F172A;
+  font-weight: 800;
+}
 .pvt-table td {
-  padding: 10px 14px;
+  padding: 8px 12px;
   border-bottom: 1px solid #F0F4F2;
   border-right: 1px solid #F8FAF9;
   vertical-align: middle;
+}
+.pvt-table td.pvt-num {
+  text-align: right;
 }
 .pvt-table td.site-col {
   position: sticky;
@@ -2220,16 +2231,65 @@ tfoot tr td {
   font-weight: 700;
   border-right: 2px solid var(--line);
 }
+.pvt-table td.td-total {
+  background: #F8FAFC;
+}
 .pvt-table tr:hover td {
   background-color: #F6FBF8;
 }
 .pvt-table tr:hover td.site-col {
   background-color: #EEF7F2;
 }
+.pvt-table tr:hover td.td-total {
+  background-color: #F1F5F9;
+}
 .pvt-table tr.total-row td {
-  background: #FAFBFB;
+  background: #F8FAFC;
   font-weight: 800;
-  border-top: 2px solid var(--line);
+  border-top: 2px solid #CBD5E1;
+}
+.pvt-table tr.total-row td.site-col {
+  background: #F8FAFC;
+}
+.pvt-table tr.total-row td.td-total {
+  background: #EDF2F7;
+}
+
+/* Pivot cell 2-line layout for numbers & sub-metrics */
+.pvt-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 2px;
+  text-align: right;
+  white-space: nowrap;
+}
+.pvt-cell-main {
+  font-family: 'JetBrains Mono', 'SF Pro Text', Menlo, Consolas, monospace !important;
+  font-feature-settings: 'tnum' 1;
+  font-weight: 700;
+  font-size: 13.5px;
+  color: #0F172A;
+  line-height: 1.25;
+}
+.pvt-cell-sub {
+  font-size: 11px;
+  line-height: 1.2;
+  color: #64748B;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 3px;
+}
+.pvt-cell-main.pvt-blank {
+  color: #CBD5E1 !important;
+  font-weight: 400 !important;
+}
+.pvt-unit-sub {
+  color: #94A3B8;
+  font-size: 10.5px;
+  font-weight: 400;
 }
 
 /* Tooltip & Lightbox & Toast */

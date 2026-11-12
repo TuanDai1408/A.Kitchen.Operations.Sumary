@@ -1269,8 +1269,18 @@ function fmtPvtMonthShort(m) {
   return String(m);
 }
 
+function renderPvtCell(mainVal, subVal, isBlank) {
+  var h = '<div class="pvt-cell">';
+  h += '<span class="pvt-cell-main' + (isBlank ? ' pvt-blank' : '') + '">' + mainVal + '</span>';
+  if (subVal) {
+    h += '<span class="pvt-cell-sub">' + subVal + '</span>';
+  }
+  h += '</div>';
+  return h;
+}
+
 function computePivotAnalysisData(reportRows, siteList) {
-  // 1. Nguồn dữ liệu giao dịch tài chính: Ưu tiên MONTHLY_REV (toàn bộ lịch sử các tháng) hoặc REV_RAW nếu đã tải
+  // 1. Nguon du lieu giao dich tai chinh: Uu tien MONTHLY_REV hoac REV_RAW
   var revSource = [];
   if (MONTHLY_REV && MONTHLY_REV.length) {
     revSource = MONTHLY_REV;
@@ -1278,8 +1288,7 @@ function computePivotAnalysisData(reportRows, siteList) {
     revSource = REV_RAW.rows;
   }
 
-  // Lọc dữ liệu giao dịch theo bộ lọc chung (site, khách hàng)
-  // Không khóa cứng theo F.from / F.to ở đây để bảng Pivot hiển thị trọn vẹn xu hướng các tháng
+  // Loc du lieu giao dich theo bo loc chung cua Tab (site, khach hang)
   var filteredRevRows = revSource.filter(function(r){
     if (F.sites && F.sites.length) {
       var sKey = r.site || r.ten_cua_hang || '';
@@ -1294,7 +1303,7 @@ function computePivotAnalysisData(reportRows, siteList) {
     return true;
   });
 
-  // 2. Danh sách site hợp nhất từ cả Báo cáo vận hành và Giao dịch doanh thu
+  // 2. Danh sach site hop nhat tu ca Bao cao van hanh va Giao dich doanh thu
   var sl = [];
   if (F.sites && F.sites.length) {
     sl = F.sites.slice();
@@ -1312,7 +1321,7 @@ function computePivotAnalysisData(reportRows, siteList) {
     sl = ['Tất cả Site'];
   }
 
-  // 3. Trích xuất tất cả các tháng có dữ liệu trong hệ thống
+  // 3. Trich xuat tat ca cac thang co du lieu trong he thong
   var monthSet = {};
   (RAW || []).forEach(function(r){
     if (r.ngayBaoCao && r.ngayBaoCao.length >= 7) monthSet[r.ngayBaoCao.substring(0, 7)] = true;
@@ -1327,14 +1336,18 @@ function computePivotAnalysisData(reportRows, siteList) {
     else allMonths = [(new Date()).toISOString().substring(0, 7)];
   }
 
-  var activeMonths = allMonths;
-  if (PIVOT_STATE.selectedMonth && PIVOT_STATE.selectedMonth !== 'all') {
-    if (allMonths.indexOf(PIVOT_STATE.selectedMonth) >= 0) {
-      activeMonths = [PIVOT_STATE.selectedMonth];
-    } else {
-      PIVOT_STATE.selectedMonth = 'all';
-      activeMonths = allMonths;
-    }
+  // Bang Pivot DONG BO THEO BO LOC CUA TAB:
+  // Xac dinh khoang thang tu F.from va F.to
+  var startMonth = (F.from && F.from.length >= 7) ? F.from.substring(0, 7) : '';
+  var endMonth = (F.to && F.to.length >= 7) ? F.to.substring(0, 7) : '';
+
+  var activeMonths = allMonths.filter(function(m){
+    if (startMonth && m < startMonth) return false;
+    if (endMonth && m > endMonth) return false;
+    return true;
+  });
+  if (!activeMonths.length) {
+    activeMonths = allMonths.length ? [allMonths[allMonths.length - 1]] : [(new Date()).toISOString().substring(0, 7)];
   }
 
   // 4. Map transactions
@@ -1372,7 +1385,6 @@ function computePivotAnalysisData(reportRows, siteList) {
   });
 
   // 5. Map operational report rows
-  // Lấy dữ liệu từ RAW (toàn bộ lịch sử các tháng) có áp dụng bộ lọc site, người báo cáo, khách hàng
   var repSource = (RAW || []).filter(function(r){
     if (F.sites && F.sites.length && F.sites.indexOf(r.tenSite) < 0) return false;
     if (F.nguoi && F.nguoi.length && F.nguoi.indexOf(r.nguoiBaoCao) < 0) return false;
@@ -1407,7 +1419,6 @@ function computePivotAnalysisData(reportRows, siteList) {
 
   sl.forEach(function(siteName){
     var monthsData = {};
-    var totalTongSuat = 0, totalSuatTinhTien = 0, totalDoanhThu = 0, totalFoodCost = 0, totalSuatHuy = 0;
     var prevMonthRevenue = null;
     var prevMonthTongSuat = null;
     var prevMonthSuat = null;
@@ -1418,6 +1429,7 @@ function computePivotAnalysisData(reportRows, siteList) {
     var latestHuyMoM = null;
     var latestFcMoM = null;
 
+    // Duyet qua toan bo allMonths theo thu tu thoi gian de tinh dung MoM
     allMonths.forEach(function(m){
       var rep = null;
       if (repMap[siteName + '|' + m]) {
@@ -1450,13 +1462,10 @@ function computePivotAnalysisData(reportRows, siteList) {
       var repTinh = rep ? (rep.suatSang + rep.suatTrua + rep.suatChieu) : 0;
       if (repTinh <= 0 && repTong > 0) repTinh = repTong - repHuy - (rep ? rep.suatNV : 0);
 
-      var trSales = tr ? tr.salesQty : 0;
-      var trPha = tr ? tr.qtyPHA : 0;
       var trSuat = tr ? (tr.suat > 0 ? tr.suat : tr.qtyPHA) : 0;
       var netRev = tr ? (tr.gross - tr.disc - tr.retVal) : 0;
       var fCost = tr ? tr.foodCost : 0;
 
-      // RULE CHUNG: "Tổng số suất ăn" đồng nhất lấy chuẩn từ Báo cáo vận hành (r.tongSuat), nếu không có báo cáo vận hành thì lấy theo giao dịch
       var tongSuat = repTong > 0 ? repTong : (trSuat > 0 ? trSuat : 0);
       var suatTinhTien = trSuat > 0 ? trSuat : (repTinh > 0 ? repTinh : Math.max(0, tongSuat - repHuy));
       var suatHuy = repHuy;
@@ -1509,18 +1518,24 @@ function computePivotAnalysisData(reportRows, siteList) {
         momHuyPct: momHuyPct,
         momFcPct: momFcPct
       };
+    });
 
-      totalTongSuat += tongSuat;
-      totalSuatTinhTien += suatTinhTien;
-      totalDoanhThu += netRev;
-      totalFoodCost += fCost;
-      totalSuatHuy += suatHuy;
+    // Tong cong chi cong don tren cac ky activeMonths hien thi
+    var totalTongSuat = 0, totalSuatTinhTien = 0, totalDoanhThu = 0, totalFoodCost = 0, totalSuatHuy = 0;
+    activeMonths.forEach(function(m){
+      var md = monthsData[m] || {};
+      totalTongSuat += (md.tongSuat || 0);
+      totalSuatTinhTien += (md.suatTinhTien || 0);
+      totalDoanhThu += (md.netRevenue || 0);
+      totalFoodCost += (md.foodCost || 0);
+      totalSuatHuy += (md.suatHuy || 0);
     });
 
     var avgTyLeHuyPct = totalTongSuat > 0 ? (totalSuatHuy / totalTongSuat) * 100 : 0;
     var avgFoodCostPct = totalDoanhThu > 0 ? (totalFoodCost / totalDoanhThu) * 100 : 0;
 
-    if ((F.sites && F.sites.length) || totalTongSuat > 0 || totalDoanhThu > 0 || totalSuatTinhTien > 0) {
+    var hasActiveData = (totalTongSuat > 0 || totalDoanhThu > 0 || totalSuatTinhTien > 0);
+    if ((F.sites && F.sites.length) || hasActiveData) {
       siteRows.push({
         site: siteName,
         months: monthsData,
@@ -1598,13 +1613,18 @@ function computePivotAnalysisData(reportRows, siteList) {
       momHuyPct: sysMoMHuyPct,
       momFcPct: sysMoMFcPct
     };
-
-    systemTotals.totalTongSuat += sysTong;
-    systemTotals.totalSuatTinhTien += sysTinh;
-    systemTotals.totalDoanhThu += sysRev;
-    systemTotals.totalFoodCost += sysFc;
-    systemTotals.totalSuatHuy += sysHuy;
   });
+
+  // Tong he thong cong don tren activeMonths
+  activeMonths.forEach(function(m){
+    var tm = systemTotals.months[m] || {};
+    systemTotals.totalTongSuat += (tm.tongSuat || 0);
+    systemTotals.totalSuatTinhTien += (tm.suatTinhTien || 0);
+    systemTotals.totalDoanhThu += (tm.netRevenue || 0);
+    systemTotals.totalFoodCost += (tm.foodCost || 0);
+    systemTotals.totalSuatHuy += (tm.suatHuy || 0);
+  });
+
   systemTotals.avgTyLeHuyPct = systemTotals.totalTongSuat > 0 ? (systemTotals.totalSuatHuy / systemTotals.totalTongSuat) * 100 : 0;
   systemTotals.avgFoodCostPct = systemTotals.totalDoanhThu > 0 ? (systemTotals.totalFoodCost / systemTotals.totalDoanhThu) * 100 : 0;
   systemTotals.latestMoM = latestSysMoM;
@@ -1658,6 +1678,18 @@ function computePivotAnalysisData(reportRows, siteList) {
 }
 
 function pivotAnalysisHtml(reportRows, siteList) {
+  var pvt = computePivotAnalysisData(reportRows, siteList);
+  var months = pvt.activeMonths;
+  var filterSummary = '';
+  if (months.length === 1) {
+    filterSummary = fmtPvtMonth(months[0]);
+  } else {
+    filterSummary = fmtPvtMonthShort(months[0]) + ' → ' + fmtPvtMonthShort(months[months.length - 1]) + ' (' + months.length + ' tháng)';
+  }
+  if (F.sites && F.sites.length) {
+    filterSummary += ' · ' + F.sites.length + ' site đã chọn';
+  }
+
   var html = '<div class="card" id="vanHanhPivotCard" style="margin-top:13px;position:relative;">';
   html += '<div class="card-t" style="flex-wrap:wrap;gap:8px;padding-bottom:12px;border-bottom:1px solid var(--line);">';
   html += '  <div style="display:flex;align-items:center;gap:10px;">';
@@ -1666,6 +1698,11 @@ function pivotAnalysisHtml(reportRows, siteList) {
   html += '      <h3 style="margin:0;font-size:16px;font-weight:700;color:#0F172A;letter-spacing:-0.2px;">Bảng Pivot Thống Kê Vận Hành & Tài Chính (Site × Tháng)</h3>';
   html += '      <div style="font-size:13px;color:#64748B;margin-top:2px;">Suất ăn · Suất tính tiền · Doanh thu thuần (từ Doanh thu) · Tăng giảm MoM % · Tỷ lệ suất hủy · Food cost</div>';
   html += '    </div>';
+  html += '  </div>';
+  html += '  <div style="display:flex;align-items:center;gap:8px;">';
+  html += '    <span class="badge" style="background:#F1F5F9;color:#334155;border:1px solid #CBD5E1;font-size:12px;padding:4px 10px;border-radius:20px;font-weight:600;display:inline-flex;align-items:center;gap:5px;">';
+  html += '      ' + svg(IC.filter, 13) + ' Đồng bộ bộ lọc Tab: ' + esc(filterSummary);
+  html += '    </span>';
   html += '  </div>';
   html += '</div>';
 
@@ -1679,6 +1716,7 @@ function pivotAnalysisHtml(reportRows, siteList) {
 function pivotInnerContentHtml(reportRows, siteList) {
   var pvt = computePivotAnalysisData(reportRows, siteList);
   var months = pvt.activeMonths;
+  var hasMultipleMonths = months.length > 1;
   var curMetric = PIVOT_STATE.metric || 'revenue';
   var unit = PIVOT_STATE.unit;
 
@@ -1686,7 +1724,7 @@ function pivotInnerContentHtml(reportRows, siteList) {
   h += '<div class="pvt-container">';
   h += '<div class="pvt-main">';
   
-  // Toolbar: Clean metric tabs on left, clean filters & export on right
+  // Toolbar: Clean metric tabs on left, clean search & sort & export on right
   h += '<div class="pvt-toolbar">';
   h += '  <div class="pvt-tabs">';
   var tabs = [
@@ -1720,13 +1758,6 @@ function pivotInnerContentHtml(reportRows, siteList) {
   });
   h += '    </select>';
 
-  h += '    <select class="pvt-control-select" id="pvtMonthSelect">';
-  h += '      <option value="all"' + (PIVOT_STATE.selectedMonth === 'all' ? ' selected' : '') + '>Tất cả các tháng (' + pvt.allMonths.length + ' kỳ)</option>';
-  pvt.allMonths.slice().reverse().forEach(function(m){
-    h += '    <option value="' + m + '"' + (PIVOT_STATE.selectedMonth === m ? ' selected' : '') + '>' + fmtPvtMonth(m) + '</option>';
-  });
-  h += '    </select>';
-
   h += '    <div class="pvt-actions">';
   h += '      <button class="pvt-unit-btn ' + (unit === 'compact' ? 'active' : '') + '" data-unit="compact">Triệu đ</button>';
   h += '      <button class="pvt-unit-btn ' + (unit === 'full' ? 'active' : '') + '" data-unit="full">Đầy đủ (₫)</button>';
@@ -1747,196 +1778,228 @@ function pivotInnerContentHtml(reportRows, siteList) {
   months.forEach(function(m){
     h += '  <th class="pvt-num">' + fmtPvtMonth(m) + '</th>';
   });
-  h += '    <th class="th-total pvt-num">Tổng cộng / Toàn kỳ</th>';
+  if (hasMultipleMonths) {
+    h += '  <th class="th-total pvt-num">Tổng cộng kỳ (' + months.length + 'T)</th>';
+  }
   h += '  </tr>';
   h += '</thead>';
   h += '<tbody>';
 
+  var totalColCount = months.length + 1 + (hasMultipleMonths ? 1 : 0);
   if (!pvt.siteRows.length) {
-    h += '<tr><td colspan="' + (months.length + 2) + '" class="empty" style="text-align:center;padding:32px;font-size:14.5px;">Không tìm thấy site phù hợp bộ lọc</td></tr>';
+    h += '<tr><td colspan="' + totalColCount + '" class="empty" style="text-align:center;padding:32px;font-size:14.5px;">Không tìm thấy site phù hợp bộ lọc</td></tr>';
   } else {
     pvt.siteRows.forEach(function(s){
       h += '<tr>';
       h += '  <td class="site-col">';
-      h += '    <div style="font-weight:700;font-size:15px;color:#0F172A;line-height:1.3;">' + esc(s.site) + '</div>';
-      h += '    <div style="font-size:12.5px;color:#64748B;margin-top:3px;">Tổng DT: ' + fmtPvtMoney(s.totalDoanhThu, 'compact') + ' · ' + fmt(s.totalTongSuat) + ' suất</div>';
+      h += '    <div style="font-weight:700;font-size:14px;color:#0F172A;line-height:1.3;">' + esc(s.site) + '</div>';
+      h += '    <div style="font-size:11.5px;color:#64748B;margin-top:2px;">' + fmtPvtMoney(s.totalDoanhThu, 'compact') + ' · ' + fmt(s.totalTongSuat) + ' suất</div>';
       h += '  </td>';
 
       months.forEach(function(m){
         var md = s.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null, momTongSuatPct:null, momSuatPct:null, momHuyPct:null, momFcPct:null };
-        h += '<td>';
+        var cellHtml = '';
         if (curMetric === 'revenue') {
-          h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-          h += '  <span class="pvt-num" style="font-weight:700;color:#0F172A;">' + fmtPvtMoney(md.netRevenue, unit) + '</span>';
-          h += '  ' + fmtPvtMoM(md.momRevenuePct, false);
-          h += '</div>';
+          var revBlank = (md.netRevenue === 0);
+          var mainTxt = revBlank ? '—' : fmtPvtMoney(md.netRevenue, unit);
+          var subTxt = md.momRevenuePct !== null ? fmtPvtMoM(md.momRevenuePct, false) : (revBlank ? '' : '<span class="pvt-unit-sub">₫</span>');
+          cellHtml = renderPvtCell(mainTxt, subTxt, revBlank);
         } else if (curMetric === 'tongSuat') {
-          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-          h += '  <span style="font-weight:700;color:#0F172A;">' + fmt(md.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
-          if (md.momTongSuatPct !== null) h += '  ' + fmtPvtMoM(md.momTongSuatPct, false);
-          h += '</div>';
+          var tsBlank = (md.tongSuat === 0);
+          var mainTxt = tsBlank ? '—' : fmt(md.tongSuat);
+          var subTxt = md.momTongSuatPct !== null ? fmtPvtMoM(md.momTongSuatPct, false) : (tsBlank ? '' : '<span class="pvt-unit-sub">suất</span>');
+          cellHtml = renderPvtCell(mainTxt, subTxt, tsBlank);
         } else if (curMetric === 'suatTinhTien') {
+          var sttBlank = (md.suatTinhTien === 0);
+          var mainTxt = sttBlank ? '—' : fmt(md.suatTinhTien);
           var pctTinh = md.tongSuat > 0 ? (md.suatTinhTien / md.tongSuat * 100) : 0;
-          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-          h += '  <span style="font-weight:700;color:#0284C7;">' + fmt(md.suatTinhTien) + '</span>';
-          h += '  <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(pctTinh) + ')</span>';
-          if (md.momSuatPct !== null) h += '  ' + fmtPvtMoM(md.momSuatPct, false);
-          h += '</div>';
+          var subTxt = '';
+          if (!sttBlank) {
+            subTxt = '<span class="pvt-unit-sub">' + fmtPvtPct(pctTinh) + '</span>';
+            if (md.momSuatPct !== null) subTxt += ' ' + fmtPvtMoM(md.momSuatPct, false);
+          }
+          cellHtml = renderPvtCell(mainTxt, subTxt, sttBlank);
         } else if (curMetric === 'mom') {
-          h += '<div style="text-align:right;">' + fmtPvtMoM(md.momRevenuePct, false) + '</div>';
+          var mainTxt = md.momRevenuePct !== null ? fmtPvtMoM(md.momRevenuePct, false) : '—';
+          cellHtml = renderPvtCell(mainTxt, '', md.momRevenuePct === null);
         } else if (curMetric === 'tyLeHuy') {
-          var hCls = md.tyLeHuyPct <= 1.0 ? 'cf-ok' : (md.tyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
-          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-          h += '  <span class="pvt-badge ' + hCls + '">' + fmtPvtPct(md.tyLeHuyPct) + '</span>';
-          if (md.momHuyPct !== null) h += '  ' + fmtPvtMoM(md.momHuyPct, true);
-          h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(md.suatHuy) + ' suất)</span>';
-          h += '</div>';
+          var hBlank = (md.tongSuat === 0);
+          if (hBlank) {
+            cellHtml = renderPvtCell('—', '', true);
+          } else {
+            var hCls = md.tyLeHuyPct <= 1.0 ? 'cf-ok' : (md.tyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
+            var mainTxt = '<span class="pvt-badge ' + hCls + '">' + fmtPvtPct(md.tyLeHuyPct) + '</span>';
+            var subTxt = fmt(md.suatHuy) + ' suất';
+            if (md.momHuyPct !== null) subTxt += ' · ' + fmtPvtMoM(md.momHuyPct, true);
+            cellHtml = renderPvtCell(mainTxt, subTxt, false);
+          }
         } else if (curMetric === 'foodCost') {
-          var fCls = md.foodCostPct <= 55 ? 'cf-ok' : (md.foodCostPct <= 62 ? 'cf-warn' : 'cf-bad');
-          h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-          h += '  <span style="font-weight:700;color:#0F172A;">' + fmtPvtMoney(md.foodCost, unit) + '</span>';
-          h += '  <span class="pvt-badge ' + fCls + '">FC: ' + fmtPvtPct(md.foodCostPct) + '</span>';
-          if (md.momFcPct !== null) h += '  ' + fmtPvtMoM(md.momFcPct, true);
-          h += '</div>';
+          var fcBlank = (md.netRevenue === 0);
+          if (fcBlank) {
+            cellHtml = renderPvtCell('—', '', true);
+          } else {
+            var fCls = md.foodCostPct <= 55 ? 'cf-ok' : (md.foodCostPct <= 62 ? 'cf-warn' : 'cf-bad');
+            var mainTxt = fmtPvtMoney(md.foodCost, unit);
+            var subTxt = '<span class="pvt-badge ' + fCls + '">FC ' + fmtPvtPct(md.foodCostPct) + '</span>';
+            if (md.momFcPct !== null) subTxt += ' ' + fmtPvtMoM(md.momFcPct, true);
+            cellHtml = renderPvtCell(mainTxt, subTxt, false);
+          }
         }
+        h += '<td class="pvt-num">' + cellHtml + '</td>';
+      });
+
+      // Grand Total Cell for this site (chi khi co tu 2 thang tro len)
+      if (hasMultipleMonths) {
+        h += '<td class="td-total pvt-num">';
+        var totalBlank = false;
+        var totMainTxt = '', totSubTxt = '';
+        if (curMetric === 'revenue') {
+          totalBlank = (s.totalDoanhThu === 0);
+          totMainTxt = totalBlank ? '—' : fmtPvtMoney(s.totalDoanhThu, unit);
+          totSubTxt = s.latestMoM !== null ? fmtPvtMoM(s.latestMoM, false) : (totalBlank ? '' : '<span class="pvt-unit-sub">tổng kỳ</span>');
+        } else if (curMetric === 'tongSuat') {
+          totalBlank = (s.totalTongSuat === 0);
+          totMainTxt = totalBlank ? '—' : fmt(s.totalTongSuat);
+          totSubTxt = s.latestSuatMoM !== null ? fmtPvtMoM(s.latestSuatMoM, false) : (totalBlank ? '' : '<span class="pvt-unit-sub">suất</span>');
+        } else if (curMetric === 'suatTinhTien') {
+          totalBlank = (s.totalSuatTinhTien === 0);
+          totMainTxt = totalBlank ? '—' : fmt(s.totalSuatTinhTien);
+          var pctTot = s.totalTongSuat > 0 ? (s.totalSuatTinhTien / s.totalTongSuat * 100) : 0;
+          totSubTxt = totalBlank ? '' : ('<span class="pvt-unit-sub">' + fmtPvtPct(pctTot) + '</span>');
+        } else if (curMetric === 'mom') {
+          totMainTxt = s.latestMoM !== null ? fmtPvtMoM(s.latestMoM, false) : '—';
+          totalBlank = (s.latestMoM === null);
+        } else if (curMetric === 'tyLeHuy') {
+          totalBlank = (s.totalTongSuat === 0);
+          if (totalBlank) {
+            totMainTxt = '—';
+          } else {
+            var hCls = s.avgTyLeHuyPct <= 1.0 ? 'cf-ok' : (s.avgTyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
+            totMainTxt = '<span class="pvt-badge ' + hCls + '">' + fmtPvtPct(s.avgTyLeHuyPct) + '</span>';
+            totSubTxt = fmt(s.totalSuatHuy) + ' suất';
+            if (s.latestHuyMoM !== null) totSubTxt += ' · ' + fmtPvtMoM(s.latestHuyMoM, true);
+          }
+        } else if (curMetric === 'foodCost') {
+          totalBlank = (s.totalDoanhThu === 0);
+          if (totalBlank) {
+            totMainTxt = '—';
+          } else {
+            var fCls = s.avgFoodCostPct <= 55 ? 'cf-ok' : (s.avgFoodCostPct <= 62 ? 'cf-warn' : 'cf-bad');
+            totMainTxt = fmtPvtMoney(s.totalFoodCost, unit);
+            totSubTxt = '<span class="pvt-badge ' + fCls + '">FC ' + fmtPvtPct(s.avgFoodCostPct) + '</span>';
+            if (s.latestFcMoM !== null) totSubTxt += ' ' + fmtPvtMoM(s.latestFcMoM, true);
+          }
+        }
+        h += renderPvtCell(totMainTxt, totSubTxt, totalBlank);
         h += '</td>';
-      });
-
-      // Grand Total Cell for this site (theo các kỳ đang hiển thị)
-      var rowTongSuat = 0, rowSuatTinhTien = 0, rowDoanhThu = 0, rowFoodCost = 0, rowSuatHuy = 0;
-      months.forEach(function(m){
-        var md = s.months[m] || {};
-        rowTongSuat += (md.tongSuat || 0);
-        rowSuatTinhTien += (md.suatTinhTien || 0);
-        rowDoanhThu += (md.netRevenue || 0);
-        rowFoodCost += (md.foodCost || 0);
-        rowSuatHuy += (md.suatHuy || 0);
-      });
-      var rowHuyPct = rowTongSuat > 0 ? (rowSuatHuy / rowTongSuat) * 100 : 0;
-      var rowFcPct = rowDoanhThu > 0 ? (rowFoodCost / rowDoanhThu) * 100 : 0;
-
-      h += '<td class="td-total">';
-      if (curMetric === 'revenue') {
-        h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-        h += '  <span class="pvt-num" style="font-weight:800;color:#1E40AF;">' + fmtPvtMoney(rowDoanhThu, unit) + '</span>';
-        h += '  ' + fmtPvtMoM(s.latestMoM, false);
-        h += '</div>';
-      } else if (curMetric === 'tongSuat') {
-        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-        h += '  <span style="font-weight:800;color:#0F172A;">' + fmt(rowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
-        if (s.latestSuatMoM !== null) h += '  ' + fmtPvtMoM(s.latestSuatMoM, false);
-        h += '</div>';
-      } else if (curMetric === 'suatTinhTien') {
-        var rowPctTinh = rowTongSuat > 0 ? (rowSuatTinhTien / rowTongSuat * 100) : 0;
-        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-        h += '  <span style="font-weight:800;color:#0284C7;">' + fmt(rowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
-        h += '  <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(rowPctTinh) + ')</span>';
-        h += '</div>';
-      } else if (curMetric === 'mom') {
-        h += '<div style="text-align:right;">' + fmtPvtMoM(s.latestMoM, false) + '</div>';
-      } else if (curMetric === 'tyLeHuy') {
-        var aHuyCls = rowHuyPct <= 1.0 ? 'cf-ok' : (rowHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
-        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-        h += '  <span class="pvt-badge ' + aHuyCls + '">' + fmtPvtPct(rowHuyPct) + '</span>';
-        if (s.latestHuyMoM !== null) h += '  ' + fmtPvtMoM(s.latestHuyMoM, true);
-        h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(rowSuatHuy) + ' suất)</span>';
-        h += '</div>';
-      } else if (curMetric === 'foodCost') {
-        var aFcCls = rowFcPct <= 55 ? 'cf-ok' : (rowFcPct <= 62 ? 'cf-warn' : 'cf-bad');
-        h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-        h += '  <span style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(rowFoodCost, unit) + '</span>';
-        h += '  <span class="pvt-badge ' + aFcCls + '">FC: ' + fmtPvtPct(rowFcPct) + '</span>';
-        if (s.latestFcMoM !== null) h += '  ' + fmtPvtMoM(s.latestFcMoM, true);
-        h += '</div>';
       }
-      h += '</td>';
+
       h += '</tr>';
     });
   }
 
   // System Total Row
   var tot = pvt.systemTotals;
-  var sysRowTongSuat = 0, sysRowSuatTinhTien = 0, sysRowDoanhThu = 0, sysRowFoodCost = 0, sysRowSuatHuy = 0;
-  months.forEach(function(m){
-    var tm = tot.months[m] || {};
-    sysRowTongSuat += (tm.tongSuat || 0);
-    sysRowSuatTinhTien += (tm.suatTinhTien || 0);
-    sysRowDoanhThu += (tm.netRevenue || 0);
-    sysRowFoodCost += (tm.foodCost || 0);
-    sysRowSuatHuy += (tm.suatHuy || 0);
-  });
-  var sysRowHuyPct = sysRowTongSuat > 0 ? (sysRowSuatHuy / sysRowTongSuat) * 100 : 0;
-  var sysRowFcPct = sysRowDoanhThu > 0 ? (sysRowFoodCost / sysRowDoanhThu) * 100 : 0;
-
   h += '<tr class="total-row">';
-  h += '  <td class="site-col" style="font-size:15px;font-weight:800;">TỔNG CỘNG TOÀN HỆ THỐNG</td>';
+  h += '  <td class="site-col" style="font-size:14px;font-weight:800;">TỔNG CỘNG TOÀN HỆ THỐNG</td>';
   months.forEach(function(m){
     var tm = tot.months[m] || { tongSuat:0, suatTinhTien:0, suatHuy:0, tyLeHuyPct:0, netRevenue:0, foodCost:0, foodCostPct:0, momRevenuePct:null, momTongSuatPct:null, momSuatPct:null, momHuyPct:null, momFcPct:null };
-    h += '<td>';
+    var cellHtml = '';
     if (curMetric === 'revenue') {
-      h += '<div style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-      h += '  <span class="pvt-num" style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(tm.netRevenue, unit) + '</span>';
-      h += '  ' + fmtPvtMoM(tm.momRevenuePct, false);
-      h += '</div>';
+      var revBlank = (tm.netRevenue === 0);
+      var mainTxt = revBlank ? '—' : fmtPvtMoney(tm.netRevenue, unit);
+      var subTxt = tm.momRevenuePct !== null ? fmtPvtMoM(tm.momRevenuePct, false) : (revBlank ? '' : '<span class="pvt-unit-sub">₫</span>');
+      cellHtml = renderPvtCell(mainTxt, subTxt, revBlank);
     } else if (curMetric === 'tongSuat') {
-      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-      h += '  <span style="font-weight:800;color:#0F172A;">' + fmt(tm.tongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>';
-      if (tm.momTongSuatPct !== null) h += '  ' + fmtPvtMoM(tm.momTongSuatPct, false);
-      h += '</div>';
+      var tsBlank = (tm.tongSuat === 0);
+      var mainTxt = tsBlank ? '—' : fmt(tm.tongSuat);
+      var subTxt = tm.momTongSuatPct !== null ? fmtPvtMoM(tm.momTongSuatPct, false) : (tsBlank ? '' : '<span class="pvt-unit-sub">suất</span>');
+      cellHtml = renderPvtCell(mainTxt, subTxt, tsBlank);
     } else if (curMetric === 'suatTinhTien') {
+      var sttBlank = (tm.suatTinhTien === 0);
+      var mainTxt = sttBlank ? '—' : fmt(tm.suatTinhTien);
       var sysMonthPctTinh = tm.tongSuat > 0 ? (tm.suatTinhTien / tm.tongSuat * 100) : 0;
-      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-      h += '  <span style="font-weight:800;color:#0284C7;">' + fmt(tm.suatTinhTien) + '</span>';
-      h += '  <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(sysMonthPctTinh) + ')</span>';
-      if (tm.momSuatPct !== null) h += '  ' + fmtPvtMoM(tm.momSuatPct, false);
-      h += '</div>';
+      var subTxt = '';
+      if (!sttBlank) {
+        subTxt = '<span class="pvt-unit-sub">' + fmtPvtPct(sysMonthPctTinh) + '</span>';
+        if (tm.momSuatPct !== null) subTxt += ' ' + fmtPvtMoM(tm.momSuatPct, false);
+      }
+      cellHtml = renderPvtCell(mainTxt, subTxt, sttBlank);
     } else if (curMetric === 'mom') {
-      h += '<div style="text-align:right;">' + fmtPvtMoM(tm.momRevenuePct, false) + '</div>';
+      var mainTxt = tm.momRevenuePct !== null ? fmtPvtMoM(tm.momRevenuePct, false) : '—';
+      cellHtml = renderPvtCell(mainTxt, '', tm.momRevenuePct === null);
     } else if (curMetric === 'tyLeHuy') {
-      var sHuyCls = tm.tyLeHuyPct <= 1.0 ? 'cf-ok' : (tm.tyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
-      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-      h += '  <span class="pvt-badge ' + sHuyCls + '">' + fmtPvtPct(tm.tyLeHuyPct) + '</span>';
-      if (tm.momHuyPct !== null) h += '  ' + fmtPvtMoM(tm.momHuyPct, true);
-      h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(tm.suatHuy) + ' suất)</span>';
-      h += '</div>';
+      var hBlank = (tm.tongSuat === 0);
+      if (hBlank) {
+        cellHtml = renderPvtCell('—', '', true);
+      } else {
+        var sHuyCls = tm.tyLeHuyPct <= 1.0 ? 'cf-ok' : (tm.tyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
+        var mainTxt = '<span class="pvt-badge ' + sHuyCls + '">' + fmtPvtPct(tm.tyLeHuyPct) + '</span>';
+        var subTxt = fmt(tm.suatHuy) + ' suất';
+        if (tm.momHuyPct !== null) subTxt += ' · ' + fmtPvtMoM(tm.momHuyPct, true);
+        cellHtml = renderPvtCell(mainTxt, subTxt, false);
+      }
     } else if (curMetric === 'foodCost') {
-      var sFcCls = tm.foodCostPct <= 55 ? 'cf-ok' : (tm.foodCostPct <= 62 ? 'cf-warn' : 'cf-bad');
-      h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-      h += '  <span style="font-weight:800;color:#0F172A;">' + fmtPvtMoney(tm.foodCost, unit) + '</span>';
-      h += '  <span class="pvt-badge ' + sFcCls + '">FC: ' + fmtPvtPct(tm.foodCostPct) + '</span>';
-      if (tm.momFcPct !== null) h += '  ' + fmtPvtMoM(tm.momFcPct, true);
-      h += '</div>';
+      var fcBlank = (tm.netRevenue === 0);
+      if (fcBlank) {
+        cellHtml = renderPvtCell('—', '', true);
+      } else {
+        var sFcCls = tm.foodCostPct <= 55 ? 'cf-ok' : (tm.foodCostPct <= 62 ? 'cf-warn' : 'cf-bad');
+        var mainTxt = fmtPvtMoney(tm.foodCost, unit);
+        var subTxt = '<span class="pvt-badge ' + sFcCls + '">FC ' + fmtPvtPct(tm.foodCostPct) + '</span>';
+        if (tm.momFcPct !== null) subTxt += ' ' + fmtPvtMoM(tm.momFcPct, true);
+        cellHtml = renderPvtCell(mainTxt, subTxt, false);
+      }
     }
-    h += '</td>';
+    h += '<td class="pvt-num">' + cellHtml + '</td>';
   });
 
-  // Grand Total for System
-  h += '<td class="td-total">';
-  if (curMetric === 'revenue') {
-    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;"><span style="font-weight:900;color:#1E40AF;font-size:15px;">' + fmtPvtMoney(sysRowDoanhThu, unit) + '</span>' + (tot.latestMoM !== null ? (' ' + fmtPvtMoM(tot.latestMoM, false)) : '') + '</div>';
-  } else if (curMetric === 'tongSuat') {
-    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;"><span style="font-weight:900;color:#0F172A;font-size:15px;">' + fmt(sysRowTongSuat) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span>' + (tot.latestSuatMoM !== null ? (' ' + fmtPvtMoM(tot.latestSuatMoM, false)) : '') + '</div>';
-  } else if (curMetric === 'suatTinhTien') {
-    var sysTotalPctTinh = sysRowTongSuat > 0 ? (sysRowSuatTinhTien / sysRowTongSuat * 100) : 0;
-    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;"><span style="font-weight:900;color:#0284C7;font-size:15px;">' + fmt(sysRowSuatTinhTien) + ' <span style="font-size:12px;font-weight:400;color:#64748B;">suất</span></span> <span style="font-size:12px;color:#64748B;">(' + fmtPvtPct(sysTotalPctTinh) + ')</span></div>';
-  } else if (curMetric === 'mom') {
-    h += '<div style="text-align:right;">' + (tot.latestMoM !== null ? fmtPvtMoM(tot.latestMoM, false) : '—') + '</div>';
-  } else if (curMetric === 'tyLeHuy') {
-    var totHuyCls = sysRowHuyPct <= 1.0 ? 'cf-ok' : (sysRowHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
-    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-    h += '  <span class="pvt-badge ' + totHuyCls + '">' + fmtPvtPct(sysRowHuyPct) + '</span>';
-    if (tot.latestHuyMoM !== null) h += '  ' + fmtPvtMoM(tot.latestHuyMoM, true);
-    h += '  <span style="font-size:12.5px;color:#64748B;">(' + fmt(sysRowSuatHuy) + ' suất)</span>';
-    h += '</div>';
-  } else if (curMetric === 'foodCost') {
-    var totFcCls = sysRowFcPct <= 55 ? 'cf-ok' : (sysRowFcPct <= 62 ? 'cf-warn' : 'cf-bad');
-    h += '<div class="pvt-num" style="display:flex;align-items:center;justify-content:flex-end;gap:6px;">';
-    h += '  <span style="font-weight:900;color:#0F172A;font-size:15px;">' + fmtPvtMoney(sysRowFoodCost, unit) + '</span>';
-    h += '  <span class="pvt-badge ' + totFcCls + '">FC: ' + fmtPvtPct(sysRowFcPct) + '</span>';
-    if (tot.latestFcMoM !== null) h += '  ' + fmtPvtMoM(tot.latestFcMoM, true);
-    h += '</div>';
+  // Grand Total for System (chi khi co tu 2 thang tro len)
+  if (hasMultipleMonths) {
+    h += '<td class="td-total pvt-num">';
+    var sysTotBlank = false;
+    var sTotMain = '', sTotSub = '';
+    if (curMetric === 'revenue') {
+      sysTotBlank = (tot.totalDoanhThu === 0);
+      sTotMain = sysTotBlank ? '—' : fmtPvtMoney(tot.totalDoanhThu, unit);
+      sTotSub = tot.latestMoM !== null ? fmtPvtMoM(tot.latestMoM, false) : (sysTotBlank ? '' : '<span class="pvt-unit-sub">tổng kỳ</span>');
+    } else if (curMetric === 'tongSuat') {
+      sysTotBlank = (tot.totalTongSuat === 0);
+      sTotMain = sysTotBlank ? '—' : fmt(tot.totalTongSuat);
+      sTotSub = tot.latestSuatMoM !== null ? fmtPvtMoM(tot.latestSuatMoM, false) : (sysTotBlank ? '' : '<span class="pvt-unit-sub">suất</span>');
+    } else if (curMetric === 'suatTinhTien') {
+      sysTotBlank = (tot.totalSuatTinhTien === 0);
+      sTotMain = sysTotBlank ? '—' : fmt(tot.totalSuatTinhTien);
+      var sysTotPctTinh = tot.totalTongSuat > 0 ? (tot.totalSuatTinhTien / tot.totalTongSuat * 100) : 0;
+      sTotSub = sysTotBlank ? '' : ('<span class="pvt-unit-sub">' + fmtPvtPct(sysTotPctTinh) + '</span>');
+    } else if (curMetric === 'mom') {
+      sTotMain = tot.latestMoM !== null ? fmtPvtMoM(tot.latestMoM, false) : '—';
+      sysTotBlank = (tot.latestMoM === null);
+    } else if (curMetric === 'tyLeHuy') {
+      sysTotBlank = (tot.totalTongSuat === 0);
+      if (sysTotBlank) {
+        sTotMain = '—';
+      } else {
+        var totHuyCls = tot.avgTyLeHuyPct <= 1.0 ? 'cf-ok' : (tot.avgTyLeHuyPct <= 1.5 ? 'cf-warn' : 'cf-bad');
+        sTotMain = '<span class="pvt-badge ' + totHuyCls + '">' + fmtPvtPct(tot.avgTyLeHuyPct) + '</span>';
+        sTotSub = fmt(tot.totalSuatHuy) + ' suất';
+        if (tot.latestHuyMoM !== null) sTotSub += ' · ' + fmtPvtMoM(tot.latestHuyMoM, true);
+      }
+    } else if (curMetric === 'foodCost') {
+      sysTotBlank = (tot.totalDoanhThu === 0);
+      if (sysTotBlank) {
+        sTotMain = '—';
+      } else {
+        var totFcCls = tot.avgFoodCostPct <= 55 ? 'cf-ok' : (tot.avgFoodCostPct <= 62 ? 'cf-warn' : 'cf-bad');
+        sTotMain = fmtPvtMoney(tot.totalFoodCost, unit);
+        sTotSub = '<span class="pvt-badge ' + totFcCls + '">FC ' + fmtPvtPct(tot.avgFoodCostPct) + '</span>';
+        if (tot.latestFcMoM !== null) sTotSub += ' ' + fmtPvtMoM(tot.latestFcMoM, true);
+      }
+    }
+    h += renderPvtCell(sTotMain, sTotSub, sysTotBlank);
+    h += '</td>';
   }
-  h += '</td>';
+
   h += '</tr>';
 
   h += '</tbody>';
@@ -1995,15 +2058,6 @@ function bindPivotInnerEvents(reportRows, siteList) {
   if (sortSel) {
     sortSel.onchange = function(){
       PIVOT_STATE.sortBy = this.value;
-      renderPivotOnly();
-    };
-  }
-
-  // Month select
-  var monthSel = document.getElementById('pvtMonthSelect');
-  if (monthSel) {
-    monthSel.onchange = function(){
-      PIVOT_STATE.selectedMonth = this.value;
       renderPivotOnly();
     };
   }
