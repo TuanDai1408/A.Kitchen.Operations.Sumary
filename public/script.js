@@ -8644,6 +8644,83 @@ function est_renderSiteTableRows(sortedList) {
   }).join('');
 }
 
+// Đối chiếu nguồn số liệu: tab này đọc transactions_est (billing thật + dòng EST.*),
+// còn tab Kế hoạch và Doanh thu & Foodcost (ALL) chỉ đọc billing thật trong transactions.
+// Tách hai nguồn ra để phần chênh lệch còn lại luôn giải thích được ngay trên màn hình.
+function est_renderSourceRecon(rows) {
+  var real = { dt: 0, n: 0, sites: {} };
+  var synth = { dt: 0, n: 0, sites: {} };
+  rows.forEach(function(r){
+    var b = r.isEstimate ? synth : real;
+    var v = Number(r.netRevenue || 0);
+    b.dt += v; b.n++;
+    var k = r.site || '(Chưa rõ site)';
+    if (!b.sites[k]) b.sites[k] = 0;
+    b.sites[k] += v;
+  });
+  var total = real.dt + synth.dt;
+  var pctSynth = total > 0 ? (synth.dt / total * 100) : 0;
+  var pctReal = total > 0 ? (real.dt / total * 100) : 0;
+
+  var h = '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg> Đối chiếu nguồn số liệu</h3>' +
+        '<span style="font-size:11px;color:var(--muted);">Vì sao tab này có thể lệch với Kế hoạch và Doanh thu &amp; Foodcost (ALL)</span>' +
+      '</div>' +
+      '<span class="tag ' + (synth.n ? 'tag-warn' : 'tag-ok') + '">' + (synth.n ? fmtPct1(pctSynth) + '% là ước tính' : 'Khớp nguồn billing') + '</span>' +
+    '</div>';
+
+  h += '<div class="est-recon-bar">' +
+      '<span class="real" style="width:' + pctReal.toFixed(2) + '%"></span>' +
+      '<span class="synth" style="width:' + pctSynth.toFixed(2) + '%"></span>' +
+    '</div>' +
+    '<div class="est-recon-legend">' +
+      '<span><i style="background:#046A38"></i>Billing thật · ' + fmtMoney(real.dt) + '</span>' +
+      '<span><i style="background:#FF6720"></i>Ước tính bổ sung (EST.) · ' + fmtMoney(synth.dt) + '</span>' +
+    '</div>';
+
+  h += '<div class="est-recon-tiles">' +
+      '<div class="est-recon-tile real"><div class="lb">Billing thật</div><div class="vl" style="color:var(--brand)">' + fmtMoney(real.dt) + '</div><div class="sb">' + real.n.toLocaleString('vi-VN') + ' dòng · đối chiếu được với tab ALL</div></div>' +
+      '<div class="est-recon-tile synth"><div class="lb">Ước tính bổ sung</div><div class="vl" style="color:var(--accent)">' + fmtMoney(synth.dt) + '</div><div class="sb">' + synth.n.toLocaleString('vi-VN') + ' dòng EST. · chưa có billing</div></div>' +
+      '<div class="est-recon-tile total"><div class="lb">Tổng đang hiển thị</div><div class="vl" style="color:var(--text)">' + fmtMoney(total) + '</div><div class="sb">Billing thật + ước tính bổ sung</div></div>' +
+    '</div>';
+
+  var siteKeys = Object.keys(synth.sites).filter(function(k){ return synth.sites[k] !== 0; });
+  siteKeys.sort(function(a, b){ return synth.sites[b] - synth.sites[a]; });
+  if (siteKeys.length) {
+    h += '<div class="tw" style="margin-top:14px"><table><thead><tr>' +
+        '<th>Site có doanh thu ước tính</th>' +
+        '<th class="num">Billing thật</th>' +
+        '<th class="num">Ước tính bổ sung</th>' +
+        '<th class="num">Tổng</th>' +
+        '<th class="ctr">Nguồn</th>' +
+      '</tr></thead><tbody>';
+    siteKeys.forEach(function(k){
+      var rv = real.sites[k] || 0;
+      var sv = synth.sites[k];
+      var only = rv === 0;
+      h += '<tr class="hov">' +
+        '<td style="font-weight:700">' + esc(k) + '</td>' +
+        '<td class="num">' + (rv ? fmtMoney(rv) : '<span style="color:var(--muted)">—</span>') + '</td>' +
+        '<td class="num" style="color:var(--accent);font-weight:700">' + fmtMoney(sv) + '</td>' +
+        '<td class="num font-bold">' + fmtMoney(rv + sv) + '</td>' +
+        '<td class="ctr"><span class="tag ' + (only ? 'tag-bad' : 'tag-warn') + '">' + (only ? 'Chỉ ước tính' : 'Billing + ước tính') + '</span></td>' +
+      '</tr>';
+    });
+    h += '</tbody></table></div>';
+  }
+
+  h += '<div class="est-recon-note">' +
+      (synth.n
+        ? 'Phần <strong>ước tính bổ sung</strong> chỉ có ở tab này. Tab Kế hoạch và Doanh thu &amp; Foodcost (ALL) chỉ đọc billing thật, nên sẽ thấp hơn đúng bằng phần ước tính của các site còn thiếu billing. Site gắn nhãn <strong>Chỉ ước tính</strong> chưa có billing thật trong kỳ lọc — cần đối chiếu lại nguồn ETL.'
+        : 'Kỳ lọc này không có dòng ước tính bổ sung: toàn bộ doanh thu đến từ billing thật, cùng nguồn với tab Kế hoạch và Doanh thu &amp; Foodcost (ALL).') +
+      ' Doanh thu thuần, giá vốn và sản lượng đã dùng chung chuẩn với tab Kế hoạch (hàng trả trừ giá trị tuyệt đối, không tính vào suất).' +
+    '</div>';
+
+  return h + '</div>';
+}
+
 function computeAndDrawRevenueEst(){
   var box = document.getElementById('tab-revenue-est');
   if (!box || !REV_EST_RAW) return;
@@ -8696,7 +8773,8 @@ function computeAndDrawRevenueEst(){
   // 2. Lập bản đồ Kế hoạch & Nhân sự từ kehoach_pl_thang (đồng bộ chuẩn 100% với tab So sánh kế hoạch)
   var khData = (REV_EST_RAW && REV_EST_RAW.keHoach) || KH;
   var siteTongKey = (khData && khData.siteTong) ? khData.siteTong : (window.KEHOACH_SITE_TONG || 'Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)');
-  var khPeriods = (khData && khData.periods && khData.periods.length) ? khData.periods : [];
+  var khPeriodsAll = (khData && khData.periods && khData.periods.length) ? khData.periods : [];
+  var khPeriods = khPeriodsAll;
   var planSites = Array.from(new Set(plans.map(function(p){ return p.site; })));
   var khSites = (khData && khData.sites) ? khData.sites : planSites;
 
@@ -8716,6 +8794,17 @@ function computeAndDrawRevenueEst(){
 
   // Xác định bộ lọc thời gian & trọng số tháng
   var isAllTime = !RF_EST.periods || RF_EST.periods.length === 0;
+  // Mẫu số kế hoạch của scope "Tất cả" chỉ gồm những tháng đã có số liệu ước tính;
+  // cộng cả chân trời kế hoạch 2026-2033 sẽ kéo % đạt kế hoạch về gần 0.
+  if (isAllTime && khPeriodsAll.length) {
+    var estMonthSet = {};
+    allRows.forEach(function(r){
+      var m = (r.ngay ? String(r.ngay).substring(0, 7) : '') || r.ky || '';
+      if (m) estMonthSet[m] = 1;
+    });
+    var scopedPeriods = khPeriodsAll.filter(function(p){ return estMonthSet[p.key]; });
+    if (scopedPeriods.length) khPeriods = scopedPeriods;
+  }
   var gran = RF_EST.gran || 'month';
   var monthWeights = {};
 
@@ -8857,11 +8946,7 @@ function computeAndDrawRevenueEst(){
     }
     siteMap[s].dt += r.netRevenue;
     siteMap[s].fc += r.foodCost;
-    var rowSuat = normalizePortionQty(
-      r.soLuong !== undefined ? r.soLuong : (r.so_luong || 0),
-      r.maSite || r.site,
-      r.dvt || r
-    );
+    var rowSuat = r.portionQty || 0;
     siteMap[s].suat += rowSuat;
     totSuat += rowSuat;
     siteMap[s].months[r.ky] = (siteMap[s].months[r.ky] || 0) + r.netRevenue;
@@ -9119,6 +9204,8 @@ function computeAndDrawRevenueEst(){
       '</div>' +
     '</div>' +
   '</div>';
+
+  html += est_renderSourceRecon(rows);
 
   // Khối 2: Waterfall "Cơ cấu lãi (DT → FC → NS → AM2)" + Gom "Xu hướng AM1 / AM2" có nút chuyển đổi
   var granLabelText = RF_EST.gran === 'week' ? 'Tuần' : (RF_EST.gran === 'quarter' ? 'Quý' : (RF_EST.gran === 'year' ? 'Năm' : 'Tháng'));
@@ -10150,11 +10237,7 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
     }
     bucketMap[k].dt += (r.netRevenue || 0);
     bucketMap[k].fc += (r.foodCost || 0);
-    bucketMap[k].suat += normalizePortionQty(
-      r.soLuong !== undefined ? r.soLuong : (r.so_luong || 0),
-      r.maSite || r.site,
-      r.dvt || r
-    );
+    bucketMap[k].suat += (r.portionQty || 0);
     if (r.site) bucketMap[k].sites.add(r.site);
   });
 
@@ -10882,7 +10965,8 @@ function loadKeHoach(opts){
     });
 }
 
-function renderKeHoach(){ if (!KH){ loadKeHoach(); return; } if (!KH_INIT){ buildKehoachFilters(); KH_INIT = true; } drawKehoach(); }
+// Tab ước tính cũng ghi vào KH, nên phải kiểm KH_RAW và bucket lại từ payload gốc của tab này.
+function renderKeHoach(){ if (!KH_RAW){ loadKeHoach(); return; } if (!KH_INIT){ buildKehoachFilters(); KH_INIT = true; } kh_syncPeriodFilter(); KH = kh_applyGranular(KH_RAW, PF.gran); drawKehoach(); }
 
 function buildKehoachFilters(){
   var ySel = document.getElementById('pfYear');

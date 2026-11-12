@@ -2214,6 +2214,42 @@ export async function getNutritionDashboardData() {
 
 export const EST_SELECT_COLS = "id,ma_cua_hang,ten_cua_hang,ten_kh,billing_date,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,vung_mien,loai_cua_hang,so_hoa_don,loai_chung_tu_billing,ly_do_tra_hang,reference,ghi_chu,ky_uoc_tinh";
 
+// Chuẩn doanh thu/sản lượng của tab ước tính phải trùng tab So sánh kế hoạch:
+// dòng trả hàng luôn trừ giá trị tuyệt đối (nhiều dòng trả có số tiền DƯƠNG),
+// và không được tính vào sản lượng.
+function estNetRevenue(r) {
+  const net = Number(r.thanh_tien_truoc_thue || 0) - Number(r.ck_truoc_thue || 0);
+  return computeIsReturn(r) ? -Math.abs(net) : net;
+}
+
+function estPortionQty(r) {
+  if (computeIsReturn(r)) return 0;
+  return normalizePortionQty(Number(r.so_luong || 0), r.ma_cua_hang || r.ten_cua_hang, r.dvt);
+}
+
+// Dòng EST.* là doanh thu suy ra từ suất báo cáo vận hành, chưa có billing thật.
+// Phải tách khỏi dòng billing để đối chiếu được với tab Kế hoạch / Doanh thu ALL.
+function estIsSynthetic(r) {
+  return /^EST\./i.test(String(r.so_hoa_don || "").trim());
+}
+
+// Kỳ kế hoạch đầu tiên: bản ghi ước tính nhập lùi trước mốc này (T06/2026 sinh ra
+// từ report backfill) không được tạo một kỳ "ảo" — cùng quy tắc với getKeHoachData.
+function estPlanFloorKy(plRows) {
+  let floor = "";
+  (plRows || []).forEach(p => {
+    const k = String(p.ky || "").trim();
+    if (k && (!floor || k < floor)) floor = k;
+  });
+  return floor;
+}
+
+function estInPlanHorizon(dateStr, floorKy) {
+  if (!floorKy) return true;
+  const ky = String(dateStr || "").substring(0, 7);
+  return !ky || ky >= floorKy;
+}
+
 export async function getRevenueEstSummary(filtersParam) {
   let filters = {};
   if (typeof filtersParam === "string") {
@@ -2274,20 +2310,25 @@ export async function getRevenueEstSummary(filtersParam) {
     }
   }
 
-  const [rawTx, plRows, keHoach] = await Promise.all([
+  const [rawTxEst, plRows, keHoach] = await Promise.all([
     fetchAllRows("transactions_est", EST_SELECT_COLS, "billing_date", reqFrom || null, reqTo || null, "billing_date"),
     fetchAllRows("kehoach_pl_thang", "*", "ky"),
-    getKeHoachData(filtersParam)
+    getKeHoachData(Object.assign({}, filters, { nPeriods: 480 }))
   ]);
 
-  // Aggregate raw transaction lines by (date, site, group, channel, dvt)
-  // to shrink response payload while preserving exact totals and UI contract
+  const floorKy = estPlanFloorKy(plRows);
+  const rawTx = (rawTxEst || []).filter(r => estInPlanHorizon(r.billing_date, floorKy));
+
+  // Aggregate raw transaction lines by (date, site, group, channel, dvt, isReturn)
+  // to shrink response payload while preserving exact totals and UI contract.
+  // Cờ trả hàng nằm trong khoá gom để dòng trả không nhập nhằng với dòng bán.
   const aggMap = new Map();
-  (rawTx || []).forEach(r => {
+  rawTx.forEach(r => {
     const soLuong = Number(r.so_luong || 0);
-    const thanhTienTruocThue = Number(r.thanh_tien_truoc_thue || 0);
-    const chietKhau = Number(r.ck_truoc_thue || 0);
-    const netRevenue = thanhTienTruocThue - chietKhau;
+    const netRevenue = estNetRevenue(r);
+    const portionQty = estPortionQty(r);
+    const isReturn = computeIsReturn(r);
+    const isEstimate = estIsSynthetic(r);
     const foodCost = Number(r.gia_von || 0);
     const vungMien = (r.vung_mien !== null && r.vung_mien !== undefined) ? String(r.vung_mien).trim() : "";
     const loaiCuaHang = (r.loai_cua_hang !== null && r.loai_cua_hang !== undefined) ? String(r.loai_cua_hang).trim() : "";
@@ -2301,7 +2342,7 @@ export async function getRevenueEstSummary(filtersParam) {
     const nhomSP = r.nhom_sp || "";
     const dvt = r.dvt || "";
 
-    const key = `${ngay}|${site}|${nhomSP}|${tenKenhBanHang}|${dvt}`;
+    const key = `${ngay}|${site}|${nhomSP}|${tenKenhBanHang}|${dvt}|${isReturn ? "R" : "S"}|${isEstimate ? "E" : "B"}`;
     let item = aggMap.get(key);
     if (!item) {
       item = {
@@ -2317,6 +2358,7 @@ export async function getRevenueEstSummary(filtersParam) {
         ky,
         soLuong: 0,
         so_luong: 0,
+        portionQty: 0,
         dvt,
         netRevenue: 0,
         thanhTien: 0,
@@ -2337,8 +2379,9 @@ export async function getRevenueEstSummary(filtersParam) {
         loaiCuaHang,
         loai_cua_hang: loaiCuaHang,
         soHoaDon: r.so_hoa_don || "",
-        isReturn: computeIsReturn(r),
-        is_return: computeIsReturn(r),
+        isReturn,
+        is_return: isReturn,
+        isEstimate,
         reference: r.reference || "",
         ghiChu: r.ghi_chu || ""
       };
@@ -2346,6 +2389,7 @@ export async function getRevenueEstSummary(filtersParam) {
     }
     item.soLuong += soLuong;
     item.so_luong += soLuong;
+    item.portionQty += portionQty;
     item.netRevenue += netRevenue;
     item.thanhTien += netRevenue;
     item.thanh_tien += netRevenue;
@@ -2396,9 +2440,9 @@ export async function getRevenueEstSummary(filtersParam) {
       console.warn("fetch all est billing dates error:", e);
     }
   }
-  const allAvailableEstDates = (global._cachedAllEstBillingDates && global._cachedAllEstBillingDates.length)
+  const allAvailableEstDates = ((global._cachedAllEstBillingDates && global._cachedAllEstBillingDates.length)
     ? global._cachedAllEstBillingDates
-    : sortedDates;
+    : sortedDates).filter(d => estInPlanHorizon(d, floorKy));
 
   return {
     ok: true,
@@ -2432,17 +2476,18 @@ export async function getRevenueEstData(filtersParam) {
     filters = filtersParam;
   }
 
-  const [rawTx, plRows, keHoach] = await Promise.all([
+  const [rawTxEst, plRows, keHoach] = await Promise.all([
     fetchAllRows("transactions_est", EST_SELECT_COLS, "billing_date", filters.from || null, filters.to || null, "billing_date"),
     fetchAllRows("kehoach_pl_thang", "*", "ky"),
-    getKeHoachData(filtersParam)
+    getKeHoachData(Object.assign({}, filters, { nPeriods: 480 }))
   ]);
 
-  const rows = (rawTx || []).map(r => {
+  const floorKy = estPlanFloorKy(plRows);
+  const rawTx = (rawTxEst || []).filter(r => estInPlanHorizon(r.billing_date, floorKy));
+
+  const rows = rawTx.map(r => {
     const soLuong = Number(r.so_luong || 0);
-    const thanhTienTruocThue = Number(r.thanh_tien_truoc_thue || 0);
-    const chietKhau = Number(r.ck_truoc_thue || r.chiet_khau || 0);
-    const netRevenue = thanhTienTruocThue - chietKhau;
+    const netRevenue = estNetRevenue(r);
     const foodCost = Number(r.gia_von || 0);
     const vungMien = (r.vung_mien !== null && r.vung_mien !== undefined) ? String(r.vung_mien).trim() : "";
     const loaiCuaHang = (r.loai_cua_hang !== null && r.loai_cua_hang !== undefined) ? String(r.loai_cua_hang).trim() : "";
@@ -2451,6 +2496,7 @@ export async function getRevenueEstData(filtersParam) {
       : (r.kenh_ban_hang ? String(r.kenh_ban_hang).trim() : "");
     const ngay = formatDate(r.billing_date);
     const ky = (ngay ? ngay.substring(0, 7) : "") || r.ky_uoc_tinh || "";
+    const isReturn = computeIsReturn(r);
 
     return {
       id: r.id,
@@ -2465,6 +2511,7 @@ export async function getRevenueEstData(filtersParam) {
       ky,
       soLuong,
       so_luong: soLuong,
+      portionQty: estPortionQty(r),
       dvt: r.dvt || "",
       netRevenue,
       thanhTien: netRevenue,
@@ -2485,8 +2532,9 @@ export async function getRevenueEstData(filtersParam) {
       loaiCuaHang,
       loai_cua_hang: loaiCuaHang,
       soHoaDon: r.so_hoa_don || "",
-      isReturn: computeIsReturn(r),
-      is_return: computeIsReturn(r),
+      isReturn,
+      is_return: isReturn,
+      isEstimate: estIsSynthetic(r),
       reference: r.reference || "",
       ghiChu: r.ghi_chu || ""
     };
