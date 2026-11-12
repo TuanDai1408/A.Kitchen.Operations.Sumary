@@ -12148,7 +12148,7 @@ var QLK = (function(){
     '@media(max-width:1100px){.qlk-grid4{grid-template-columns:repeat(2,1fr);}.qlk-grid3,.qlk-grid2{grid-template-columns:1fr;}.qlk-mk{grid-template-columns:repeat(2,1fr);}}'+
     '.qlk-spin{display:inline-block;width:20px;height:20px;border:2px solid #E2E8F0;border-top-color:var(--brand);border-radius:50%;animation:qlkSpin 0.75s linear infinite;}'+
     '@keyframes qlkSpin{to{transform:rotate(360deg);}}'+
-    '.qlk-tbl .r,.qlk-mk-v,.qlk-mstats b,.qlk-sloc-row b{font-feature-settings:'tnum' 1;}';
+    '.qlk-tbl .r,.qlk-mk-v,.qlk-mstats b,.qlk-sloc-row b{font-feature-settings:"tnum" 1;}';
     var st=document.createElement('style'); st.id='qlkCss'; st.textContent=css; document.head.appendChild(st);
   }
 
