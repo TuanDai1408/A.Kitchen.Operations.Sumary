@@ -49,7 +49,7 @@ export async function handleGetDataVersion(): Promise<any> {
  * Lấy toàn bộ danh sách báo cáo vận hành hàng ngày (Report) và các chiều lọc
  */
 export async function handleGetDashboardData(): Promise<any> {
-  const [versionRes, reportRes] = await Promise.all([
+  const [versionRes, reportRes, revMonthlyRes] = await Promise.all([
     supabase
       .from("data_version")
       .select("version, updated_at")
@@ -60,6 +60,9 @@ export async function handleGetDashboardData(): Promise<any> {
       .from("report")
       .select("*")
       .order("ngay_bao_cao", { ascending: true }),
+    supabase
+      .from("v_monthly_site_revenue")
+      .select("*"),
   ]);
 
   if (reportRes.error) {
@@ -81,6 +84,27 @@ export async function handleGetDashboardData(): Promise<any> {
     if (r.ngayBaoCao) dateSet.add(r.ngayBaoCao);
   });
 
+  const monthlyRevenue = (revMonthlyRes && revMonthlyRes.data)
+    ? revMonthlyRes.data.map((r: any) => ({
+        month: r.month,
+        site: r.site,
+        maSite: r.ma_site,
+        khachHang: r.khach_hang,
+        soLuong: Number(r.so_luong || 0),
+        qtyPHA: Number(r.qty_pha || 0),
+        thanhTien: Number(r.gross_rev || 0),
+        ckTruocThue: Number(r.discount || 0),
+        netRevenue: Number(r.net_revenue || 0),
+        foodCost: Number(r.food_cost || 0),
+        giaVon: Number(r.food_cost || 0),
+      }))
+    : [];
+
+  monthlyRevenue.forEach((r: any) => {
+    if (r.site) siteSet.add(r.site);
+    if (r.khachHang) khachSet.add(r.khachHang);
+  });
+
   const viSort = (a: string, b: string) => a.localeCompare(b, "vi");
 
   const sites = Array.from(siteSet).sort(viSort);
@@ -98,6 +122,7 @@ export async function handleGetDashboardData(): Promise<any> {
     nguoiBaoCao,
     khachHang,
     dates,
+    monthlyRevenue,
     nguong: DEFAULT_NGUONG,
     version,
     updatedAt,

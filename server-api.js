@@ -475,9 +475,10 @@ export const TX_SELECT_COLS = "billing_date,ten_cua_hang,ma_cua_hang,ten_kh,so_l
 
 async function _getDashboardData() {
   const REPORT_COLS = "id,dau_thoi_gian,ten_site,ngay_bao_cao,nguoi_bao_cao,suat_sang,suat_trua,suat_chieu,suat_nhan_vien,suat_huy,tong_suat,gio_giao,ly_do_tre,tinh_trang_nvl,su_co_thiet_bi,so_that_thoat,nguyen_nhan_that_thoat,ns_co_mat,ns_vang,ns_tang_ca,su_co_nhan_su,so_khieu_nai,so_khen_ngoi,phan_loai_kn,muc_do_nghiem_trong,chi_tiet_y_kien,co_chi_phi_ngoai,so_tien_ly_do_chi_phi,hinh_anh,de_xuat,suat_luu_mau,suat_giao_vien,ten_khach_hang";
-  const [versionRes, reportRes] = await Promise.all([
+  const [versionRes, reportRes, revMonthlyRes] = await Promise.all([
     supabase.from("data_version").select("version, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
-    supabase.from("report").select(REPORT_COLS).order("ngay_bao_cao", { ascending: true }).limit(5000)
+    supabase.from("report").select(REPORT_COLS).order("ngay_bao_cao", { ascending: true }).limit(5000),
+    supabase.from("v_monthly_site_revenue").select("*")
   ]);
 
   const rawRows = reportRes.data || [];
@@ -489,6 +490,26 @@ async function _getDashboardData() {
     if (r.tenKhachHang) khachSet.add(r.tenKhachHang);
     if (r.ngayBaoCao) dateSet.add(r.ngayBaoCao);
   });
+
+  const monthlyRevenue = (revMonthlyRes && revMonthlyRes.data) ? revMonthlyRes.data.map(r => ({
+    month: r.month,
+    site: r.site,
+    maSite: r.ma_site,
+    khachHang: r.khach_hang,
+    soLuong: Number(r.so_luong || 0),
+    qtyPHA: Number(r.qty_pha || 0),
+    thanhTien: Number(r.gross_rev || 0),
+    ckTruocThue: Number(r.discount || 0),
+    netRevenue: Number(r.net_revenue || 0),
+    foodCost: Number(r.food_cost || 0),
+    giaVon: Number(r.food_cost || 0)
+  })) : [];
+
+  monthlyRevenue.forEach(r => {
+    if (r.site) siteSet.add(r.site);
+    if (r.khachHang) khachSet.add(r.khachHang);
+  });
+
   const viSort = (a, b) => a.localeCompare(b, "vi");
   return {
     ok: true,
@@ -497,6 +518,7 @@ async function _getDashboardData() {
     nguoiBaoCao: Array.from(nguoiSet).sort(viSort),
     khachHang: Array.from(khachSet).sort(viSort),
     dates: Array.from(dateSet).sort(),
+    monthlyRevenue,
     nguong: DEFAULT_NGUONG,
     version: String(versionRes.data?.version || "1.0.0"),
     updatedAt: versionRes.data?.updated_at || new Date().toISOString(),

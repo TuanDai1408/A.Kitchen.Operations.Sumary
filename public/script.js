@@ -343,6 +343,7 @@ async function callPostAPI(action, payload) {
 var RAW = [];            // toàn bộ dòng từ sheet Report
 var SITES = [];          // danh sách tên site
 var DATES = [];          // danh sách ngày có dữ liệu
+var MONTHLY_REV = [];    // dữ liệu tài chính & doanh thu theo tháng (từ view v_monthly_site_revenue)
 var NGUONG = { thatThoatPct:2, vangPct:15, phutTre:30 };
 var TAB = 'overview';
 var SEL_SITE = '';       // site đang xem ở tab chi tiết
@@ -1269,63 +1270,59 @@ function fmtPvtMonthShort(m) {
 }
 
 function computePivotAnalysisData(reportRows, siteList) {
-  // Lọc dữ liệu giao dịch bán hàng (REV_RAW) theo đúng bộ lọc chung của tab (F: ngày, site, khách hàng)
-  var filteredRevRows = [];
-  if (REV_RAW && REV_RAW.rows) {
-    filteredRevRows = REV_RAW.rows.filter(function(r){
-      if (F.from && r.ngay && r.ngay < F.from) return false;
-      if (F.to   && r.ngay && r.ngay > F.to)   return false;
-      if (F.sites && F.sites.length) {
-        var sKey = r.site || r.ten_cua_hang || '';
-        var matchSite = F.sites.some(function(s){ return pivotMatchSite(s, sKey); });
-        if (!matchSite) return false;
-      }
-      if (F.khach && F.khach.length) {
-        var kKey = r.khachHang || r.tenKhachHang || r.customer || '';
-        var matchKh = F.khach.some(function(k){ return kKey.toLowerCase().indexOf(k.toLowerCase()) >= 0; });
-        if (!matchKh) return false;
-      }
-      return true;
-    });
+  // 1. Nguồn dữ liệu giao dịch tài chính: Ưu tiên MONTHLY_REV (toàn bộ lịch sử các tháng) hoặc REV_RAW nếu đã tải
+  var revSource = [];
+  if (MONTHLY_REV && MONTHLY_REV.length) {
+    revSource = MONTHLY_REV;
+  } else if (REV_RAW && REV_RAW.rows && REV_RAW.rows.length) {
+    revSource = REV_RAW.rows;
   }
 
-  // Danh sách site hợp nhất từ cả Báo cáo vận hành và Giao dịch doanh thu
+  // Lọc dữ liệu giao dịch theo bộ lọc chung (site, khách hàng)
+  // Không khóa cứng theo F.from / F.to ở đây để bảng Pivot hiển thị trọn vẹn xu hướng các tháng
+  var filteredRevRows = revSource.filter(function(r){
+    if (F.sites && F.sites.length) {
+      var sKey = r.site || r.ten_cua_hang || '';
+      var matchSite = F.sites.some(function(s){ return pivotMatchSite(s, sKey); });
+      if (!matchSite) return false;
+    }
+    if (F.khach && F.khach.length) {
+      var kKey = r.khachHang || r.khach_hang || r.tenKhachHang || r.customer || '';
+      var matchKh = F.khach.some(function(k){ return kKey.toLowerCase().indexOf(k.toLowerCase()) >= 0; });
+      if (!matchKh) return false;
+    }
+    return true;
+  });
+
+  // 2. Danh sách site hợp nhất từ cả Báo cáo vận hành và Giao dịch doanh thu
   var sl = [];
   if (F.sites && F.sites.length) {
     sl = F.sites.slice();
   } else {
     var sSet = {};
-    (reportRows || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
-    (filteredRevRows || []).forEach(function(r){
+    (SITES || []).forEach(function(s){ if (s) sSet[s] = true; });
+    (RAW || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
+    (revSource || []).forEach(function(r){
       var s = r.site || r.ten_cua_hang;
       if (s) sSet[s] = true;
     });
-    if (!Object.keys(sSet).length) {
-      (RAW || []).forEach(function(r){ if (r.tenSite) sSet[r.tenSite] = true; });
-      if (REV_RAW && REV_RAW.rows) {
-        REV_RAW.rows.forEach(function(r){
-          var s = r.site || r.ten_cua_hang;
-          if (s) sSet[s] = true;
-        });
-      }
-    }
     sl = Object.keys(sSet).sort(function(a, b){ return a.localeCompare(b, 'vi'); });
   }
   if (!sl.length) {
     sl = ['Tất cả Site'];
   }
 
-  // Trích xuất các tháng nằm trong phạm vi bộ lọc đang chọn
+  // 3. Trích xuất tất cả các tháng có dữ liệu trong hệ thống
   var monthSet = {};
-  (reportRows || []).forEach(function(r){
+  (RAW || []).forEach(function(r){
     if (r.ngayBaoCao && r.ngayBaoCao.length >= 7) monthSet[r.ngayBaoCao.substring(0, 7)] = true;
   });
-  filteredRevRows.forEach(function(r){
-    if (r.ngay && r.ngay.length >= 7) monthSet[r.ngay.substring(0, 7)] = true;
+  revSource.forEach(function(r){
+    var m = r.month || (r.ngay ? r.ngay.substring(0, 7) : '') || (r.billing_date ? r.billing_date.substring(0, 7) : '');
+    if (m && m.length >= 7) monthSet[m] = true;
   });
   var allMonths = Object.keys(monthSet).sort();
   if (!allMonths.length) {
-    // Nếu bộ lọc ngày quá hẹp không có dòng nào, lấy tháng từ F.from / F.to nếu có
     if (F.from && F.from.length >= 7) allMonths = [F.from.substring(0, 7)];
     else allMonths = [(new Date()).toISOString().substring(0, 7)];
   }
@@ -1340,10 +1337,10 @@ function computePivotAnalysisData(reportRows, siteList) {
     }
   }
 
-  // Map transaction rows từ filteredRevRows
+  // 4. Map transactions
   var transMap = {};
   filteredRevRows.forEach(function(r){
-    var m = r.ngay ? r.ngay.substring(0, 7) : '';
+    var m = r.month || (r.ngay ? r.ngay.substring(0, 7) : '') || (r.billing_date ? r.billing_date.substring(0, 7) : '');
     if (!m) return;
     var sKey = r.site || r.ten_cua_hang || '';
     var key = sKey + '|' + m;
@@ -1351,24 +1348,40 @@ function computePivotAnalysisData(reportRows, siteList) {
       transMap[key] = { gross: 0, disc: 0, retVal: 0, retQty: 0, salesQty: 0, qtyPHA: 0, suat: 0, foodCost: 0 };
     }
     var tm = transMap[key];
+    var netRev = Number(r.netRevenue !== undefined ? r.netRevenue : ((r.thanhTien || 0) - (r.ckTruocThue || 0)));
+    var fc = Number(r.foodCost !== undefined ? r.foodCost : (r.giaVon || 0));
+    var q = Number(r.soLuong !== undefined ? r.soLuong : (r.so_luong || 0));
+    var qPha = Number(r.qtyPHA !== undefined ? r.qtyPHA : 0);
+
     if (r.isReturn) {
-      tm.retVal += Math.abs(r.thanhTien || 0);
-      tm.retQty += Math.abs(r.soLuong || 0);
-      tm.foodCost += (r.giaVon || 0);
+      tm.retVal += Math.abs(netRev);
+      tm.retQty += Math.abs(q);
+      tm.foodCost += fc;
     } else {
-      tm.gross += (r.thanhTien || 0);
-      tm.disc += (r.ckTruocThue || 0);
-      tm.salesQty += (r.soLuong || 0);
-      tm.foodCost += (r.giaVon || 0);
-      var u = String(r.dvt || '').trim().toUpperCase();
-      if (u === 'PHA' || u === 'SUAT') tm.qtyPHA += (r.soLuong || 0);
-      tm.suat += normalizePortionQty(r.soLuong, r.maSite || r.site || r.ten_cua_hang, r.dvt);
+      tm.gross += Number(r.thanhTien !== undefined ? r.thanhTien : (r.gross || netRev));
+      tm.disc += Number(r.ckTruocThue !== undefined ? r.ckTruocThue : (r.disc || 0));
+      tm.salesQty += q;
+      tm.foodCost += fc;
+      tm.qtyPHA += qPha;
+      if (r.dvt && typeof normalizePortionQty === 'function') {
+        tm.suat += normalizePortionQty(q, r.maSite || r.site || r.ten_cua_hang, r.dvt);
+      } else {
+        tm.suat += (qPha > 0 ? qPha : q);
+      }
     }
   });
 
-  // Map report rows (tính tổng suất = r.tongSuat + r.suatLuuMau + r.suatGiaoVien)
+  // 5. Map operational report rows
+  // Lấy dữ liệu từ RAW (toàn bộ lịch sử các tháng) có áp dụng bộ lọc site, người báo cáo, khách hàng
+  var repSource = (RAW || []).filter(function(r){
+    if (F.sites && F.sites.length && F.sites.indexOf(r.tenSite) < 0) return false;
+    if (F.nguoi && F.nguoi.length && F.nguoi.indexOf(r.nguoiBaoCao) < 0) return false;
+    if (F.khach && F.khach.length && F.khach.indexOf(r.tenKhachHang) < 0) return false;
+    return true;
+  });
+
   var repMap = {};
-  (reportRows || []).forEach(function(r){
+  repSource.forEach(function(r){
     var m = r.ngayBaoCao ? r.ngayBaoCao.substring(0, 7) : '';
     if (!m) return;
     var s = r.tenSite || '';
@@ -1443,8 +1456,8 @@ function computePivotAnalysisData(reportRows, siteList) {
       var netRev = tr ? (tr.gross - tr.disc - tr.retVal) : 0;
       var fCost = tr ? tr.foodCost : 0;
 
-      // RULE CHUNG: "Tổng số suất ăn" đồng nhất lấy chuẩn từ Báo cáo vận hành (r.tongSuat) khớp với Card
-      var tongSuat = repTong;
+      // RULE CHUNG: "Tổng số suất ăn" đồng nhất lấy chuẩn từ Báo cáo vận hành (r.tongSuat), nếu không có báo cáo vận hành thì lấy theo giao dịch
+      var tongSuat = repTong > 0 ? repTong : (trSuat > 0 ? trSuat : 0);
       var suatTinhTien = trSuat > 0 ? trSuat : (repTinh > 0 ? repTinh : Math.max(0, tongSuat - repHuy));
       var suatHuy = repHuy;
       var tyLeHuyPct = tongSuat > 0 ? (suatHuy / tongSuat) * 100 : 0;
@@ -1507,21 +1520,23 @@ function computePivotAnalysisData(reportRows, siteList) {
     var avgTyLeHuyPct = totalTongSuat > 0 ? (totalSuatHuy / totalTongSuat) * 100 : 0;
     var avgFoodCostPct = totalDoanhThu > 0 ? (totalFoodCost / totalDoanhThu) * 100 : 0;
 
-    siteRows.push({
-      site: siteName,
-      months: monthsData,
-      totalTongSuat: totalTongSuat,
-      totalSuatTinhTien: totalSuatTinhTien,
-      totalDoanhThu: totalDoanhThu,
-      totalFoodCost: totalFoodCost,
-      totalSuatHuy: totalSuatHuy,
-      avgTyLeHuyPct: avgTyLeHuyPct,
-      avgFoodCostPct: avgFoodCostPct,
-      latestMoM: latestMoM,
-      latestSuatMoM: latestSuatMoM,
-      latestHuyMoM: latestHuyMoM,
-      latestFcMoM: latestFcMoM
-    });
+    if ((F.sites && F.sites.length) || totalTongSuat > 0 || totalDoanhThu > 0 || totalSuatTinhTien > 0) {
+      siteRows.push({
+        site: siteName,
+        months: monthsData,
+        totalTongSuat: totalTongSuat,
+        totalSuatTinhTien: totalSuatTinhTien,
+        totalDoanhThu: totalDoanhThu,
+        totalFoodCost: totalFoodCost,
+        totalSuatHuy: totalSuatHuy,
+        avgTyLeHuyPct: avgTyLeHuyPct,
+        avgFoodCostPct: avgFoodCostPct,
+        latestMoM: latestMoM,
+        latestSuatMoM: latestSuatMoM,
+        latestHuyMoM: latestHuyMoM,
+        latestFcMoM: latestFcMoM
+      });
+    }
   });
 
   // Calculate System Total
@@ -1707,7 +1722,7 @@ function pivotInnerContentHtml(reportRows, siteList) {
 
   h += '    <select class="pvt-control-select" id="pvtMonthSelect">';
   h += '      <option value="all"' + (PIVOT_STATE.selectedMonth === 'all' ? ' selected' : '') + '>Tất cả các tháng (' + pvt.allMonths.length + ' kỳ)</option>';
-  pvt.allMonths.forEach(function(m){
+  pvt.allMonths.slice().reverse().forEach(function(m){
     h += '    <option value="' + m + '"' + (PIVOT_STATE.selectedMonth === m ? ' selected' : '') + '>' + fmtPvtMonth(m) + '</option>';
   });
   h += '    </select>';
@@ -11604,6 +11619,7 @@ function setLive(ok, txt){
 /** Xóa cache mọi tab để lần render tới buộc gọi server */
 function invalidateAllCaches(){
   try { clearAPICache(); } catch(e){}
+  try { MONTHLY_REV = []; } catch(e){}
   try { REV_RAW = null; } catch(e){}
   try { REV = null; } catch(e){}
   try { REV_LOADING = false; } catch(e){}
@@ -11705,6 +11721,7 @@ function onData(res){
   NGUOI = res.nguoiBaoCao || [];
   KHACH = res.khachHang || [];
   DATES = res.dates || [];
+  MONTHLY_REV = res.monthlyRevenue || [];
   if (res.nguong) NGUONG = res.nguong;
   VERSION = res.version;
   document.getElementById('updAt').textContent = fmtUpdatedAt(res.updatedAt);
