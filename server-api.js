@@ -1441,24 +1441,28 @@ export async function getKeHoachData(filtersParam) {
 
   const plPivot = {};
   const periodMap = new Map();
+  let firstPlanKey = "";
   plRows.forEach(p => {
     const ky = String(p.ky || "");
     if (!ky) return;
     const label = `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`;
     periodMap.set(ky, label);
+    if (!firstPlanKey || ky < firstPlanKey) firstPlanKey = ky;
     const k = `${p.site}|${ky}`;
     if (!plPivot[k]) plPivot[k] = {};
     plPivot[k][p.hang_muc] = Number(p.gia_tri || 0);
   });
 
-  // Thu thập thêm các kỳ phát sinh thực tế từ transactions và report
+  // Thu thập thêm các kỳ phát sinh thực tế từ transactions và report.
+  // Chỉ nhận từ kỳ kế hoạch đầu tiên trở đi: bản ghi lạc ngày nằm trước mốc kế hoạch
+  // (billing/report nhập lùi) không được sinh ra một kỳ "ảo" trên dashboard.
   [...txRows, ...repRows].forEach(r => {
     const d = r.billing_date || r.ngay_bao_cao;
     if (!d) return;
     const ky = String(d).substring(0, 7);
-    if (ky && !periodMap.has(ky)) {
-      periodMap.set(ky, `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`);
-    }
+    if (!ky || periodMap.has(ky)) return;
+    if (firstPlanKey && ky < firstPlanKey) return;
+    periodMap.set(ky, `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`);
   });
 
   const SITE_TONG = "Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)";
