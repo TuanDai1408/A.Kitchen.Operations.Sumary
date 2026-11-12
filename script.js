@@ -10457,6 +10457,7 @@ var METRICS_KH = [
 function kh_ach(m, actual, plan){
   if (actual === null || actual === undefined) return null;
   if (!plan || plan <= 0) return null;
+  if (!m.higherBetter && !(actual > 0)) return null;
   return m.higherBetter ? (actual/plan)*100 : (plan/actual)*100;
 }
 
@@ -10601,7 +10602,7 @@ function kh_aggAll(sites, periods){
             LaiGop:{actual:0,plan:0},
             Huy:{actualHuy:0,actualTong:0,actual:0,plan:KH.nguong.huyPct},
             VatTuTieuHao:{actual:0, plan:0},   // ← THÊM DÒNG NÀY
-            EBITDA:{actual:0,plan:0,hasActual:false} };
+            EBITDA:{actual:0,plan:0,hasActual:false}, hasActual:false };
   periods.forEach(function(per){
     var p = kh_periodAgg(per, sites);
     o.DoanhThu.actual+=p.DoanhThu.actual; o.DoanhThu.plan+=p.DoanhThu.plan;
@@ -10614,6 +10615,7 @@ function kh_aggAll(sites, periods){
     o.VatTuTieuHao.plan   += p.VatTuTieuHao ? p.VatTuTieuHao.plan   : 0;
     if (p.EBITDA.hasActual){ o.EBITDA.actual+=p.EBITDA.actual; o.EBITDA.hasActual=true; }
     o.EBITDA.plan+=p.EBITDA.plan;
+    if (p.hasActual) o.hasActual = true;
   });
   o.FoodCost.actualPct = o.DoanhThu.actual>0 ? (o.FoodCost.actualVal/o.DoanhThu.actual)*100 : 0;
   o.FoodCost.planPct   = o.DoanhThu.plan>0   ? (o.FoodCost.planVal/o.DoanhThu.plan)*100   : 0;
@@ -10984,6 +10986,7 @@ function drawKehoachKPI(sites, periods){
   var html = '<div class="grid g7">';
   METRICS_KH.forEach(function(m){
     var v = m.get(totalAgg);
+    if (!totalAgg.hasActual) v = { actual: null, plan: v.plan };
     var ach = kh_ach(m, v.actual, v.plan);
     var achCls = ach===null ? 'thr-warn' : (ach>=100 ? 'thr-ok' : (ach>=90 ? 'thr-warn' : 'thr-bad'));
     var barColor = ach===null ? '#D9D9D9' : (ach>=100 ? '#16A34A' : (ach>=90 ? C.gold : '#C0342C'));
