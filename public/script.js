@@ -650,7 +650,7 @@ var PF = { gran:'month', nPeriods:24, site:'', year:new Date().getFullYear() }; 
 // Site kế hoạch tổng hợp toàn hệ thống (khớp KeHoach_PL_Thang)
 var KEHOACH_SITE_TONG = 'Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)';
 
-var KHUI = { metric:'DoanhThu', expanded:{}, duAnOpen:false, thamSoOpen:false, kh7Mode:'month' };
+var KHUI = { metric:'DoanhThu', expanded:{}, duAnOpen:false, thamSoOpen:false, kh7Mode:'ytd' };
 var C = {
   brand: '#046A38',
   dark: '#046A38',
@@ -10439,7 +10439,15 @@ var METRICS_KH = [
 (function(){
   var byKey = {};
   METRICS_KH.forEach(function(m){ byKey[m.key] = m; });
-  var fmtTrieu = function(n){ return (n===null||n===undefined||isNaN(n)) ? '—' : (Math.round(n/1e5)/10).toLocaleString('vi-VN')+' tr'; };
+  // Định dạng rút gọn theo độ lớn (giống thiết kế): <1 triệu -> "32.408đ";
+  // <1 tỷ -> "172,2 tr"; >=1 tỷ -> "55,60 tỷ".
+  var fmtTrieu = function(n){
+    if (n===null||n===undefined||isNaN(n)) return '—';
+    var a = Math.abs(n);
+    if (a < 1e6) return Math.round(n).toLocaleString('vi-VN')+'đ';
+    if (a < 1e9) return (Math.round(n/1e5)/10).toLocaleString('vi-VN',{minimumFractionDigits:1,maximumFractionDigits:1})+' tr';
+    return (Math.round(n/1e7)/100).toLocaleString('vi-VN',{minimumFractionDigits:2,maximumFractionDigits:2})+' tỷ';
+  };
   var fmtSuat  = function(n){ return (n===null||n===undefined||isNaN(n)) ? '—' : (Math.round(n||0)).toLocaleString('vi-VN')+' suất'; };
   var fmtPc    = function(n){ return (n===null||n===undefined||isNaN(n)) ? '—' : fmtPct(n); };
   [['DoanhThu',fmtTrieu,'triệu',false],['SanLuong',fmtSuat,'suất',false],['FoodCost',fmtPc,'%',true],
@@ -10623,6 +10631,75 @@ function kh_aggAll(sites, periods){
   return o;
 }
 
+/* ---------- BỘ LỌC "SỐ KỲ GẦN NHẤT" ---------- */
+// Đếm số kỳ thực có trong năm đang chọn, theo đúng granularity đang xem.
+function kh_countBuckets(rawKH, gran, year){
+  if (!rawKH || !rawKH.periods) return 0;
+  var seen = {}, y = String(year || '');
+  rawKH.periods.forEach(function(p){
+    var k = String(p.key || '');
+    if (y && k.substring(0,4) !== y) return;
+    var m = parseInt(k.substring(5,7), 10) || 1;
+    var b = (!gran || gran === 'month') ? k
+      : (gran === 'quarter' ? k.substring(0,4) + '-Q' + Math.ceil(m/3) : k.substring(0,4));
+    seen[b] = true;
+  });
+  return Object.keys(seen).length;
+}
+
+// Dropdown chỉ liệt kê mức cắt THẬT SỰ vào số kỳ đang có, nên đổi lựa chọn là thấy ngay.
+function kh_syncPeriodFilter(){
+  var sel = document.getElementById('pfN');
+  if (!sel) return;
+  var gran = PF.gran || 'month';
+  var unit = gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng');
+  var total = kh_countBuckets(KH_RAW, gran, PF.year);
+  var ladder = gran === 'quarter' ? [1,2,3] : (gran === 'year' ? [] : [1,2,3,6,9,12]);
+  var opts = ladder.filter(function(c){ return c < total; });
+  if (opts.indexOf(PF.nPeriods) < 0) PF.nPeriods = 0;
+  var cur = PF.nPeriods;
+  sel.innerHTML = opts.map(function(c){
+    return '<option value="'+c+'"'+(c===cur?' selected':'')+'>'+c+' '+unit+' gần nhất</option>';
+  }).join('') + '<option value="0"'+(cur===0?' selected':'')+'>Tất cả · '+total+' '+unit+'</option>';
+  sel.disabled = opts.length === 0;
+  var lb = document.getElementById('pfNLabel');
+  if (lb) lb.textContent = 'Số ' + unit + ' gần nhất';
+}
+
+function kh_updatePeriodHint(){
+  var el = document.getElementById('pfNHint');
+  if (!el) return;
+  var gran = PF.gran || 'month';
+  var unit = gran === 'quarter' ? 'quý' : (gran === 'year' ? 'năm' : 'tháng');
+  var total = kh_countBuckets(KH_RAW, gran, PF.year);
+  var ps = (KH && KH.periods) || [];
+  if (!ps.length){
+    el.textContent = 'Không có kỳ nào trong phạm vi';
+    el.className = 'fld-hint warn';
+    return;
+  }
+  var short = function(k){
+    k = String(k);
+    if (gran === 'quarter') return k.replace(/^(\d{4})-Q(\d)$/, 'Q$2/$1');
+    if (gran === 'year') return k;
+    return 'T' + k.substring(5,7) + '/' + k.substring(0,4);
+  };
+  var a = short(ps[0].key), b = short(ps[ps.length-1].key);
+  var cut = gran === 'month' ? 3 : (gran === 'quarter' ? 2 : 0);
+  var range;
+  if (ps.length === 1 || a === b) range = a;
+  else if (cut && a.substring(cut) === b.substring(cut)) range = a.substring(0,cut) + '–' + b.substring(0,cut) + a.substring(cut);
+  else range = a + '–' + b;
+  var txt = range + ' · ' + ps.length + '/' + total + ' ' + unit;
+  if (el.textContent !== txt){
+    el.textContent = txt;
+    el.classList.remove('flash');
+    void el.offsetWidth;
+    el.classList.add('flash');
+  }
+  el.className = 'fld-hint flash' + (ps.length < total ? ' on' : '');
+}
+
 /* ---------- GOM KỲ KẾ HOẠCH THEO THÁNG / QUÝ / NĂM (CLIENT-SIDE) ---------- */
 // Danh sách năm có trong dữ liệu kế hoạch / thực tế (dùng cho dropdown Năm).
 function kh_yearsOf(rawKH){
@@ -10637,7 +10714,7 @@ function kh_yearsOf(rawKH){
 
 function kh_applyGranular(rawKH, gran) {
   if (!rawKH || !rawKH.periods || !rawKH.periods.length) return rawKH;
-  var limit = (PF.nPeriods && PF.nPeriods > 0) ? PF.nPeriods : 24;
+  var limit = (PF.nPeriods && PF.nPeriods > 0) ? PF.nPeriods : Infinity;
 
   // Chỉ giữ kỳ thuộc năm đang chọn — lũy kế không được cộng sang năm khác.
   var year = String(PF.year || '');
@@ -10781,6 +10858,7 @@ function loadKeHoach(opts){
       }
       try {
         KH_RAW = res;
+        kh_syncPeriodFilter();
         KH = kh_applyGranular(KH_RAW, PF.gran);
         if (!KH_INIT){ buildKehoachFilters(); KH_INIT = true; }
         drawKehoach();
@@ -10843,6 +10921,7 @@ function khInfoItem(label, val){
 
 /* ---------- RENDER CHÍNH TAB KẾ HOẠCH ---------- */
 function drawKehoach(){
+  kh_updatePeriodHint();
   var sites = kh_selSites();
   var periods = KH.periods;
   if (!periods.length){
@@ -10910,7 +10989,7 @@ function drawKehoach(){
     }
     if (thamSoList && thamSoList.length){
       var thamSoOpen = !!KHUI.thamSoOpen;
-      html += '<div class="card" id="khThamSoCard" style="margin-top:13px">'+
+      html += '<div class="card" id="khThamSoCard">'+
         '<div class="card-t" id="khThamSoToggle" style="cursor:pointer;user-select:none;margin-bottom:'+(thamSoOpen?'11px':'0')+'">'+
           '<h3>'+svg(IC.bulb,15,C.brand)+'Giả định lập kế hoạch'+
             '<span style="font-weight:400;color:#B0B0B0;margin-left:8px;font-size:11.5px">'+(thamSoOpen?'':'— bấm để xem')+'</span>'+
@@ -11098,8 +11177,8 @@ var KH7_C = {
 // Độ phân giải hiển thị của từng chỉ tiêu: chênh lệch nhỏ hơn mức này thì
 // coi như bằng 0 (màu xám, không hiện dấu "+").
 (function(){
-  var eps = { DoanhThu:50000, SanLuong:0.5, FoodCost:0.005, LaiGop:50000,
-              Huy:0.005, VatTuTieuHao:50000, EBITDA:50000 };
+  var eps = { DoanhThu:0.5, SanLuong:0.5, FoodCost:0.005, LaiGop:0.5,
+              Huy:0.005, VatTuTieuHao:0.5, EBITDA:0.5 };
   METRICS_KH.forEach(function(m){ m.eps7 = eps[m.key] || 0.5; });
 })();
 
@@ -11219,73 +11298,71 @@ function kh7sgn(m, v){
   return (Math.abs(v) < (m.eps7 || 0) ? '' : (v > 0 ? '+' : '')) + f(v);
 }
 
+// Màu CHỮ của giá trị số (nền ô giữ trắng): dương xanh, âm đỏ,
+// bằng 0 hoặc chưa thay đổi (ước tính lấy từ KH) thì vàng.
+function kh7ValColor(m, v, unchanged){
+  if (v === null || v === undefined || isNaN(v)) return '';
+  if (unchanged || Math.abs(v) < (m.eps7 || 0)) return '#A16207';
+  return v > 0 ? '#15803D' : '#C0342C';
+}
+
 function kh7ShortLabel(lb){ return String(lb===null||lb===undefined?'':lb).replace(/^Tháng\s*/, 'T'); }
 
 function kh7Hint(m){
-  var agg = m.isPct
-    ? 'Chỉ tiêu <b>%</b> — lũy kế là <b>trung bình</b> các kỳ có số liệu, không cộng dồn %.'
-    : 'Chỉ tiêu <b>cộng dồn</b> — lũy kế là <b>tổng</b> các kỳ.';
-  var dir = m.higherBetter
-    ? 'Cao hơn kế hoạch là <b>tốt</b> (xanh).'
-    : 'Thấp hơn hoặc bằng kế hoạch là <b>tốt</b> (xanh).';
-  var nPer = (KH && KH.periods) ? KH.periods.length : 0;
-  return agg+' '+dir+' Đơn vị: <b>'+esc(m.unit7||'')+'</b> · Phạm vi: <b>Năm '+PF.year+'</b> · '+nPer+' kỳ.';
+  var dir = m.higherBetter ? 'Cao hơn KH' : 'Thấp hơn hoặc bằng KH';
+  return m.isPct
+    ? 'Chỉ tiêu % (Trung bình các tháng có số liệu) · Hướng tích cực: '+dir
+    : 'Chỉ tiêu cộng dồn (Tổng các tháng trong phạm vi) · Hướng tích cực: '+dir;
 }
 
 function kh7CardsHtml(m, S){
   var f = m.fmt7 || m.fmt;
-  var scope = 'Năm '+PF.year+' · '+S.n+' kỳ';
-  var sgn = function(v){ return kh7sgn(m, v); };
-  var dash = '<span style="color:#B0B0B0">—</span>';
-  var ic = function(color, icon){
-    return '<div class="kpi-ic" style="background:'+color+'14;color:'+color+'">'+svg(icon,19,color)+'</div>';
+  var U = (m.unit7||'').toUpperCase();
+  var perWord = (PF.gran==='quarter')?'quý':(PF.gran==='year'?'năm':'tháng');
+  var yearTxt = 'Năm '+PF.year;
+  var dash = '<span class="kh7-dash">—</span>';
+  var colOf = function(v){
+    if (v===null||v===undefined||isNaN(v)) return '#8A9188';
+    var c = kh7DiffStyle(m, v, true).split('color:')[1];
+    return c || '#6B7280';
   };
 
   // Card 1 — Kế hoạch toàn phạm vi
-  var c1 = '<div class="kpi" style="border-left-color:'+m.color+'">'+
-    '<div class="kpi-top"><div>'+
-      '<div class="kpi-lb">Kế hoạch toàn phạm vi</div>'+
-      '<div class="kpi-v">'+(S.planAll===null?dash:f(S.planAll))+'</div>'+
-      '<div class="kpi-sub">'+esc(scope)+' · '+(m.isPct?('trung bình KH của '+S.cp+' kỳ có kế hoạch'):('tổng KH '+S.n+' kỳ'))+'</div>'+
-    '</div>'+ic(m.color, IC.table)+'</div></div>';
+  var sub1 = m.isPct
+    ? 'Trung bình KH '+S.cp+' kỳ có kế hoạch · '+yearTxt
+    : 'Tổng '+S.n+' '+perWord+' kế hoạch · '+yearTxt;
+  var c1 = '<div class="kh7-card kh7-c1">'+
+    '<div class="kh7-clb"><span>1. '+esc(m.unit7==='%'?m.label.replace(/\s*%$/,''):m.label)+' kế hoạch ('+esc(U)+')</span></div>'+
+    '<div class="kh7-cv" style="color:#111827">'+(S.planAll===null?dash:f(S.planAll))+'</div>'+
+    '<div class="kh7-cs">'+esc(sub1)+'</div></div>';
 
   // Card 2 — Thực tế đã đạt
   var ratio = (!m.isPct && S.actGot!==null && S.planAll>0) ? (S.actGot/S.planAll*100) : null;
   var sub2 = m.isPct
-    ? 'YTD '+f(S.actGot)+' / KH '+f(S.planAll)+' · '+S.nAct+'/'+S.n+' kỳ có thực tế'
-    : (ratio===null?'—':fmtPct(ratio)+' kế hoạch')+' · '+S.nAct+'/'+S.n+' kỳ có thực tế';
-  var c2 = '<div class="kpi" style="border-left-color:#15803D">'+
-    '<div class="kpi-top"><div>'+
-      '<div class="kpi-lb">Thực tế đã đạt</div>'+
-      '<div class="kpi-v">'+(S.actGot===null?dash:f(S.actGot))+'</div>'+
-      '<div class="kpi-sub">'+esc(sub2)+'</div>'+
-    '</div>'+ic('#15803D', IC.bars)+'</div></div>';
+    ? 'YTD '+f(S.actGot)+' / KH '+f(S.planAll)+' · '+yearTxt
+    : (ratio===null?'Chưa có thực tế':'Đạt '+fmtPct(ratio)+' KH')+' · '+yearTxt;
+  var c2 = '<div class="kh7-card kh7-c2">'+
+    '<div class="kh7-clb"><span>2. Thực tế đã đạt</span>'+
+    '<span class="kh7-cbd">'+S.nAct+'/'+S.n+' '+perWord+'</span></div>'+
+    '<div class="kh7-cv" style="color:#1D4ED8">'+(S.actGot===null?dash:f(S.actGot))+'</div>'+
+    '<div class="kh7-cs" style="color:#1D4ED8">'+esc(sub2)+'</div></div>';
 
   // Card 3 — Ước tính đến cuối phạm vi
-  var c3 = '<div class="kpi" style="border-left-color:#2563EB">'+
-    '<div class="kpi-top"><div>'+
-      '<div class="kpi-lb">Ước tính đến cuối phạm vi</div>'+
-      '<div class="kpi-v">'+(S.projAll===null?dash:f(S.projAll))+'</div>'+
-      '<div class="kpi-sub">'+esc(scope)+' · lệch KH '+
-        (S.diffProj===null?'—':'<span style="color:'+(kh7DiffStyle(m,S.diffProj,true).split('color:')[1]||'#6B7280')+'">'+sgn(S.diffProj)+'</span>')+
-      '</div>'+
-    '</div>'+ic('#2563EB', IC.line)+'</div></div>';
+  var c3 = '<div class="kh7-card kh7-c3">'+
+    '<div class="kh7-clb"><span>3. Ước tính phạm vi</span></div>'+
+    '<div class="kh7-cv" style="color:#6D28D9">'+(S.projAll===null?dash:f(S.projAll))+'</div>'+
+    '<div class="kh7-cs">Chênh so KH: <span style="color:'+colOf(S.diffProj)+'">'+
+      (S.diffProj===null?'—':kh7sgn(m, S.diffProj))+'</span></div></div>';
 
-  // Card 4 — Còn phải thực hiện / Mục tiêu kỳ còn lại
-  var t4 = m.isPct ? 'Mục tiêu kỳ còn lại' : 'Còn phải thực hiện';
-  var s4 = m.isPct
-    ? 'Trung bình KH của '+S.cn+' kỳ còn lại chưa có thực tế · '+scope
-    : 'KH toàn phạm vi − thực tế đã đạt · '+scope;
-  var v4col = '#1F2937';
-  if (!m.isPct && S.remain!==null){
-    v4col = (m.higherBetter ? S.remain<=0 : S.remain>=0) ? KH7_C.goodFg : KH7_C.badFg;
-  }
-  var c4 = '<div class="kpi" style="border-left-color:#D97706">'+
-    '<div class="kpi-top"><div>'+
-      '<div class="kpi-lb">'+esc(t4)+'</div>'+
-      '<div class="kpi-v" style="color:'+v4col+'">'+(S.remain===null?dash:f(S.remain))+'</div>'+
-      '<div class="kpi-sub">'+esc(s4)+'</div>'+
-    '</div>'+ic('#D97706', IC.bulb)+'</div></div>';
+  // Card 4 — Còn phải thực hiện / mục tiêu kỳ còn lại
+  var t4 = m.isPct ? '4. Mục tiêu kỳ còn lại' : '4. Còn phải thực hiện';
+  var sub4 = m.isPct
+    ? 'Trung bình KH '+S.cn+' kỳ chưa có thực tế · '+yearTxt
+    : S.nNo+' '+perWord+' còn lại · '+yearTxt;
+  var c4 = '<div class="kh7-card kh7-c4">'+
+    '<div class="kh7-clb"><span>'+esc(t4)+'</span></div>'+
+    '<div class="kh7-cv" style="color:#C2410C">'+(S.remain===null?dash:f(S.remain))+'</div>'+
+    '<div class="kh7-cs">'+esc(sub4)+'</div></div>';
 
   return c1+c2+c3+c4;
 }
@@ -11293,39 +11370,38 @@ function kh7CardsHtml(m, S){
 function kh7TableHtml(m, S){
   var f = m.fmt7 || m.fmt;
   var ytd = KHUI.kh7Mode === 'ytd';
+  var U = (m.unit7||'').toUpperCase();
+  var perWord = (PF.gran==='quarter')?'QUÝ':(PF.gran==='year'?'NĂM':'THÁNG');
+  var dash = '<span class="kh7-dash">–</span>';
   var rows = [
-    { cls:'kh7-r1', dot:'#9CA3AF', name:'L1 · Kế hoạch',  sub:ytd?'lũy kế KH':'theo kỳ',
-      vals:ytd?S.cumL1:S.l1, badge:null, cum:S.planAll, diff:null, remain:null, diffRow:false },
-    { cls:'kh7-r2', dot:'#15803D', name:'L2 · Thực tế',   sub:'chưa có = —',
-      vals:ytd?S.cumL2:S.l2, badge:null, cum:S.actGot, diff:S.diffSame, remain:S.remain, diffRow:false },
-    { cls:'kh7-r3', dot:'#2563EB', name:'L3 · Ước tính',  sub:'badge TT / KH',
-      vals:ytd?S.cumL3:S.l3, badge:S.badge, cum:S.projAll, diff:S.diffProj, remain:S.remain, diffRow:false },
-    { cls:'kh7-r4', dot:'#D97706', name:'Δ · Chênh lệch', sub:ytd?'lũy kế':'từng kỳ',
-      vals:ytd?S.deltaCum:S.delta, badge:null, cum:S.deltaLast, diff:S.diffSame, remain:S.remain, diffRow:true }
+    { cls:'kh7-r1', name:'L1. Kế hoạch (KH)',
+      vals:ytd?S.cumL1:S.l1, badge:null, cum:S.planAll, remain:null, diffRow:false },
+    { cls:'kh7-r2', name:'L2. Thực tế (TT)',
+      vals:ytd?S.cumL2:S.l2, badge:null, cum:S.actGot, remain:null, diffRow:false },
+    { cls:'kh7-r3', name:'L3. Ước tính cuối kỳ',
+      vals:ytd?S.cumL3:S.l3, badge:S.badge, cum:S.projAll, remain:S.remain, diffRow:false },
+    { cls:'kh7-r4', name:'Dòng Δ (Chênh / Cần đạt)',
+      vals:ytd?S.deltaCum:S.delta, badge:null, cum:S.deltaLast, remain:S.remain, diffRow:true }
   ];
 
-  var h = '<table class="kh7-table"><thead><tr><th class="kh7-c-name">Chỉ tiêu</th>';
+  var h = '<table class="kh7-table"><thead><tr><th class="kh7-c-name">Chỉ tiêu / '+(ytd?'lũy kế '+perWord:perWord)+' ('+esc(U)+')</th>';
   S.labels.forEach(function(lb){ h += '<th>'+esc(kh7ShortLabel(lb))+'</th>'; });
-  h += '<th class="kh7-sum kh7-s1" title="Lũy kế trong phạm vi">Lũy kế phạm vi</th>'+
-       '<th class="kh7-sum kh7-s2" title="Chênh lệch (TT − KH)">Chênh lệch TT−KH</th>'+
-       '<th class="kh7-sum kh7-s3" title="Còn phải thực hiện">Còn phải đạt</th>'+
+  var fullScope = kh_countBuckets(KH_RAW, PF.gran, PF.year) <= S.n;
+  h += '<th class="kh7-sum kh7-s1" title="Lũy kế trong phạm vi">'+(fullScope?'Lũy kế cả năm':'Lũy kế phạm vi')+'</th>'+
+       '<th class="kh7-sum kh7-s3" title="Còn phải thực hiện">Còn phải thực hiện</th>'+
        '</tr></thead><tbody>';
 
   rows.forEach(function(r){
-    h += '<tr class="'+r.cls+'"><td class="kh7-c-name"><span class="kh7-rowlb">'+
-      '<span class="kh7-dot" style="background:'+r.dot+'"></span>'+esc(r.name)+
-      '<span class="kh7-sub">'+esc(r.sub)+'</span></span></td>';
+    h += '<tr class="'+r.cls+'"><td class="kh7-c-name">'+esc(r.name)+'</td>';
 
     r.vals.forEach(function(v, i){
       if (v === null || v === undefined){
-        h += r.diffRow
-          ? '<td style="'+kh7DiffStyle(m, null, S.hasAct[i])+'">—</td>'
-          : '<td style="color:#B0B0B0;font-weight:400">—</td>';
+        h += '<td>'+dash+'</td>';
         return;
       }
       if (r.diffRow){
-        h += '<td style="'+kh7DiffStyle(m, v, S.hasAct[i])+'">'+
-          (S.hasAct[i] ? kh7sgn(m, v) : f(v))+'</td>';
+        h += '<td style="color:'+kh7ValColor(m, v, !S.hasAct[i])+'">'+
+          (S.hasAct[i] ? kh7sgn(m, v) : (f(v)+' <span class="kh7-khsuffix">(KH)</span>'))+'</td>';
         return;
       }
       // Badge TT/KH chỉ có nghĩa ở chế độ từng kỳ; bản lũy kế là số trộn nhiều kỳ.
@@ -11336,13 +11412,11 @@ function kh7TableHtml(m, S){
     });
 
     var t1 = (r.cum===null||r.cum===undefined) ? '' : f(r.cum);
-    var t2 = (r.diff===null||r.diff===undefined) ? '' : kh7sgn(m, r.diff);
     var t3 = (r.remain===null||r.remain===undefined) ? '' : f(r.remain);
-    h += '<td class="kh7-sum kh7-s1" title="'+esc(t1)+'">'+(t1||'<span style="color:#B0B0B0;font-weight:400">—</span>')+'</td>';
-    h += (r.diff===null||r.diff===undefined)
-      ? '<td class="kh7-sum kh7-s2" style="color:#B0B0B0;font-weight:400">—</td>'
-      : '<td class="kh7-sum kh7-s2" title="'+esc(t2)+'" style="'+kh7DiffStyle(m, r.diff, true)+'">'+t2+'</td>';
-    h += '<td class="kh7-sum kh7-s3" title="'+esc(t3)+'">'+(t3||'<span style="color:#B0B0B0;font-weight:400">—</span>')+'</td>';
+    var sc1 = r.diffRow ? kh7ValColor(m, r.cum, false) : '';
+    var sc3 = r.diffRow ? kh7ValColor(m, r.remain, false) : '';
+    h += '<td class="kh7-sum kh7-s1" style="color:'+sc1+'" title="'+esc(t1)+'">'+(t1||dash)+'</td>';
+    h += '<td class="kh7-sum kh7-s3" style="color:'+sc3+'" title="'+esc(t3)+'">'+(t3||dash)+'</td>';
     h += '</tr>';
   });
 
@@ -11352,28 +11426,36 @@ function kh7TableHtml(m, S){
 function kh7BodyHtml(sites, periods){
   var m = kh_metricByKey(KHUI.metric);
   var S = kh_buildSeries(m, sites, periods);
+  var perWord = (PF.gran==='quarter')?'quý':(PF.gran==='year'?'năm':'tháng');
   var h = '<div class="kh7-pills" id="kh7Pills">';
   METRICS_KH.forEach(function(x){
     h += '<button type="button" class="kh7-pill'+(x.key===m.key?' on':'')+'" data-k="'+x.key+'">'+
-      '<span class="kh7-dot" style="background:'+x.color+'"></span>'+esc(x.label)+'</button>';
+      esc(x.unit7==='%'?x.label.replace(/\s*%$/,''):x.label)+(x.unit7?' <span class="kh7-pu">('+esc(x.unit7)+')</span>':'')+'</button>';
   });
   h += '</div>';
-  h += '<div class="kh7-hint">'+kh7Hint(m)+'</div>';
   h += '<div class="grid g4 kh7-cards">'+kh7CardsHtml(m, S)+'</div>';
   h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S)+'</div>';
   h += '<div class="kh7-chart-t">'+svg(IC.line,14,C.brand)+'Biểu đồ so sánh &amp; đường lũy kế tới cuối năm</div>'+
+       '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+
+       ' · Cột: '+S.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
        '<div class="cbox kh7-chart"><canvas id="chKh7"></canvas></div>';
   return h;
 }
 
 function drawKehoach7(sites, periods){
   var mode = KHUI.kh7Mode === 'ytd' ? 'ytd' : 'month';
-  return '<div class="card" id="kh7Card" style="margin-top:13px">'+
+  var m = kh_metricByKey(KHUI.metric);
+  return '<div class="card" id="kh7Card">'+
     '<div class="card-t kh7-head">'+
-      '<h3>'+svg(IC.line,15,C.brand)+'Theo dõi 7 chỉ tiêu theo tháng &amp; lũy kế cuối năm</h3>'+
-      '<div class="tg" id="kh7Mode">'+
-        '<button data-v="month" class="'+(mode==='month'?'on':'')+'">Theo từng tháng</button>'+
-        '<button data-v="ytd" class="'+(mode==='ytd'?'on':'')+'">Lũy kế cộng dồn (YTD từng tháng)</button>'+
+      '<div class="kh7-hl">'+
+        '<h3>'+svg(IC.table,15,C.brand)+'Theo dõi 7 chỉ tiêu theo tháng (T1–T12) &amp; Lũy kế cuối năm</h3>'+
+        '<div class="kh7-hint">'+kh7Hint(m)+'</div>'+
+      '</div>'+
+      '<div class="kh7-hr"><span class="kh7-tgl-lb">Bảng:</span>'+
+        '<div class="tg" id="kh7Mode">'+
+          '<button data-v="month" class="'+(mode==='month'?'on':'')+'">Theo từng tháng</button>'+
+          '<button data-v="ytd" class="'+(mode==='ytd'?'on':'')+'">Lũy kế cộng dồn (YTD từng tháng)</button>'+
+        '</div>'+
       '</div>'+
     '</div>'+
     '<div id="kh7Body">'+kh7BodyHtml(sites, periods)+'</div>'+
@@ -11384,6 +11466,8 @@ function drawKehoach7(sites, periods){
 // hoặc đổi chế độ tháng/lũy kế — không dựng lại cả tab.
 function kh7Refresh(){
   var body = document.getElementById('kh7Body'); if (!body) return;
+  var hint = document.querySelector('#kh7Card .kh7-hint');
+  if (hint) hint.innerHTML = kh7Hint(kh_metricByKey(KHUI.metric));
   body.innerHTML = kh7BodyHtml(kh_selSites(), (KH && KH.periods) || []);
   try { drawKh7Chart(); } catch(e){ console.error('Lỗi vẽ kh7 chart:', e); }
 }
@@ -11396,6 +11480,7 @@ function drawKh7Chart(){
   var f = m.fmt7 || m.fmt;
   var unitTxt = m.unit7 || '';
   var ROB = "'Roboto', sans-serif";
+  var tickFmt = function(v){ return m.isPct ? v+'%' : f(v); };
 
   var o = cloneOpt();
   o.plugins.legend.position = 'bottom';
@@ -11410,19 +11495,18 @@ function drawKh7Chart(){
 
   o.scales.y.position = 'left';
   o.scales.y.beginAtZero = true;
-  o.scales.y.title = { display:true, text:(m.isPct?'% theo kỳ':('Theo kỳ ('+unitTxt+')')),
+  o.scales.y.title = { display:true, text:(m.isPct?'% theo tháng':('Tháng ('+unitTxt+')')),
                        color:'#6B7280', font:{ family:ROB, size:10.5, weight:'600' } };
   o.scales.y.ticks.font = { family:ROB, size:10.5 };
   o.scales.y.ticks.color = '#6B7280';
-  o.scales.y.ticks.callback = function(v){ return m.isPct ? v+'%' : v; };
+  o.scales.y.ticks.callback = tickFmt;
 
   o.scales.y1 = {
     position:'right', beginAtZero:true,
-    title:{ display:true, text:(m.isPct?'Lũy kế (trung bình %)':'Lũy kế ('+unitTxt+')'),
+    title:{ display:true, text:(m.isPct?'Lũy kế (trung bình %)':'Tổng lũy kế ('+unitTxt+')'),
             color:'#6B7280', font:{ family:ROB, size:10.5, weight:'600' } },
     grid:{ drawOnChartArea:false },
-    ticks:{ color:'#6B7280', font:{ family:ROB, size:10.5 },
-            callback:function(v){ return m.isPct ? v+'%' : v; } }
+    ticks:{ color:'#6B7280', font:{ family:ROB, size:10.5 }, callback:tickFmt }
   };
 
   o.plugins.tooltip.titleFont = { family:ROB, size:12.5, weight:'700' };
@@ -11433,9 +11517,9 @@ function drawKh7Chart(){
     label: function(c){
       var i = c.dataIndex;
       var key = c.dataset.label;
-      if (key === 'L1 · Kế hoạch')  return 'Kế hoạch: '+f(S.l1[i]);
-      if (key === 'L3 · Ước tính')  return 'Ước tính ['+S.badge[i]+']: '+f(S.l3[i]);
-      if (key === 'Lũy kế L1')      return 'Lũy kế KH: '+(S.cumL1[i]===null?'—':f(S.cumL1[i]));
+      if (key === 'L1 Kế hoạch tháng')  return 'Kế hoạch: '+f(S.l1[i]);
+      if (key === 'L3 Ước tính tháng')  return 'Ước tính ['+S.badge[i]+']: '+f(S.l3[i]);
+      if (key === 'L1 KH lũy kế')       return 'Lũy kế KH: '+(S.cumL1[i]===null?'—':f(S.cumL1[i]));
       return 'Lũy kế ước tính: '+(S.cumL3[i]===null?'—':f(S.cumL3[i]));
     },
     footer: function(items){
@@ -11448,18 +11532,20 @@ function drawKh7Chart(){
   };
 
   var ds = [
-    { type:'bar', label:'L1 · Kế hoạch', data:S.l1, yAxisID:'y', order:3,
-      backgroundColor:'#D9D9D9', borderColor:'#D9D9D9', borderWidth:0, borderRadius:3, barPercentage:.86, categoryPercentage:.78 },
-    { type:'bar', label:'L3 · Ước tính', data:S.l3, yAxisID:'y', order:2,
-      backgroundColor:S.hasAct.map(function(a){ return a ? 'rgba(4,106,56,0.85)' : 'rgba(217,119,6,0.85)'; }),
-      borderColor:S.hasAct.map(function(a){ return a ? '#046A38' : '#D97706'; }),
-      borderWidth:0, borderRadius:3, barPercentage:.86, categoryPercentage:.78 },
-    { type:'line', label:'Lũy kế L1', data:S.cumL1, yAxisID:'y1', order:1,
-      borderColor:'#9CA3AF', borderDash:[6,4], borderWidth:2, pointRadius:0, pointHoverRadius:4,
+    { type:'bar', label:'L1 Kế hoạch tháng', data:S.l1, yAxisID:'y', order:3,
+      backgroundColor:'#C9CFD8', borderColor:'#C9CFD8', borderWidth:0, borderRadius:2, barPercentage:.86, categoryPercentage:.78 },
+    { type:'bar', label:'L3 Ước tính tháng', data:S.l3, yAxisID:'y', order:2,
+      backgroundColor:S.hasAct.map(function(a){ return a ? '#16A34A' : '#F59E0B'; }),
+      borderColor:S.hasAct.map(function(a){ return a ? '#15803D' : '#D97706'; }),
+      borderWidth:0, borderRadius:2, barPercentage:.86, categoryPercentage:.78 },
+    { type:'line', label:'L1 KH lũy kế', data:S.cumL1, yAxisID:'y1', order:1,
+      borderColor:'#9CA3AF', borderDash:[6,4], borderWidth:2, pointRadius:2.5, pointHoverRadius:4,
+      pointBackgroundColor:'#6B7280', backgroundColor:'rgba(156,163,175,0.25)',
       fill:false, tension:.25, spanGaps:true },
-    { type:'line', label:'Lũy kế L3', data:S.cumL3, yAxisID:'y1', order:0,
-      borderColor:'#2563EB', borderWidth:2.4, pointRadius:2, pointHoverRadius:5,
-      backgroundColor:'#2563EB', fill:false, tension:.25, spanGaps:true }
+    { type:'line', label:'L3 Ước tính lũy kế', data:S.cumL3, yAxisID:'y1', order:0,
+      borderColor:'#2563EB', borderWidth:2.4, pointRadius:3, pointHoverRadius:5,
+      pointBackgroundColor:'#2563EB', backgroundColor:'rgba(37,99,235,0.12)',
+      fill:false, tension:.25, spanGaps:true }
   ];
 
   CHARTS.chKh7 = new Chart(ctx, { type:'bar', data:{ labels:S.labels, datasets:ds }, options:o });
@@ -11660,6 +11746,7 @@ function bindKehoachFilters(){
       loadKeHoach();
       return;
     }
+    kh_syncPeriodFilter();
     KH = kh_applyGranular(KH_RAW, PF.gran);
     drawKehoach();
   };
