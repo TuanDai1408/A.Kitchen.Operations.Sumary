@@ -3260,3 +3260,213 @@ tfoot tr td {
 }
 
 
+
+/* =========================================================================
+   TAB SO SÁNH KẾ HOẠCH — KHỐI "7 CHỈ TIÊU THEO THÁNG & LŨY KẾ CUỐI NĂM"
+   Xếp dọc thuần (flex/grid), không position:absolute, không margin âm.
+   ========================================================================= */
+#tab-kehoach .kh7-head {
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: center;
+}
+
+#tab-kehoach .kh7-pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+#tab-kehoach .kh7-pill {
+  height: 30px;
+  border: 1px solid var(--line);
+  background: #FFFFFF;
+  padding: 0 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--muted);
+  cursor: pointer;
+  font-family: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+#tab-kehoach .kh7-pill:hover {
+  border-color: rgba(4, 106, 56, 0.35);
+  color: #046A38;
+}
+
+#tab-kehoach .kh7-pill.on {
+  background: var(--brand-soft);
+  border-color: rgba(4, 106, 56, 0.4);
+  color: #046A38;
+  font-weight: 800;
+}
+
+#tab-kehoach .kh7-hint {
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+  margin-bottom: 16px;
+}
+
+#tab-kehoach .kh7-cards {
+  margin-bottom: 16px;
+}
+
+#tab-kehoach .kh7-cards .kpi {
+  padding: 16px 18px;
+}
+
+#tab-kehoach .kh7-cards .kpi-v {
+  font-size: 21px;
+}
+
+#tab-kehoach .kh7-tbl {
+  margin-bottom: 16px;
+}
+
+#tab-kehoach .kh7-chart-t {
+  font-size: 12.5px;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 10px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#tab-kehoach .cbox.kh7-chart {
+  height: 320px;
+  min-height: 320px;
+}
+
+/* ---- Bảng 7 chỉ tiêu: 4 dòng L1/L2/L3/Δ, cột kỳ tràn ngang ---- */
+#tab-kehoach table.kh7-table {
+  font-size: 12.5px;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#tab-kehoach table.kh7-table th {
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  white-space: nowrap;
+  padding: 8px 9px;
+  text-align: center;
+  background: #FAFBFA;
+  border-bottom: 1px solid var(--line);
+}
+
+#tab-kehoach table.kh7-table td {
+  padding: 7px 9px;
+  border-bottom: 1px solid #F1F4F2;
+  white-space: nowrap;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+  font-weight: 600;
+  color: var(--text);
+}
+
+#tab-kehoach table.kh7-table tr.kh7-r1 td { background: #FFFFFF; }
+#tab-kehoach table.kh7-table tr.kh7-r2 td { background: #F4FAF6; }
+#tab-kehoach table.kh7-table tr.kh7-r3 td { background: #F1F6FE; }
+#tab-kehoach table.kh7-table tr.kh7-r4 td { background: #FFFFFF; }
+
+#tab-kehoach table.kh7-table .kh7-c-name {
+  position: sticky;
+  left: 0;
+  z-index: 3;
+  text-align: left;
+  min-width: 168px;
+  width: 168px;
+  max-width: 168px;
+  box-sizing: border-box;
+  font-weight: 700;
+  border-right: 1px solid var(--line);
+  overflow: hidden;
+}
+
+#tab-kehoach table.kh7-table th.kh7-c-name { z-index: 6; }
+
+#tab-kehoach table.kh7-table tr.kh7-r1 .kh7-c-name { background: #FFFFFF; }
+#tab-kehoach table.kh7-table tr.kh7-r2 .kh7-c-name { background: #F4FAF6; }
+#tab-kehoach table.kh7-table tr.kh7-r3 .kh7-c-name { background: #F1F6FE; }
+#tab-kehoach table.kh7-table tr.kh7-r4 .kh7-c-name { background: #FFFFFF; }
+
+#tab-kehoach table.kh7-table .kh7-sum {
+  position: sticky;
+  z-index: 4;
+  box-sizing: border-box;
+  border-left: 1px solid var(--line);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#tab-kehoach table.kh7-table th.kh7-sum { z-index: 6; }
+
+#tab-kehoach table.kh7-table tr.kh7-r1 .kh7-sum { background: #FFFFFF; }
+#tab-kehoach table.kh7-table tr.kh7-r2 .kh7-sum { background: #F4FAF6; }
+#tab-kehoach table.kh7-table tr.kh7-r3 .kh7-sum { background: #F1F6FE; }
+#tab-kehoach table.kh7-table tr.kh7-r4 .kh7-sum { background: #FFFFFF; }
+
+#tab-kehoach table.kh7-table .kh7-s1 { right: 252px; width: 132px; min-width: 132px; max-width: 132px; }
+#tab-kehoach table.kh7-table .kh7-s2 { right: 122px; width: 130px; min-width: 130px; max-width: 130px; }
+#tab-kehoach table.kh7-table .kh7-s3 { right: 0;      width: 122px; min-width: 122px; max-width: 122px; }
+
+#tab-kehoach .kh7-badge {
+  display: inline-block;
+  margin-left: 5px;
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 14px;
+  vertical-align: 1px;
+  letter-spacing: 0.2px;
+}
+
+#tab-kehoach .kh7-badge.tt { background: #E7F6EC; color: #15803D; }
+#tab-kehoach .kh7-badge.kh { background: #FEF6E0; color: #A16207; }
+
+#tab-kehoach .kh7-rowlb {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+#tab-kehoach .kh7-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  flex: 0 0 auto;
+}
+
+#tab-kehoach .kh7-sub {
+  display: block;
+  font-weight: 400;
+  color: #A8A8A8;
+  font-size: 10px;
+  margin-left: 16px;
+  margin-top: 1px;
+}
+
+@media (max-width: 1100px) {
+  #tab-kehoach .kh7-cards { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+
+/* Cửa sổ hẹp: tổng bề rộng cột tên + 3 cột ghim phải (552px) lớn hơn khung
+   bảng => bỏ ghim để hai bên không đè lên nhau. */
+@media (max-width: 900px) {
+  #tab-kehoach table.kh7-table .kh7-c-name,
+  #tab-kehoach table.kh7-table .kh7-sum { position: static; }
+}

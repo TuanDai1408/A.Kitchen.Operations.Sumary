@@ -1535,6 +1535,10 @@ export async function getKeHoachData(filtersParam) {
           }
         }
       }
+      // Cờ "kỳ này thật sự có số liệu thực tế" để frontend không nhầm số 0
+      // điền sẵn (placeholder) với số 0 thực.
+      const hasTx = Boolean(actTx);
+      const hasRepRow = Boolean(repActual[k]);
       actTx = actTx || { net: 0, foodCost: 0, tongSuat: 0 };
       const actRep = repActual[k] || { tong: 0, huy: 0 };
       const opexVal = opexActual[k] || 0;
@@ -1557,7 +1561,8 @@ export async function getKeHoachData(filtersParam) {
         LaiGop: { actual: actLaiGop, plan: plan["LaiGop"] || 0 },
         HuyPct: { actualHuy: actRep.huy, actualTong: actSL > 0 ? actSL : actRep.tong },
         VatTuTieuHao: { actual: 0, plan: plan["ChiPhiVanHanh"] || 0 },
-        EBITDA: { actual: actEbitda, plan: plan["EBITDA"] || 0, hasActual: actNet > 0 || hasOpex }
+        EBITDA: { actual: actEbitda, plan: plan["EBITDA"] || 0, hasActual: actNet > 0 || hasOpex },
+        hasActual: hasTx || hasRepRow
       };
     });
 
@@ -1565,6 +1570,7 @@ export async function getKeHoachData(filtersParam) {
     const planTong = plPivot[kTong] || {};
     let sumActNet = 0, sumActFC = 0, sumActTong = 0, sumActHuy = 0, sumActLaiGop = 0, sumActEbitda = 0;
     let sumPlanDT = 0, sumPlanSL = 0, sumPlanFC = 0, sumPlanLG = 0, sumPlanVT = 0, sumPlanEB = 0;
+    let sumHasActual = false;
 
     sites.forEach(s => {
       if (s === SITE_TONG) return;
@@ -1581,6 +1587,7 @@ export async function getKeHoachData(filtersParam) {
       sumPlanLG += o.LaiGop.plan;
       sumPlanVT += o.VatTuTieuHao.plan;
       sumPlanEB += o.EBITDA.plan;
+      if (o.hasActual) sumHasActual = true;
     });
 
     bySite[SITE_TONG] = {
@@ -1590,7 +1597,8 @@ export async function getKeHoachData(filtersParam) {
       LaiGop: { actual: sumActLaiGop, plan: planTong["LaiGop"] !== undefined ? planTong["LaiGop"] : sumPlanLG },
       HuyPct: { actualHuy: sumActHuy, actualTong: sumActTong },
       VatTuTieuHao: { actual: 0, plan: planTong["ChiPhiVanHanh"] !== undefined ? planTong["ChiPhiVanHanh"] : sumPlanVT },
-      EBITDA: { actual: sumActEbitda, plan: planTong["EBITDA"] !== undefined ? planTong["EBITDA"] : sumPlanEB, hasActual: sumActNet > 0 }
+      EBITDA: { actual: sumActEbitda, plan: planTong["EBITDA"] !== undefined ? planTong["EBITDA"] : sumPlanEB, hasActual: sumActNet > 0 },
+      hasActual: sumHasActual
     };
 
     return { key: perKey, label, bySite };
