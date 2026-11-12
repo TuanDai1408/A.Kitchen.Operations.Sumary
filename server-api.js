@@ -1406,7 +1406,7 @@ export async function getKeHoachData(filtersParam) {
     supabase.from("kehoach_thamso").select("*"),
     supabase.from("opex_input").select("*"),
     fetchAllRows("report", "ten_site, ngay_bao_cao, tong_suat, suat_huy"),
-    fetchAllRows("transactions", "ten_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von")
+    fetchAllRows("transactions", "ten_cua_hang, ma_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von, so_luong, dvt, ly_do_tra_hang, loai_chung_tu_billing")
   ]);
 
   const duAnRows = duAnRes.data || [];
@@ -1478,10 +1478,18 @@ export async function getKeHoachData(filtersParam) {
     const site = t.ten_cua_hang;
     if (!ym || !site) return;
     const k = `${site}|${ym}`;
-    if (!txActual[k]) txActual[k] = { net: 0, foodCost: 0 };
+    if (!txActual[k]) txActual[k] = { net: 0, foodCost: 0, tongSuat: 0 };
+    const isRet = computeIsReturn(t);
     const net = Number(t.thanh_tien_truoc_thue || 0) - Number(t.ck_truoc_thue || 0);
-    txActual[k].net += net;
-    txActual[k].foodCost += Number(t.gia_von || 0);
+    if (isRet) {
+      txActual[k].net -= Math.abs(net);
+      txActual[k].foodCost += Number(t.gia_von || 0);
+    } else {
+      txActual[k].net += net;
+      txActual[k].foodCost += Number(t.gia_von || 0);
+      const suat = normalizePortionQty(t.so_luong, t.ma_cua_hang || t.ten_cua_hang, t.dvt);
+      txActual[k].tongSuat += suat;
+    }
   });
 
   const repActual = {};
@@ -1513,7 +1521,21 @@ export async function getKeHoachData(filtersParam) {
     sites.forEach(site => {
       const k = `${site}|${perKey}`;
       const plan = plPivot[k] || {};
-      const actTx = txActual[k] || { net: 0, foodCost: 0 };
+      let actTx = txActual[k];
+      if (!actTx) {
+        for (const tKey of Object.keys(txActual)) {
+          const parts = tKey.split("|");
+          if (parts[1] === perKey) {
+            const s1 = parts[0].toLowerCase().replace(/\s+/g, " ").trim();
+            const s2 = site.toLowerCase().replace(/\s+/g, " ").trim();
+            if (s1 === s2 || s1.includes(s2) || s2.includes(s1)) {
+              actTx = txActual[tKey];
+              break;
+            }
+          }
+        }
+      }
+      actTx = actTx || { net: 0, foodCost: 0, tongSuat: 0 };
       const actRep = repActual[k] || { tong: 0, huy: 0 };
       const opexVal = opexActual[k] || 0;
       const hasOpex = opexVal > 0;
@@ -1522,12 +1544,18 @@ export async function getKeHoachData(filtersParam) {
       const actLaiGop = actNet - actFC;
       const actEbitda = hasOpex ? (actLaiGop - opexVal) : (actNet > 0 ? actLaiGop : 0);
 
+      // Số suất ăn thực tế: Đồng nhất chuẩn theo Tab Doanh thu & Foodcost (ALL) từ transactions (quy chuẩn qua normalizePortionQty).
+      // Nếu kỳ/site đó không có giao dịch bán hàng thì dự phòng lấy từ báo cáo vận hành repActual.
+      const actSL = (actTx.tongSuat !== undefined && (actTx.tongSuat > 0 || actTx.net > 0))
+        ? actTx.tongSuat
+        : (actRep.tong || 0);
+
       bySite[site] = {
         DoanhThu: { actual: actNet, plan: plan["DoanhThu"] || 0 },
-        SanLuongTong: { actual: actRep.tong, plan: plan["SanLuongTong"] || 0 },
+        SanLuongTong: { actual: actSL, plan: plan["SanLuongTong"] || 0 },
         FoodCost: { actualVal: actFC, planVal: plan["FoodCost"] || 0 },
         LaiGop: { actual: actLaiGop, plan: plan["LaiGop"] || 0 },
-        HuyPct: { actualHuy: actRep.huy, actualTong: actRep.tong },
+        HuyPct: { actualHuy: actRep.huy, actualTong: actSL > 0 ? actSL : actRep.tong },
         VatTuTieuHao: { actual: 0, plan: plan["ChiPhiVanHanh"] || 0 },
         EBITDA: { actual: actEbitda, plan: plan["EBITDA"] || 0, hasActual: actNet > 0 || hasOpex }
       };
