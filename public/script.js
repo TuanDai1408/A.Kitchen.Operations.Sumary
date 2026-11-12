@@ -12145,7 +12145,10 @@ var QLK = (function(){
     '.qlk-alert-card .qlk-scroll{border:0;border-radius:0;}'+
     '.qlk-alert-h span:first-child{flex:1;}'+
     '@media(max-width:768px){.qlk-sloc-row-cards{display:grid;grid-template-columns:repeat(2,1fr);overflow-x:visible;}.qlk-sloc-row-cards .qlk-sloc-card{min-width:0;}}'+
-    '@media(max-width:1100px){.qlk-grid4{grid-template-columns:repeat(2,1fr);}.qlk-grid3,.qlk-grid2{grid-template-columns:1fr;}.qlk-mk{grid-template-columns:repeat(2,1fr);}}';
+    '@media(max-width:1100px){.qlk-grid4{grid-template-columns:repeat(2,1fr);}.qlk-grid3,.qlk-grid2{grid-template-columns:1fr;}.qlk-mk{grid-template-columns:repeat(2,1fr);}}'+
+    '.qlk-spin{display:inline-block;width:20px;height:20px;border:2px solid #E2E8F0;border-top-color:var(--brand);border-radius:50%;animation:qlkSpin 0.75s linear infinite;}'+
+    '@keyframes qlkSpin{to{transform:rotate(360deg);}}'+
+    '.qlk-tbl .r,.qlk-mk-v,.qlk-mstats b,.qlk-sloc-row b{font-feature-settings:'tnum' 1;}';
     var st=document.createElement('style'); st.id='qlkCss'; st.textContent=css; document.head.appendChild(st);
   }
 
@@ -12190,7 +12193,6 @@ var QLK = (function(){
         akHideLoading();
         loading = false;
       });
-    loadMb51Disposal({ from: reqFrom, to: reqTo });
   }
 
   function enrichClientReceipts(txList){
@@ -12275,6 +12277,11 @@ var QLK = (function(){
       if (!built) {
         f.sites = []; f.slocs = []; f.cats = []; f.types = [];
         buildSkeleton();
+      } else {
+        var fromInput = document.getElementById('qlkFrom');
+        var toInput = document.getElementById('qlkTo');
+        if (fromInput && f.from) fromInput.value = f.from;
+        if (toInput && f.to) toInput.value = f.to;
       }
       update();
     } catch(err){ showError('Lỗi hiển thị: '+((err&&err.message)?err.message:err)); }
@@ -12473,7 +12480,7 @@ var QLK = (function(){
     }
 
     var html = ''+
-    '<div class="qlk-note qlk-mb">Kho <b>'+esc(m.site)+' — '+esc(m.site_name||'')+'</b> • Kỳ '+
+    '<div class="qlk-note qlk-mb" id="qlkPeriodNote">Kho <b>'+esc(m.site)+' — '+esc(m.site_name||'')+'</b> • Kỳ '+
       esc(m.period_from)+' → '+esc(m.period_to)+' ('+m.days_in_period+' ngày) • Mặc định nạp 1 tháng gần nhất • Cập nhật '+esc(m.generated_at)+'</div>'+
     '<div id="qlkSlocInfo" class="qlk-mb"></div>'+
     '<div class="qlk-grid4 qlk-mb" id="qlkKpi"></div>'+
@@ -12543,27 +12550,38 @@ var QLK = (function(){
     var fromEl = document.getElementById('qlkFrom');
     var toEl = document.getElementById('qlkTo');
 
-    fromEl.addEventListener('change', function(){
-      userChangedDateRange = true;
-      f.from = this.value;
-      loadMb51Disposal({ from: f.from, to: f.to });
-      if (D && D.meta && D.meta.loaded_from && f.from < D.meta.loaded_from) {
-        load({ from: f.from, to: f.to });
-      } else {
-        update();
+    function onDateRangeChange(){
+      var newFrom = fromEl ? fromEl.value : '';
+      var newTo = toEl ? toEl.value : '';
+      if (!newFrom || !newTo) return;
+      if (newFrom > newTo) {
+        toast('Ngày bắt đầu không được lớn hơn ngày kết thúc');
+        return;
       }
-    });
+      userChangedDateRange = true;
+      f.from = newFrom;
+      f.to = newTo;
+      if (D) {
+        D._detailCache = {};
+        D._detailLoading = {};
+      }
+      load({ from: f.from, to: f.to });
+      loadMb51Disposal({ from: f.from, to: f.to, force: true });
+    }
 
-    toEl.addEventListener('change', function(){
-      userChangedDateRange = true;
-      f.to = this.value;
-      loadMb51Disposal({ from: f.from, to: f.to });
-      if (D && D.meta && D.meta.loaded_to && f.to > D.meta.loaded_to) {
-        load({ from: f.from, to: f.to });
-      } else {
-        update();
-      }
-    });
+    var dateChangeTimer = null;
+    if (fromEl) {
+      fromEl.addEventListener('change', function(){
+        clearTimeout(dateChangeTimer);
+        dateChangeTimer = setTimeout(onDateRangeChange, 200);
+      });
+    }
+    if (toEl) {
+      toEl.addEventListener('change', function(){
+        clearTimeout(dateChangeTimer);
+        dateChangeTimer = setTimeout(onDateRangeChange, 200);
+      });
+    }
 
     var siteVals = (D.sites || []).map(function(s){ return s.name; });
     if (!slocItems || !slocItems.length) slocItems = getSlocItems(D);
@@ -12804,6 +12822,14 @@ var QLK = (function(){
   }
 
   function update(){ var F=filtered();
+    var noteEl = document.getElementById('qlkPeriodNote');
+    if (noteEl && D && D.meta) {
+      var m = D.meta;
+      noteEl.innerHTML = 'Kho <b>' + esc(m.site) + ' — ' + esc(m.site_name || '') + '</b> • Kỳ ' +
+        esc(m.period_from) + ' → ' + esc(m.period_to) + ' (' + m.days_in_period + ' ngày) • ' +
+        (userChangedDateRange ? 'Khoảng ngày do người dùng chọn' : 'Mặc định nạp 1 tháng gần nhất') +
+        ' • Cập nhật ' + esc(m.generated_at);
+    }
     renderSlocInfo(F.tx); renderKpi(F); drawDaily(F.tx); drawMvt(F.tx); renderMvtTbl(F.tx); drawCat(F.items);
     drawSloc(F.tx); renderSlocTbl(F.tx); renderTop(F.items, F.tx); renderAlerts(F.items);
     renderStock(F.items, F.tx);
@@ -13327,52 +13353,73 @@ var QLK = (function(){
     document.getElementById('qlkModX').addEventListener('click', closeModal);
     document.addEventListener('keydown', function(e){ if(e.key==='Escape') closeModal(); });
   }
-  function closeModal(){ var ov=document.getElementById('qlkModal'); if(ov) ov.classList.remove('open'); }
+  function closeModal(){
+    var ov=document.getElementById('qlkModal');
+    if(ov) {
+      ov.classList.remove('open');
+      ov.dataset.activeCode = '';
+    }
+  }
 
   function openArticleModal(code){
+    if (!code) return;
     ensureModal();
+    var ov = document.getElementById('qlkModal');
+    ov.dataset.activeCode = code;
+
     var F = filtered();
     var matchingItems = (F.items || []).filter(function(x){ return x.code === code; });
-    var artTx = (F.tx || []).filter(function(t){ return t.article === code; })
-      .sort(function(a,b){ return (a.date || '') < (b.date || '') ? -1 : ((a.date || '') > (b.date || '') ? 1 : 0); });
-
-    if (!matchingItems.length && !artTx.length) {
+    if (!matchingItems.length) {
       matchingItems = (D.items || []).filter(function(x){ return x.code === code; });
     }
-    if (!matchingItems.length && !artTx.length) return;
+    if (!matchingItems.length) return;
 
-    if (D && D.isSummary && (!artTx.length || !artTx[0].art_doc)) {
-      callAPI('getWarehouseDetail', { material: code, from: f.from, to: f.to }).then(function(detailRes){
-        if (detailRes && detailRes.transactions && detailRes.transactions.length) {
-          // Merge fetched ledger documents into memory cache
-          if (!D._detailCache) D._detailCache = {};
-          D._detailCache[code] = detailRes.transactions;
-          var ov = document.getElementById('qlkModal');
-          if (ov && ov.classList.contains('open')) {
-            openArticleModal(code);
+    if (!D._detailCache) D._detailCache = {};
+    if (!D._detailLoading) D._detailLoading = {};
+
+    var cachedDocs = D._detailCache[code];
+
+    // Mở modal ngay lập tức với thông tin tổng quan & KPIs
+    renderArticleModalContent(code, matchingItems, cachedDocs || null);
+    ov.classList.add('open');
+
+    // Nếu chưa có trong cache và chưa đang tải: gọi API để lấy chứng từ chi tiết
+    if (!cachedDocs && !D._detailLoading[code]) {
+      D._detailLoading[code] = true;
+      callAPI('getWarehouseDetail', { material: code, from: f.from, to: f.to })
+        .then(function(detailRes){
+          D._detailLoading[code] = false;
+          var docs = (detailRes && detailRes.transactions) ? detailRes.transactions : [];
+          enrichClientReceipts(docs);
+          D._detailCache[code] = docs;
+          // Chỉ re-render bảng nếu modal đang mở VÀ đúng mã code này
+          var curOv = document.getElementById('qlkModal');
+          if (curOv && curOv.classList.contains('open') && curOv.dataset.activeCode === code) {
+            renderArticleModalContent(code, matchingItems, docs);
           }
-        }
-      }).catch(function(){});
-      if (D._detailCache && D._detailCache[code]) {
-        artTx = D._detailCache[code];
-      }
+        })
+        .catch(function(err){
+          D._detailLoading[code] = false;
+          console.warn('getWarehouseDetail error:', err);
+          var curOv = document.getElementById('qlkModal');
+          if (curOv && curOv.classList.contains('open') && curOv.dataset.activeCode === code) {
+            renderArticleModalContent(code, matchingItems, [], err);
+          }
+        });
     }
+  }
 
+  function renderArticleModalContent(code, matchingItems, artDocs, err){
     var firstIt = matchingItems[0] || {};
-    var firstTx = artTx[0] || {};
     var matCode = code;
-    var matName = (firstIt.name && firstIt.name !== code) ? firstIt.name : ((firstTx.name && firstTx.name !== code) ? firstTx.name : (firstIt.material_desc || code));
-    var category = firstIt.category || firstTx.category || 'Chưa phân loại';
-    var uom = firstIt.uom || firstTx.uom || 'Kg';
+    var matName = (firstIt.name && firstIt.name !== code) ? firstIt.name : (firstIt.material_desc || code);
+    var category = firstIt.category || 'Chưa phân loại';
+    var uom = firstIt.uom || 'Kg';
 
     // Xác định Site hiển thị trên subtitle
     var siteSet = {};
     matchingItems.forEach(function(x){
       var sn = x.site_name || x.site;
-      if (sn) siteSet[sn] = 1;
-    });
-    artTx.forEach(function(t){
-      var sn = t.site_name || t.site;
       if (sn) siteSet[sn] = 1;
     });
     var siteList = Object.keys(siteSet);
@@ -13389,40 +13436,65 @@ var QLK = (function(){
       siteDisplay = 'Tất cả chi nhánh';
     }
 
-    // Xác định Sloc
-    var slocSet = {};
-    artTx.forEach(function(t){ if (t.sloc) slocSet[t.sloc] = 1; });
-    var slocList = Object.keys(slocSet).map(function(s){ return esc(s) + ' ' + esc(slocName(s)); }).join(', ');
+    // Xác định Sloc từ artDocs nếu có
+    var slocList = '—';
+    if (artDocs && artDocs.length) {
+      var slocSet = {};
+      artDocs.forEach(function(t){ if (t.sloc) slocSet[t.sloc] = 1; });
+      var slocs = Object.keys(slocSet);
+      if (slocs.length) {
+        slocList = slocs.map(function(s){ return esc(s) + ' ' + esc(slocName(s)); }).join(', ');
+      }
+    }
 
-    // Tính toán Tồn đầu & Nhập/Xuất từ transactions và matchingItems
+    // Tồn đầu từ matchingItems
     var stockBegin = matchingItems.reduce(function(s, x){ return s + (x.stock_begin || 0); }, 0);
-    var stockBeginVal = matchingItems.reduce(function(s, x){ return s + (x.stock_begin_value || 0); }, 0);
+    var stockBeginVal = matchingItems.reduce(function(s, x){ return s + (x.stock_begin_val !== undefined ? x.stock_begin_val : (x.stock_begin_value || 0)); }, 0);
+
     var recQty = 0, recVal = 0, issQty = 0, issVal = 0;
     var hasEstimatedReceipt = false;
-    artTx.forEach(function(t){
-      if (isProductionOrderIssue(t.mov_type || t.mvt) || isTransferMovement(t.mov_type || t.mvt)) return;
-      if (t.qty >= 0) {
-        recQty += t.qty;
-        recVal += Math.abs(t.value || 0);
-        if (t.is_estimated_price) hasEstimatedReceipt = true;
-      } else {
-        issQty += Math.abs(t.qty);
-        issVal += Math.abs(t.value || 0);
-      }
-    });
+    var artTx = null;
+
+    if (artDocs && Array.isArray(artDocs)) {
+      // Lọc danh sách chứng từ theo bộ lọc hiện tại của tab
+      artTx = artDocs.filter(function(t){
+        if (f.from && t.date && t.date < f.from) return false;
+        if (f.to && t.date && t.date > f.to) return false;
+        if (f.sites && f.sites.length && f.sites.indexOf(t.site_name || '') < 0 && f.sites.indexOf(t.site || '') < 0) return false;
+        if (f.slocs && f.slocs.length && f.slocs.indexOf(t.sloc) < 0) return false;
+        return true;
+      }).sort(function(a,b){ return (a.date || '') < (b.date || '') ? -1 : ((a.date || '') > (b.date || '') ? 1 : 0); });
+
+      artTx.forEach(function(t){
+        if (isProductionOrderIssue(t.mov_type || t.mvt) || isTransferMovement(t.mov_type || t.mvt)) return;
+        if (t.qty >= 0) {
+          recQty += t.qty;
+          recVal += Math.abs(t.value || 0);
+          if (t.is_estimated_price) hasEstimatedReceipt = true;
+        } else {
+          issQty += Math.abs(t.qty);
+          issVal += Math.abs(t.value || 0);
+        }
+      });
+    } else {
+      // Khi đang tải hoặc chưa có artDocs: lấy tổng hợp từ matchingItems
+      recQty = matchingItems.reduce(function(s, x){ return s + (x.receipts || 0); }, 0);
+      recVal = matchingItems.reduce(function(s, x){ return s + (x.receipts_value || 0); }, 0);
+      issQty = matchingItems.reduce(function(s, x){ return s + (x.issues_abs || 0); }, 0);
+      issVal = matchingItems.reduce(function(s, x){ return s + (x.issues_value || 0); }, 0);
+    }
+
     var endFromTrans = stockBegin + recQty - issQty;
     var price = firstIt.price || (recQty > 0 ? Math.round(recVal / recQty) : 0);
-    if (!price && artTx.length) {
+    if (!price && artTx && artTx.length) {
       var sampleTx = artTx.find(function(t){ return (t.price || 0) > 0; });
       if (sampleTx) price = sampleTx.price;
     }
     if (!stockBeginVal && price && stockBegin) {
       stockBeginVal = Math.round(stockBegin * price);
     }
-    // CÔNG THỨC BẮT BUỘC (UNIFIED PIPELINE):
-    // GT_cuoi = GT_dau + GT_nhap - GT_xuat
-    var endVal = stockBeginVal + recVal - issVal;
 
+    var endVal = stockBeginVal + recVal - issVal;
     var endValTooltip = '';
     var endValColor = '#2E2E2E';
     var endValSub = 'Đầu (' + money(stockBeginVal) + ') + Nhập − Xuất';
@@ -13449,46 +13521,67 @@ var QLK = (function(){
       mk('Tồn cuối (từ GD)', n1(endFromTrans) + ' ' + esc(uom), endValSub, endVal < 0 ? '#FDECEC' : '#F7F7F8', endValColor, endValTooltip) +
     '</div>';
 
+    var ctCount = artTx ? n0(artTx.length) : (firstIt._ct ? n0(firstIt._ct) : '…');
     var stats = '<div class="qlk-mstats">' +
       '<div>Đơn giá<b>' + n0(price) + '₫</b></div>' +
       '<div>GT tồn đầu<b>' + money(stockBeginVal) + '</b></div>' +
       '<div>GT nhập<b>' + money(recVal) + (hasEstimatedReceipt ? ' <span title="Ước tính từ đơn giá xuất" style="font-size:12px;color:#d97706;cursor:help">*</span>' : '') + '</b></div>' +
       '<div>GT xuất<b>' + money(issVal) + '</b></div>' +
       '<div>GT tồn cuối<b>' + (endVal < 0 ? '<span style="color:#B3161C;cursor:help" title="' + esc(endValTooltip) + '">' + money(endVal) + '</span>' : money(endVal)) + '</b></div>' +
-      '<div>Chứng từ<b>' + n0(artTx.length) + '</b></div>' +
+      '<div>Chứng từ<b>' + ctCount + '</b></div>' +
     '</div>' +
     (hasEstimatedReceipt ? '<div class="qlk-note" style="margin:-4px 0 10px 0;font-size:11.5px;color:#d97706"><span style="font-weight:700">* Ước tính từ đơn giá xuất:</span> Các dòng nhập gốc không có giá trị tiền (amount_lc = 0) đã được gán đơn giá tham chiếu bình quân từ các dòng xuất cùng NVL.</div>' : '') +
     (endVal < 0 ? '<div class="qlk-note" style="margin:-4px 0 10px 0;font-size:11.5px;color:#B3161C"><span style="font-weight:700">⚠️ Lưu ý:</span> GT cuối âm do GT xuất > GT đầu + GT nhập (thiếu giá trị nhập trên chứng từ). Số liệu được giữ nguyên tính xác thực chứng từ SAP.</div>' : '');
 
     var showSiteCol = (f.sites && f.sites.length !== 1) || (siteList.length > 1);
+    var tbl = '';
 
-    var tbl = '<div class="qlk-scroll" style="max-height:340px"><table class="qlk-tbl"><thead><tr>' +
-      '<th>SLOC</th><th>KHO</th>' + (showSiteCol ? '<th>SITE</th>' : '') + '<th>MVT</th><th>ART. DOC</th><th class="r">ITEM</th><th>NGÀY GD</th>' +
-      '<th class="r">SL</th><th>ĐVT</th><th class="r">ĐƠN GIÁ</th><th class="r">THÀNH TIỀN</th></tr></thead><tbody>';
-
-    if (artTx.length) {
-      artTx.forEach(function(t){
-        var cls = t.qty >= 0 ? 'qlk-pos' : 'qlk-neg';
-        var sign = t.qty >= 0 ? '' : '−';
-        var isEst = !!t.is_estimated_price;
-        var estStar = isEst ? ' <span title="Ước tính từ đơn giá xuất" style="color:#d97706;font-weight:bold;cursor:help">*</span>' : '';
-        var rowAmt = Math.abs(t.value || Math.round(t.qty * (t.price || price)));
-        var rowPrice = t.price || (Math.abs(t.qty) > 0 ? Math.round(rowAmt / Math.abs(t.qty)) : price);
-        tbl += '<tr><td><span class="qlk-mini qlk-mini-sl">' + esc(t.sloc) + '</span></td>' +
-          '<td>' + esc(slocName(t.sloc)) + '</td>' +
-          (showSiteCol ? ('<td><span class="qlk-mini" style="background:#F1F5F9;color:#334155">' + esc(t.site_name || t.site || '—') + '</span></td>') : '') +
-          '<td><span class="qlk-mini qlk-mini-mvt">' + esc(t.mvt) + '</span></td>' +
-          '<td>' + esc(t.art_doc || t.doc_no || '') + '</td><td class="r">' + esc(t.item || '') + '</td><td>' + esc(dmy(t.date)) + '</td>' +
-          '<td class="r ' + cls + '">' + sign + n1(Math.abs(t.qty)) + '</td><td>' + esc(t.uom || uom) + '</td>' +
-          '<td class="r">' + n0(rowPrice) + '₫' + estStar + '</td><td class="r">' + money(rowAmt) + estStar + '</td></tr>';
-      });
+    if (artDocs === null) {
+      tbl = '<div class="qlk-scroll" style="min-height:220px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#64748b;font-size:13px;padding:30px 15px;">' +
+        '<div class="qlk-spin" style="margin-bottom:10px;"></div>' +
+        '<span>Đang tải danh sách chứng từ SAP...</span>' +
+      '</div>';
+    } else if (err) {
+      tbl = '<div class="qlk-scroll" style="min-height:160px;display:flex;flex-direction:column;align-items:center;justify-content:center;color:#B3161C;font-size:13px;padding:30px 15px;">' +
+        '<span>Không thể nạp chứng từ (' + esc((err && err.message) || String(err)) + ')</span>' +
+        '<button class="btn btn-out" style="margin-top:10px" type="button" id="qlkRetryDetailBtn">Thử lại</button>' +
+      '</div>';
     } else {
-      tbl += '<tr><td colspan="' + (showSiteCol ? '11' : '10') + '" class="qlk-empty">Không có chứng từ trong phạm vi bộ lọc</td></tr>';
+      tbl = '<div class="qlk-scroll" style="max-height:340px"><table class="qlk-tbl"><thead><tr>' +
+        '<th>SLOC</th><th>KHO</th>' + (showSiteCol ? '<th>SITE</th>' : '') + '<th>MVT</th><th>ART. DOC</th><th class="r">ITEM</th><th>NGÀY GD</th>' +
+        '<th class="r">SL</th><th>ĐVT</th><th class="r">ĐƠN GIÁ</th><th class="r">THÀNH TIỀN</th></tr></thead><tbody>';
+
+      if (artTx && artTx.length) {
+        artTx.forEach(function(t){
+          var cls = t.qty >= 0 ? 'qlk-pos' : 'qlk-neg';
+          var sign = t.qty >= 0 ? '' : '−';
+          var isEst = !!t.is_estimated_price;
+          var estStar = isEst ? ' <span title="Ước tính từ đơn giá xuất" style="color:#d97706;font-weight:bold;cursor:help">*</span>' : '';
+          var rowAmt = Math.abs(t.value || Math.round(t.qty * (t.price || price)));
+          var rowPrice = t.price || (Math.abs(t.qty) > 0 ? Math.round(rowAmt / Math.abs(t.qty)) : price);
+          tbl += '<tr><td><span class="qlk-mini qlk-mini-sl">' + esc(t.sloc) + '</span></td>' +
+            '<td>' + esc(slocName(t.sloc)) + '</td>' +
+            (showSiteCol ? ('<td><span class="qlk-mini" style="background:#F1F5F9;color:#334155">' + esc(t.site_name || t.site || '—') + '</span></td>') : '') +
+            '<td><span class="qlk-mini qlk-mini-mvt">' + esc(t.mvt) + '</span></td>' +
+            '<td>' + esc(t.art_doc || t.doc_no || '') + '</td><td class="r">' + esc(t.item || '') + '</td><td>' + esc(dmy(t.date)) + '</td>' +
+            '<td class="r ' + cls + '">' + sign + n1(Math.abs(t.qty)) + '</td><td>' + esc(t.uom || uom) + '</td>' +
+            '<td class="r">' + n0(rowPrice) + '₫' + estStar + '</td><td class="r">' + money(rowAmt) + estStar + '</td></tr>';
+        });
+      } else {
+        tbl += '<tr><td colspan="' + (showSiteCol ? '11' : '10') + '" class="qlk-empty">Không có chứng từ trong phạm vi bộ lọc</td></tr>';
+      }
+      tbl += '</tbody></table></div>';
     }
-    tbl += '</tbody></table></div>';
 
     document.getElementById('qlkModBody').innerHTML = kpis + stats + tbl;
-    document.getElementById('qlkModal').classList.add('open');
+
+    var retryBtn = document.getElementById('qlkRetryDetailBtn');
+    if (retryBtn) {
+      retryBtn.addEventListener('click', function(){
+        if (D && D._detailLoading) delete D._detailLoading[code];
+        openArticleModal(code);
+      });
+    }
   }
   function dmy(s){
     var p = String(s || '').split('-');
@@ -13932,6 +14025,7 @@ var QLK = (function(){
 
   return {
     render: render,
+    openArticleModal: openArticleModal,
     invalidate: function(){ D = null; built = false; huyData = []; huyLoadedPeriod = { from: '', to: '' }; },
     reload: function(){ D = null; built = false; huyData = []; huyLoadedPeriod = { from: '', to: '' }; return load({ from: f.from, to: f.to }); }
   };
