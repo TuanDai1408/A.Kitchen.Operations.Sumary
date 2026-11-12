@@ -1884,12 +1884,14 @@ export async function getWarehouseDashboardData(filtersParam) {
         issues_abs: 0,
         receipts_val: 0,
         issues_val: 0,
+        doc_count: 0,
         site_name: t.site_name,
         site: t.site
       };
     } else if (matDescMap[artKey] && itemsMap[itemKey].name === artKey) {
       itemsMap[itemKey].name = matDescMap[artKey];
     }
+    itemsMap[itemKey].doc_count = (itemsMap[itemKey].doc_count || 0) + 1;
 
     // LOẠI TRỪ KHỎI GT/SL XUẤT VÀ NHẬP:
     // 1. isProductionOrderIssue: mov_type 261, 262
@@ -1928,6 +1930,7 @@ export async function getWarehouseDashboardData(filtersParam) {
         issues_abs: 0,
         receipts_val: 0,
         issues_val: 0,
+        doc_count: 0,
         site_name: site,
         site
       };
@@ -2027,6 +2030,7 @@ export async function getWarehouseDashboardData(filtersParam) {
       has_mismatch: hasMismatch,
       reconciliation_diff: diff,
       computed_end_from_trans: calculatedEnd,
+      doc_count: it.doc_count || 0,
       site_name: it.site_name,
       site: it.site
     };

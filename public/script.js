@@ -12507,7 +12507,7 @@ var QLK = (function(){
     '</div>'+
     '<div class="card"><div class="card-t"><h3>'+svg(IC.grid)+' Tồn kho &amp; giao dịch theo mã NVL</h3>'+
       '<button class="btn btn-out" id="qlkCsvBtn">⬇ Xuất CSV</button></div>'+
-      '<div class="qlk-note" style="margin-top:0;margin-bottom:10px">Bấm vào một dòng để xem chi tiết toàn bộ chứng từ giao dịch của mã đó.</div>'+
+      '<div class="qlk-note" style="margin-top:0;margin-bottom:10px">Chỉ hiển thị các nguyên vật liệu có phát sinh chứng từ trong phạm vi bộ lọc. Bấm vào một dòng để xem chi tiết toàn bộ chứng từ giao dịch của mã đó.</div>'+
       '<div class="qlk-scroll" id="qlkStockBox"></div></div>'+
     '<div class="card qlk-mb" id="qlkHuySection" style="margin-top:16px">'+
       '<div class="card-t" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
@@ -13246,6 +13246,7 @@ var QLK = (function(){
           stock_end_value: 0,
           receipts_value: 0,
           issues_value: 0,
+          doc_count: 0,
           prices: [],
           site_names: []
         };
@@ -13268,6 +13269,7 @@ var QLK = (function(){
       target.stock_end_value += (x.stock_end_value || 0);
       target.receipts_value += (x.receipts_value || 0);
       target.issues_value += (x.issues_value || 0);
+      target.doc_count += (x.doc_count || 0);
       if (x.price) target.prices.push(x.price);
       var sName = x.site_name || x.site;
       if (sName && target.site_names.indexOf(sName) < 0) target.site_names.push(sName);
@@ -13297,13 +13299,15 @@ var QLK = (function(){
         issues_value: o.issues_value,
         status: status,
         site_names: o.site_names,
-        _ct: cnt[o.code] || 0
+        doc_count: o.doc_count || 0,
+        _ct: (o.doc_count || 0) || (cnt[o.code] || 0)
       };
     });
   }
 
   function renderStock(items, tx){
     var arr = consolidateItemsByCode(items || [], tx || []);
+    arr = arr.filter(function(x){ return ((x._ct || 0) > 0) || (x.receipts !== 0) || (x.issues_abs !== 0); });
     var cols=[{k:'code',t:'Mã'},{k:'name',t:'Tên'},{k:'category',t:'Nhóm hàng'},{k:'uom',t:'ĐVT'},
       {k:'stock_begin',t:'Tồn đầu',r:1},{k:'receipts',t:'Nhập',r:1},{k:'issues_abs',t:'Xuất',r:1},
       {k:'stock_end',t:'Tồn cuối',r:1},{k:'price',t:'Đơn giá',r:1},{k:'stock_end_value',t:'Giá trị tồn',r:1},
@@ -13326,6 +13330,7 @@ var QLK = (function(){
   function exportCsv(){
     var F = filtered();
     var items = consolidateItemsByCode(F.items || [], F.tx || []);
+    items = items.filter(function(x){ return ((x._ct || 0) > 0) || (x.receipts !== 0) || (x.issues_abs !== 0); });
     if (!items.length) { toast('Không có dữ liệu để xuất'); return; }
     var head = ['Mã','Tên','Nhóm hàng','ĐVT','Tồn đầu','Nhập','Xuất','Tồn cuối','Đơn giá','Giá trị tồn','Số CT','Trạng thái'];
     var lines = [head.join(',')];
