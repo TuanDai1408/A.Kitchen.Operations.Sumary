@@ -2551,7 +2551,14 @@ function renderSite(){
     document.getElementById('tab-site').innerHTML = '<div class="card"><div class="empty">Không có site nào trong bộ lọc</div></div>';
     return;
   }
-  if (!SEL_SITE || sl.indexOf(SEL_SITE) < 0) SEL_SITE = sl[0];
+  if (!SEL_SITE || sl.indexOf(SEL_SITE) < 0) {
+    var latestReport = all.reduce(function(latest, r){
+      if (sl.indexOf(r.tenSite) < 0) return latest;
+      return !latest || r.ngayBaoCao > latest.ngayBaoCao ||
+        (r.ngayBaoCao === latest.ngayBaoCao && Number(r.id) > Number(latest.id)) ? r : latest;
+    }, null);
+    SEL_SITE = latestReport ? latestReport.tenSite : sl[0];
+  }
 
   // var rows = all.filter(function(r){ return r.tenSite === SEL_SITE; })
   //               .sort(function(a,b){ return a.ngayBaoCao.localeCompare(b.ngayBaoCao); });
@@ -4672,7 +4679,9 @@ function rev_push(a, r) {
     a.discount += (r.ckTruocThue || 0);
     a.salesQty += (r.soLuong || 0);
     a.foodCost += (r.giaVon || 0);
-    if (r.soHoaDon) a.invoices[r.soHoaDon] = 1;
+    (r.invoiceNumbers || (r.soHoaDon ? [r.soHoaDon] : [])).forEach(function(invoice){
+      a.invoices[invoice] = 1;
+    });
     var u = String(r.dvt || '').trim().toUpperCase();
     var lineNet = (r.thanhTien || 0) - (r.ckTruocThue || 0);
     if (u === 'PHA') { a.qtyPHA += r.soLuong; a.netPHA += lineNet; }
@@ -8710,13 +8719,6 @@ function est_renderSourceRecon(rows) {
     });
     h += '</tbody></table></div>';
   }
-
-  h += '<div class="est-recon-note">' +
-      (synth.n
-        ? 'Phần <strong>ước tính bổ sung</strong> chỉ có ở tab này. Tab Kế hoạch và Doanh thu &amp; Foodcost (ALL) chỉ đọc billing thật, nên sẽ thấp hơn đúng bằng phần ước tính của các site còn thiếu billing. Site gắn nhãn <strong>Chỉ ước tính</strong> chưa có billing thật trong kỳ lọc — cần đối chiếu lại nguồn ETL.'
-        : 'Kỳ lọc này không có dòng ước tính bổ sung: toàn bộ doanh thu đến từ billing thật, cùng nguồn với tab Kế hoạch và Doanh thu &amp; Foodcost (ALL).') +
-      ' Doanh thu thuần, giá vốn và sản lượng đã dùng chung chuẩn với tab Kế hoạch (hàng trả trừ giá trị tuyệt đối, không tính vào suất).' +
-    '</div>';
 
   return h + '</div>';
 }

@@ -1104,6 +1104,7 @@ async function _getRevenueSummary(filtersParam) {
         foodCost: 0,
         giaVon: 0,
         gia_von: 0,
+        invoiceNumbers: new Set(),
         isReturn: false,
         is_return: false
       };
@@ -1120,8 +1121,11 @@ async function _getRevenueSummary(filtersParam) {
     it.foodCost += fc;
     it.giaVon += fc;
     it.gia_von += fc;
+    if (r.so_hoa_don) it.invoiceNumbers.add(r.so_hoa_don);
   });
-  const summaryRows = Array.from(aggRowsMap.values());
+  const summaryRows = Array.from(aggRowsMap.values(), r => ({
+    ...r, invoiceNumbers: Array.from(r.invoiceNumbers)
+  }));
 
   return {
     ok: true,
