@@ -3508,6 +3508,8 @@ function computeAndDrawRevenue() {
   var aPrev = rev_agg(); prev.forEach(function (r) { rev_push(aPrev, r); });
   var kpi = rev_finalize(aCur);
   var kpiPrev = rev_finalize(aPrev);
+  kpi.planPortionQty = cur.reduce(function(sum, r){ return sum + r.planPortionQty; }, 0);
+  kpiPrev.planPortionQty = prev.reduce(function(sum, r){ return sum + r.planPortionQty; }, 0);
 
   var allSiteSet = {}; (REV_RAW.rows || []).forEach(function(r){ if (r.site) allSiteSet[r.site]=1; });
   var allSiteNames = Object.keys(allSiteSet);
@@ -5492,14 +5494,10 @@ function drawRevenue(){
    
    // 100 gram = 1 suất → 1 KG = 10 suất (chuẩn hóa qua normalizePortionQty)
    var qtyBtpSuat = normalizePortionQty(k.qtyKG || 0, 'K003', 'KG');
-   var qtyBtpSuatPrev = normalizePortionQty(p.qtyKG || 0, 'K003', 'KG');
-   var tongSuat = (k.tongSuat !== undefined && k.tongSuat > 0) ? k.tongSuat : ((k.qtyPHA || 0) + qtyBtpSuat);
-   var tongSuatPrev = (p.tongSuat !== undefined && p.tongSuat > 0) ? p.tongSuat : ((p.qtyPHA || 0) + qtyBtpSuatPrev);
-   
-   // Số suất ăn = suất PHA (SACN) + suất quy đổi từ BTP
-   html += kpiCard(IC.meal, 'Số suất ăn', fmt(tongSuat),
-     'Số SACN: ' + fmt(k.qtyPHA || 0) + ' + Số suất BTP: ' + fmt(qtyBtpSuat),
-     d(tongSuat, tongSuatPrev), true, C.brand);
+
+   html += kpiCard(IC.meal, 'Số suất ăn', fmt(k.planPortionQty),
+     'Suất quy đổi theo chuẩn Kế hoạch',
+     d(k.planPortionQty, p.planPortionQty), true, C.brand);
    
    // Khối lượng BTP (KG) + số suất ăn tương ứng
    html += kpiCard(IC.stack, 'Khối lượng đơn hàng (BTP)', fmt(k.qtyKG || 0),

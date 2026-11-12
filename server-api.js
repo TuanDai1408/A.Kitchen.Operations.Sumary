@@ -635,7 +635,7 @@ async function _getRevenueSummary(filtersParam) {
   const siteFilter = filters.site || filters.sites || null;
 
   const [rawTx, opexRes, reportRes, rawMb51, plRows] = await Promise.all([
-    fetchAllRows("transactions", TX_SELECT_COLS, "billing_date", queryFrom || null, reqTo || null, "billing_date"),
+    fetchAllRows("transactions", isSacn ? TX_SELECT_COLS : TX_SELECT_COLS + ",loai_chung_tu_billing", "billing_date", queryFrom || null, reqTo || null, "billing_date"),
     supabase.from("opex_input").select("*"),
     supabase.from("report").select("ten_site, ngay_bao_cao, suat_huy, tong_suat, nguoi_bao_cao").order("ngay_bao_cao", { ascending: true }),
     fetchMb51GoodsIssue(queryFrom || null, reqTo || null, siteFilter),
@@ -1108,6 +1108,7 @@ async function _getRevenueSummary(filtersParam) {
         isReturn: false,
         is_return: false
       };
+      if (!isSacn) it.planPortionQty = 0;
       aggRowsMap.set(k, it);
     }
     const net = getNet(r);
@@ -1122,6 +1123,9 @@ async function _getRevenueSummary(filtersParam) {
     it.giaVon += fc;
     it.gia_von += fc;
     if (r.so_hoa_don) it.invoiceNumbers.add(r.so_hoa_don);
+    if (!isSacn && !computeIsReturn(r)) {
+      it.planPortionQty += normalizePortionQty(sl, r.ma_cua_hang || r.ten_cua_hang, r.dvt);
+    }
   });
   const summaryRows = Array.from(aggRowsMap.values(), r => ({
     ...r, invoiceNumbers: Array.from(r.invoiceNumbers)
