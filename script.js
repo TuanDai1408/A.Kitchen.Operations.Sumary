@@ -7209,7 +7209,10 @@ function bindRevenueEvents(){
 
   // OPEX nhập trực tiếp vào sheet OPEX_Input -> không còn nút Lưu trên UI.
 }
+var _revSacnFiltersBound = false;
 function bindRevenueFiltersSacn(){
+  if (_revSacnFiltersBound) return;
+  _revSacnFiltersBound = true;
   var reload = function(){ RUI_SACN.drillSite = ''; computeAndDrawRevenueSacn(); };
 
   // Toggle kỳ Tuần / Tháng / Quý / Năm
@@ -7498,7 +7501,10 @@ function bindRevenueFiltersSacn(){
 }
 
 /* ---------- BIND BỘ LỌC TAB DOANH THU (gọi 1 lần khi khởi động) ---------- */
+var _revFiltersBound = false;
 function bindRevenueFilters(){
+  if (_revFiltersBound) return;
+  _revFiltersBound = true;
   var reload = function(){ RUI.drillSite = ''; computeAndDrawRevenue(); };
 
   // Toggle kỳ Tuần / Tháng / Quý / Năm
@@ -8201,7 +8207,10 @@ function updateEstLoaiLabel(){
   }
 }
 
+var _revEstFiltersBound = false;
 function bindRevEstFilters(){
+  if (_revEstFiltersBound) return;
+  _revEstFiltersBound = true;
   // Toggle kỳ Tuần / Tháng / Quý / Năm
   var granBox = document.getElementById('estGran');
   if (granBox){

@@ -1078,7 +1078,11 @@ async function _getRevenueSummary(filtersParam) {
 
   const aggRowsMap = new Map();
   curRows.forEach(r => {
-    const k = `${r.billing_date}|${r.ten_cua_hang}|${r.nhom_sp}|${r.ten_kenh_ban_hang || r.kenh_ban_hang}|${r.dvt || ""}`;
+    const isRet = computeIsReturn(r);
+    const tenKH = r.ten_kh || "";
+    const nvkd = r.nv_kinh_doanh || "";
+    const lyDo = r.ly_do_tra_hang || "";
+    const k = `${r.billing_date}|${r.ten_cua_hang}|${r.nhom_sp}|${r.ten_kenh_ban_hang || r.kenh_ban_hang}|${r.dvt || ""}|${tenKH}|${nvkd}|${lyDo}|${isRet ? "R" : "S"}`;
     let it = aggRowsMap.get(k);
     if (!it) {
       it = {
@@ -1093,6 +1097,12 @@ async function _getRevenueSummary(filtersParam) {
         nhom_sp: r.nhom_sp || "",
         tenKenhBanHang: r.ten_kenh_ban_hang || r.kenh_ban_hang || "",
         kenhBanHang: r.kenh_ban_hang || "",
+        tenKH: tenKH,
+        ten_kh: tenKH,
+        nvKinhDoanh: nvkd,
+        nv_kinh_doanh: nvkd,
+        lyDoTraHang: lyDo,
+        ly_do_tra_hang: lyDo,
         vungMien: r.vung_mien || "",
         loaiCuaHang: r.loai_cua_hang || "",
         dvt: r.dvt || "",
@@ -1105,8 +1115,8 @@ async function _getRevenueSummary(filtersParam) {
         giaVon: 0,
         gia_von: 0,
         invoiceNumbers: new Set(),
-        isReturn: false,
-        is_return: false
+        isReturn: isRet,
+        is_return: isRet
       };
       if (!isSacn) it.planPortionQty = 0;
       aggRowsMap.set(k, it);
@@ -2370,7 +2380,7 @@ export async function getRevenueEstSummary(filtersParam) {
     const nhomSP = r.nhom_sp || "";
     const dvt = r.dvt || "";
 
-    const key = `${ngay}|${site}|${nhomSP}|${tenKenhBanHang}|${dvt}|${isReturn ? "R" : "S"}|${isEstimate ? "E" : "B"}`;
+    const key = `${ngay}|${site}|${nhomSP}|${tenKenhBanHang}|${dvt}|${r.ten_kh || ""}|${isReturn ? "R" : "S"}|${isEstimate ? "E" : "B"}`;
     let item = aggMap.get(key);
     if (!item) {
       item = {
