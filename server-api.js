@@ -1897,6 +1897,9 @@ export async function getWarehouseDashboardData(filtersParam) {
         name: matDescMap[artKey] || t.name || artKey,
         category: t.category,
         uom: t.uom,
+        type: t.type,
+        types: new Set(t.type ? [t.type] : []),
+        slocs: new Set(t.sloc ? [t.sloc] : []),
         stock_begin: stockBeginMap[itemKey] || 0,
         stock_begin_val: stockBeginValueMap[itemKey] || 0,
         receipts: 0,
@@ -1908,8 +1911,18 @@ export async function getWarehouseDashboardData(filtersParam) {
         site_name: t.site_name,
         site: t.site
       };
-    } else if (matDescMap[artKey] && itemsMap[itemKey].name === artKey) {
-      itemsMap[itemKey].name = matDescMap[artKey];
+    } else {
+      if (matDescMap[artKey] && itemsMap[itemKey].name === artKey) {
+        itemsMap[itemKey].name = matDescMap[artKey];
+      }
+      if (t.type) {
+        if (!itemsMap[itemKey].types) itemsMap[itemKey].types = new Set();
+        itemsMap[itemKey].types.add(t.type);
+      }
+      if (t.sloc) {
+        if (!itemsMap[itemKey].slocs) itemsMap[itemKey].slocs = new Set();
+        itemsMap[itemKey].slocs.add(t.sloc);
+      }
     }
     itemsMap[itemKey].doc_count = (itemsMap[itemKey].doc_count || 0) + 1;
 
@@ -1943,6 +1956,9 @@ export async function getWarehouseDashboardData(filtersParam) {
         name: matDescMap[code] || code,
         category: matCatMap[code] || "Chưa phân loại",
         uom: matUomMap[code] || "Kg",
+        type: "Khác / Chưa phân loại",
+        types: new Set(["Khác / Chưa phân loại"]),
+        slocs: new Set(),
         stock_begin: stockBeginMap[key],
         stock_begin_val: stockBeginValueMap[key] || 0,
         receipts: 0,
@@ -2051,6 +2067,9 @@ export async function getWarehouseDashboardData(filtersParam) {
       reconciliation_diff: diff,
       computed_end_from_trans: calculatedEnd,
       doc_count: it.doc_count || 0,
+      type: it.type || "Khác / Chưa phân loại",
+      types: Array.from(it.types || []),
+      slocs: Array.from(it.slocs || []),
       site_name: it.site_name,
       site: it.site
     };
@@ -2090,6 +2109,7 @@ export async function getWarehouseDashboardData(filtersParam) {
       group: getSlocGroup(s)
     })),
     by_category: Array.from(catSet).sort(viSort).map(c => ({ category: c })),
+    types: Array.from(typeSet).sort(viSort),
     sites: Array.from(siteNameSet).sort(viSort).map(s => ({ name: s })),
     items,
     transactions: transactions.map(t => ({

@@ -11867,6 +11867,7 @@ function bindKehoachFilters(){
   if (btn) btn.addEventListener('click', function(){
     KH_RAW = null;
     KH = null;
+    KH_INIT = false;
     refreshAllTabs(true);
   });
 }
@@ -13372,15 +13373,17 @@ var QLK = (function(){
     });
 
     // 2) Lọc items (tồn kho tổng hợp):
-    var artSet = null;
-    if (f.slocs.length || f.types.length) {
-      artSet = {};
-      tx.forEach(function(t){ artSet[t.article] = 1; });
-    }
     var it = D.items.filter(function(x){
       if (f.sites.length && f.sites.indexOf(x.site_name || '') < 0 && f.sites.indexOf(x.site || '') < 0) return false;
       if (f.cats.length && f.cats.indexOf(x.category) < 0) return false;
-      if (artSet && !artSet[x.code]) return false;
+      if (f.types.length) {
+        var xTypes = x.types || (x.type ? [x.type] : []);
+        if (!xTypes.some(function(tp){ return f.types.indexOf(tp) >= 0; })) return false;
+      }
+      if (f.slocs.length) {
+        var xSlocs = x.slocs || [];
+        if (!xSlocs.some(function(sl){ return f.slocs.indexOf(sl) >= 0; })) return false;
+      }
       return true;
     });
 
@@ -14959,6 +14962,7 @@ setLive = function(ok, txt){
 bindFilters();
 bindRevenueFilters();   // bộ lọc riêng cho tab Doanh thu & Food Cost
 bindRevenueFiltersSacn();
+bindRevEstFilters();   // bộ lọc riêng cho tab Doanh thu Ước tính
 bindKehoachFilters();   // bộ lọc riêng cho tab So sánh Kế hoạch
 
 // Hiệu ứng animation cho tất cả nút làm mới / tải lại khi click
