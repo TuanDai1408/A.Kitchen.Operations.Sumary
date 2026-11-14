@@ -1479,15 +1479,13 @@ export async function getKeHoachData(filtersParam) {
     plPivot[k][p.hang_muc] = Number(p.gia_tri || 0);
   });
 
-  // Thu thập thêm các kỳ phát sinh thực tế từ transactions và report.
-  // Chỉ nhận từ kỳ kế hoạch đầu tiên trở đi: bản ghi lạc ngày nằm trước mốc kế hoạch
-  // (billing/report nhập lùi) không được sinh ra một kỳ "ảo" trên dashboard.
+  // Thu thập thêm các kỳ phát sinh thực tế từ transactions và report (lấy từ tháng 01/2026 trở đi đồng nhất với tab Doanh thu)
   [...txRows, ...repRows].forEach(r => {
     const d = r.billing_date || r.ngay_bao_cao;
     if (!d) return;
     const ky = String(d).substring(0, 7);
     if (!ky || periodMap.has(ky)) return;
-    if (firstPlanKey && ky < firstPlanKey) return;
+    if (ky < "2026-01") return;
     periodMap.set(ky, `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`);
   });
 
@@ -1539,7 +1537,7 @@ export async function getKeHoachData(filtersParam) {
 
   // Sắp xếp các kỳ theo thứ tự thời gian tăng dần và lấy từ kỳ đầu tiên phát sinh (không cắt đuôi)
   const sortedPeriodKeys = Array.from(periodMap.keys()).sort();
-  const limitN = filters.nPeriods && filters.nPeriods > 0 ? filters.nPeriods : 24;
+  const limitN = filters.nPeriods && filters.nPeriods > 0 ? filters.nPeriods : sortedPeriodKeys.length;
   const activePeriods = sortedPeriodKeys.slice(0, limitN);
 
   const periods = activePeriods.map(perKey => {
@@ -1575,11 +1573,8 @@ export async function getKeHoachData(filtersParam) {
       const actLaiGop = actNet - actFC;
       const actEbitda = hasOpex ? (actLaiGop - opexVal) : (actNet > 0 ? actLaiGop : 0);
 
-      // Số suất ăn thực tế: Đồng nhất chuẩn theo Tab Doanh thu & Foodcost (ALL) từ transactions (quy chuẩn qua normalizePortionQty).
-      // Nếu kỳ/site đó không có giao dịch bán hàng thì dự phòng lấy từ báo cáo vận hành repActual.
-      const actSL = (actTx.tongSuat !== undefined && (actTx.tongSuat > 0 || actTx.net > 0))
-        ? actTx.tongSuat
-        : (actRep.tong || 0);
+      // Số suất ăn thực tế: Lấy chuẩn đồng nhất theo Tab Doanh thu & Foodcost (ALL) từ transactions (quy chuẩn qua normalizePortionQty).
+      const actSL = Number(actTx.tongSuat || 0);
 
       bySite[site] = {
         DoanhThu: { actual: actNet, plan: plan["DoanhThu"] || 0 },

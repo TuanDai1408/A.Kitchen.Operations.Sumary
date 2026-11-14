@@ -6,7 +6,7 @@ test('Revenue ALL vs Ke Hoach - Data synchronization parity across months', asyn
   const kh = await getKeHoachData();
   assert.ok(kh && kh.ok, 'getKeHoachData returned ok');
 
-  const testMonths = ['2026-08', '2026-09', '2026-10'];
+  const testMonths = ['2026-01', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
 
   for (const m of testMonths) {
     const from = `${m}-01`;
@@ -44,4 +44,31 @@ test('Revenue ALL vs Ke Hoach - Data synchronization parity across months', asyn
       `Month ${m}: Số suất ăn difference must be 0 (got rev=${rev.kpis.planPortionQty}, kh=${khTong.SanLuongTong.actual}, diff=${diffPortions})`
     );
   }
+
+  // Full Year 2026 Parity
+  const rev2026 = await getRevenueSummary({ from: '2026-01-01', to: '2026-12-31' });
+  let khTotalNet = 0;
+  let khTotalFC = 0;
+  let khTotalPortions = 0;
+  kh.periods.forEach(p => {
+    if (p.key.startsWith('2026')) {
+      const st = p.bySite[kh.siteTong];
+      khTotalNet += st.DoanhThu.actual;
+      khTotalFC += st.FoodCost.actualVal;
+      khTotalPortions += st.SanLuongTong.actual;
+    }
+  });
+
+  assert.ok(
+    Math.abs(rev2026.kpis.netRevenue - khTotalNet) < 0.01,
+    `Full Year 2026: Net Revenue must match (rev=${rev2026.kpis.netRevenue}, kh=${khTotalNet})`
+  );
+  assert.ok(
+    Math.abs(rev2026.kpis.foodCost - khTotalFC) < 0.01,
+    `Full Year 2026: Food Cost must match (rev=${rev2026.kpis.foodCost}, kh=${khTotalFC})`
+  );
+  assert.ok(
+    Math.abs(rev2026.kpis.planPortionQty - khTotalPortions) < 0.01,
+    `Full Year 2026: Portions must match (rev=${rev2026.kpis.planPortionQty}, kh=${khTotalPortions})`
+  );
 });
