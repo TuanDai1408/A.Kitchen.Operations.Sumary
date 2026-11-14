@@ -11156,7 +11156,15 @@ function drawKehoach(){
 /* ---------- KPI 6 CHỈ TIÊU ---------- */
 function drawKehoachKPI(sites, periods){
   var totalAgg = kh_aggAll(sites, periods);
-  var html = '<div class="grid g7">';
+  var firstKy = periods.length ? (periods[0].label || periods[0].key) : '';
+  var lastKy = periods.length ? (periods[periods.length - 1].label || periods[periods.length - 1].key) : '';
+  var kyText = periods.length > 1 ? (firstKy + ' → ' + lastKy + ' (' + periods.length + ' kỳ)') : (firstKy || 'Toàn bộ kỳ');
+  var siteText = PF.site ? PF.site : 'Toàn hệ thống A.Kitchen';
+  var html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:12px;color:#64748B;">' +
+    '<span><b>Hiệu quả thực tế vs Kế hoạch lũy kế:</b> ' + esc(siteText) + ' • <span style="color:#046A38;font-weight:600;">' + esc(kyText) + '</span></span>' +
+    '<span style="font-size:11px;color:#94A3B8;">*Số liệu cộng dồn các kỳ đang lọc</span>' +
+    '</div>' +
+    '<div class="grid g7">';
   METRICS_KH.forEach(function(m){
     var v = m.get(totalAgg);
     if (!totalAgg.hasActual) v = { actual: null, plan: v.plan };
