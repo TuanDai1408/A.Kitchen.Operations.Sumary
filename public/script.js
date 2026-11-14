@@ -4689,7 +4689,7 @@ function rev_push(a, r) {
     if (u === 'PHA') { a.qtyPHA += r.soLuong; a.netPHA += lineNet; }
     else if (u === 'KG') { a.qtyKG += r.soLuong; a.netKG += lineNet; }
     else if (u === 'CHY') { a.qtyCHY += r.soLuong; a.netCHY += lineNet; }
-    a.tongSuat += normalizePortionQty(r.soLuong, r.maSite || r.site || r.ma_cua_hang || r.ten_cua_hang, r.dvt);
+    a.tongSuat += (r.planPortionQty !== undefined ? r.planPortionQty : normalizePortionQty(r.soLuong, r.maSite || r.site || r.ma_cua_hang || r.ten_cua_hang, r.dvt));
   }
   a.lines++;
 }
@@ -4705,6 +4705,7 @@ function rev_finalize(a) {
     returnQty: a.returnQty,
     salesQty: a.salesQty,
     tongSuat: a.tongSuat,
+    planPortionQty: a.tongSuat,
     qtyPHA: a.qtyPHA, qtyKG: a.qtyKG, qtyCHY: a.qtyCHY,
     netRevenue: net,
     foodCost: a.foodCost,

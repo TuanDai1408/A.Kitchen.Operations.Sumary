@@ -673,7 +673,7 @@ async function _getRevenueSummary(filtersParam) {
   });
 
   function agg(rows) {
-    let netRevenue = 0, foodCost = 0, soLuong = 0, qtyPHA = 0, qtyKG = 0, qtyCHY = 0;
+    let netRevenue = 0, foodCost = 0, soLuong = 0, qtyPHA = 0, qtyKG = 0, qtyCHY = 0, planPortionQty = 0;
     const invSet = new Set();
     const daySet = new Set();
     const getNet = r => Number(r.thanh_tien !== undefined && r.thanh_tien !== null ? r.thanh_tien : (Number(r.thanh_tien_truoc_thue || 0) - Number(r.ck_truoc_thue || 0)));
@@ -687,6 +687,9 @@ async function _getRevenueSummary(filtersParam) {
       netRevenue += tt;
       foodCost += gv;
       soLuong += q;
+      if (!computeIsReturn(r)) {
+        planPortionQty += normalizePortionQty(q, r.ma_cua_hang || r.ten_cua_hang, r.dvt);
+      }
       if (dvt === "PHA") qtyPHA += q;
       else if (dvt === "KG") qtyKG += q;
       else if (dvt === "CHY") qtyCHY += q;
@@ -704,6 +707,7 @@ async function _getRevenueSummary(filtersParam) {
 
     return {
       netRevenue, foodCost, grossProfit, foodCostPct, grossMarginPct, soLuong,
+      planPortionQty,
       soDonHang: invSet.size, invoiceCount: invSet.size,
       qtyPHA, qtyKG, qtyCHY, asp, aspKG, aspCHY, operatingDays, netPerDay
     };
@@ -766,10 +770,13 @@ async function _getRevenueSummary(filtersParam) {
   const siteMap = {};
   curRows.forEach(r => {
     const s = r.ten_cua_hang || "Chưa rõ";
-    if (!siteMap[s]) siteMap[s] = { key: s, site: s, maSite: r.ma_cua_hang || "", netRevenue: 0, foodCost: 0, soLuong: 0 };
+    if (!siteMap[s]) siteMap[s] = { key: s, site: s, maSite: r.ma_cua_hang || "", netRevenue: 0, foodCost: 0, soLuong: 0, planPortionQty: 0 };
     siteMap[s].netRevenue += getNet(r);
     siteMap[s].foodCost += Number(r.gia_von || 0);
     siteMap[s].soLuong += Number(r.so_luong || 0);
+    if (!computeIsReturn(r)) {
+      siteMap[s].planPortionQty += normalizePortionQty(Number(r.so_luong || 0), r.ma_cua_hang || r.ten_cua_hang, r.dvt);
+    }
   });
 
   // Hủy từ Report theo site
@@ -804,6 +811,7 @@ async function _getRevenueSummary(filtersParam) {
     const hPct = ts > 0 ? (sh / ts) * 100 : null;
     return {
       ...s,
+      tongSuat: s.planPortionQty,
       grossProfit: s.netRevenue - s.foodCost,
       foodCostPct: s.netRevenue > 0 ? (s.foodCost / s.netRevenue) * 100 : 0,
       grossMarginPct: s.netRevenue > 0 ? ((s.netRevenue - s.foodCost) / s.netRevenue) * 100 : 0,
@@ -1423,8 +1431,8 @@ export async function getKeHoachData(filtersParam) {
     supabase.from("kehoach_duan").select("*"),
     supabase.from("kehoach_thamso").select("*"),
     supabase.from("opex_input").select("*"),
-    fetchAllRows("report", "ten_site, ngay_bao_cao, tong_suat, suat_huy"),
-    fetchAllRows("transactions", "ten_cua_hang, ma_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von, so_luong, dvt, ly_do_tra_hang, loai_chung_tu_billing")
+    fetchAllRows("report", "ten_site, ngay_bao_cao, tong_suat, suat_huy", "ngay_bao_cao"),
+    fetchAllRows("transactions", "ten_cua_hang, ma_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von, so_luong, dvt, ly_do_tra_hang, loai_chung_tu_billing", "billing_date")
   ]);
 
   const duAnRows = duAnRes.data || [];
@@ -1503,12 +1511,9 @@ export async function getKeHoachData(filtersParam) {
     if (!txActual[k]) txActual[k] = { net: 0, foodCost: 0, tongSuat: 0 };
     const isRet = computeIsReturn(t);
     const net = Number(t.thanh_tien_truoc_thue || 0) - Number(t.ck_truoc_thue || 0);
-    if (isRet) {
-      txActual[k].net -= Math.abs(net);
-      txActual[k].foodCost += Number(t.gia_von || 0);
-    } else {
-      txActual[k].net += net;
-      txActual[k].foodCost += Number(t.gia_von || 0);
+    txActual[k].net += net;
+    txActual[k].foodCost += Number(t.gia_von || 0);
+    if (!isRet) {
       const suat = normalizePortionQty(t.so_luong, t.ma_cua_hang || t.ten_cua_hang, t.dvt);
       txActual[k].tongSuat += suat;
     }
