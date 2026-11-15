@@ -369,7 +369,7 @@ var SACN_EXCLUDE_MASITE = ['K502','K003','K800','D007']; // Mã site bị loại
 var REV_SACN = null;
 var REV_SACN_INIT = false;
 var RF_SACN = { gran:'week', scope:'4', periods:[], from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
-var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', huyMode:'suat', huyDim:'site', mixChartMode:'fcNhom', geoMode:'loai', trendView:'am1', comboSort:'dt', shareMode:'both', siteMetricGran:'month' };
+var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', huyMode:'suat', huyDim:'site', mixChartMode:'fcNhom', geoMode:'loai', trendView:'am1', comboSort:'dt', shareMode:'both', siteMetricGran:'week' };
 // =========================================================================
 // QUY CHUẨN QUY ĐỔI SỐ SUẤT ĂN DÙNG CHUNG (K003, D007 & CÁC SITE TOÀN HỆ THỐNG)
 // Chuẩn thống nhất theo tab Doanh thu & Foodcost (ALL / SACN)
@@ -5396,7 +5396,7 @@ function drawRevenueSacn(){
   '</div>';
 
   // 4. Số lượng · Doanh thu · Food cost · AM1 · AM2 theo thời gian
-  var siteMetricGranSacn = RUI_SACN.siteMetricGran || 'month';
+  var siteMetricGranSacn = RUI_SACN.siteMetricGran || (RF_SACN && RF_SACN.gran) || 'week';
   html += '<div class="card">' +
     '<div class="card-t" style="flex-wrap:wrap;gap:8px;">' +
       '<div>' +
@@ -6813,7 +6813,7 @@ function drawRevSiteMetricsSacn() {
   var ctx = ctxOf('sChRevSiteMetrics');
   if (!ctx || !REV_SACN) return;
 
-  var currentGran = RUI_SACN.siteMetricGran || 'month';
+  var currentGran = RUI_SACN.siteMetricGran || (RF_SACN && RF_SACN.gran) || 'week';
   var rows = REV_SACN.rows || [];
   var planSites = REV_SACN.planSites || [];
   var nsMap = REV_SACN.nsMap || {};
@@ -8260,6 +8260,13 @@ function bindRevenueFiltersSacn(){
       if (!btn) return;
       granBox.querySelectorAll('button').forEach(function(b){ b.classList.toggle('on', b === btn); });
       RF_SACN.gran = btn.dataset.v || 'week';
+      RUI_SACN.siteMetricGran = RF_SACN.gran;
+      var smGranBoxSacn = document.getElementById('sTgSiteMetricGran');
+      if (smGranBoxSacn) {
+        smGranBoxSacn.querySelectorAll('button').forEach(function(b){
+          b.classList.toggle('on', b.dataset.v === RF_SACN.gran);
+        });
+      }
       if (RF_SACN.scope !== 'all') RF_SACN.scope = '4';
       updateRevSacnPeriodDropdown(true);
       loadFoodcostData({ tab: 'sacn', from: RF_SACN.from, to: RF_SACN.to, site: RF_SACN.sites, force: true });
@@ -10331,7 +10338,7 @@ function computeAndDrawRevenueEst(){
   '</div>';
 
   // Chart Mới: Số lượng · Doanh thu · Food cost · AM1 · AM2 theo thời gian
-  var siteMetricGran = RF_EST.siteMetricGran || RF_EST.gran || 'month';
+  var siteMetricGran = RF_EST.siteMetricGran || RF_EST.gran || 'week';
   html += '<div class="card">' +
     '<div class="card-t" style="flex-wrap:wrap;gap:8px;">' +
       '<div>' +
@@ -11222,7 +11229,7 @@ function drawEstSiteMetrics(rows, planSites, nsMap){
   var ctx = ctxOf('chEstSiteMetrics');
   if (!ctx) return;
 
-  var currentGran = RF_EST.siteMetricGran || RF_EST.gran || 'month';
+  var currentGran = RF_EST.siteMetricGran || RF_EST.gran || 'week';
   var allRows = (REV_EST_RAW && REV_EST_RAW.rows) ? REV_EST_RAW.rows : rows;
 
   var granLabel = currentGran === 'week' ? 'Tuần' : (currentGran === 'quarter' ? 'Quý' : (currentGran === 'year' ? 'Năm' : 'Tháng'));

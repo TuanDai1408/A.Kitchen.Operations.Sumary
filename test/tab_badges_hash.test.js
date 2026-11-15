@@ -58,4 +58,8 @@ test('script.js SIDEBAR_TABS_CONFIG and hash mappings', () => {
   assert.ok(js.includes('hashchange'), 'script.js must handle hashchange');
   assert.ok(js.includes('popstate'), 'script.js must handle popstate');
   assert.ok(js.includes('aria-current'), 'script.js must manage aria-current');
+
+  // Verify siteMetricGran defaults to 'week' matching the tab filter
+  assert.ok(js.includes("siteMetricGran:'week'"), "RUI_SACN.siteMetricGran must default to 'week'");
+  assert.ok(js.includes("var siteMetricGranSacn = RUI_SACN.siteMetricGran || (RF_SACN && RF_SACN.gran) || 'week';"), "siteMetricGranSacn must fallback to 'week'");
 });
