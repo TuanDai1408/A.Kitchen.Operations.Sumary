@@ -4757,12 +4757,20 @@ function rev_groupBy(rows, keyFn, sortKey, limit) {
   rows.forEach(function (r) {
     var k = keyFn(r);
     if (k === '' || k == null) return;
-    if (!map[k]) map[k] = rev_agg();
+    if (!map[k]) {
+      map[k] = rev_agg();
+      map[k].ma_sp = r.maSP || r.ma_sp || '';
+      map[k].ten_sp = r.tenSP || r.ten_sp || k;
+    }
+    if (!map[k].ma_sp && (r.maSP || r.ma_sp)) map[k].ma_sp = r.maSP || r.ma_sp;
     rev_push(map[k], r);
   });
   var out = Object.keys(map).map(function (k) {
     var m = rev_finalize(map[k]);
     m.key = k;
+    m.ma_sp = map[k].ma_sp || '';
+    m.maSP = map[k].ma_sp || '';
+    m.ten_sp = map[k].ten_sp || k;
     return m;
   });
   if (sortKey) out.sort(function (a, b) { return (b[sortKey] || 0) - (a[sortKey] || 0); });
@@ -6262,8 +6270,9 @@ function renderRevDrillSacn(site){
     topSanPham.map(function(x, idx){
       var isTop3 = idx < 3;
       var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+      var code = x.ma_sp || x.maSP || '';
       var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-      return '<tr><td>'+esc(name)+'</td><td class="num">'+fmt(qty)+'</td>'+
+      return '<tr><td>'+renderProductBomCell(name, code)+'</td><td class="num">'+fmt(qty)+'</td>'+
         '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
   h += '</div>';
@@ -6277,8 +6286,9 @@ function renderRevDrillSacn(site){
       topFoodCost.map(function(x){
         var isTop3Dt = (top3FcRevThreshold > 0 && (x.netRevenue || 0) >= top3FcRevThreshold);
         var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+        var code = x.ma_sp || x.maSP || '';
         var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-        return '<tr><td>'+esc(name)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
+        return '<tr><td>'+renderProductBomCell(name, code)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
           '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td><td class="num">'+fmtMoney(x.foodCost || x.cogs || 0)+'</td>'+
           '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+fmtMoney(x.grossProfit)+'</td>'+
           '<td class="num">'+fmt(qty)+'</td></tr>';
@@ -8048,8 +8058,9 @@ function renderRevDrill(site){
     topSanPham.map(function(x, idx){
       var isTop3 = idx < 3;
       var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+      var code = x.ma_sp || x.maSP || '';
       var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-      return '<tr><td>'+esc(name)+'</td>'+
+      return '<tr><td>'+renderProductBomCell(name, code)+'</td>'+
         '<td class="num">'+fmt(qty)+'</td>'+
         '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td>'+
         '<td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
@@ -8070,8 +8081,9 @@ function renderRevDrill(site){
       topFoodCost.map(function(x){
         var isTop3Dt = (top3FcRevThreshold > 0 && (x.netRevenue || 0) >= top3FcRevThreshold);
         var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
+        var code = x.ma_sp || x.maSP || '';
         var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-        return '<tr><td>'+esc(name)+'</td>'+
+        return '<tr><td>'+renderProductBomCell(name, code)+'</td>'+
           '<td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
           '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td>'+
           '<td class="num">'+fmtMoney(x.foodCost || x.cogs || 0)+'</td>'+
@@ -16042,5 +16054,285 @@ document.addEventListener('change', function(e) {
     var sel = e.target;
     var opt = sel.options[sel.selectedIndex];
     sel.title = opt ? opt.textContent.trim() : (sel.value || '');
+  }
+});
+
+
+// =========================================================================
+// POPUP CHI TIẾT ĐỊNH MỨC NGUYÊN VẬT LIỆU CẤU THÀNH (BOM) TỪ v_bom_production_plan_unique
+// =========================================================================
+
+function renderProductBomCell(name, code) {
+  var pName = String(name || '(Không tên)');
+  var pCode = String(code || '').trim();
+  var codeBadge = pCode
+    ? '<span class="bom-code-tag" title="Mã thành phẩm: ' + esc(pCode) + '">' + esc(pCode) + '</span>'
+    : '';
+  return '<span class="bom-product-link" data-code="' + esc(pCode) + '" data-name="' + esc(pName) + '" role="button" tabindex="0" title="Bấm để xem định mức nguyên vật liệu cấu thành (BOM)">' +
+    codeBadge + '<span class="bom-name-txt">' + esc(pName) + '</span>' +
+    '<svg class="bom-link-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>' +
+  '</span>';
+}
+
+var BOM_CLIENT_CACHE = {};
+var BOM_CLIENT_LOADING = {};
+
+function ensureBomModalStyles() {
+  if (document.getElementById('bomModalStyles')) return;
+  var st = document.createElement('style');
+  st.id = 'bomModalStyles';
+  st.textContent = '' +
+    '.bom-product-link{display:inline-flex;align-items:center;gap:6px;cursor:pointer;color:inherit;text-decoration:none;transition:all .15s ease;user-select:none;outline:none;}' +
+    '.bom-product-link:hover .bom-name-txt{color:#046A38;text-decoration:underline;}' +
+    '.bom-code-tag{font-family:"JetBrains Mono",SF Pro Text,Menlo,Consolas,monospace!important;font-feature-settings:"tnum" 1;font-size:11px;font-weight:700;color:#046A38;background:rgba(4,106,56,.08);border:1px solid rgba(4,106,56,.2);padding:1px 6px;border-radius:4px;letter-spacing:.3px;display:inline-block;line-height:1.4;}' +
+    '.bom-link-ic{opacity:.4;flex-shrink:0;transition:all .15s ease;}' +
+    '.bom-product-link:hover .bom-link-ic{opacity:1;color:#046A38;transform:translate(1px,-1px);}' +
+    '.bom-ov{position:fixed;inset:0;background:rgba(15,23,42,.65);backdrop-filter:blur(3px);z-index:99999;display:none;align-items:flex-start;justify-content:center;padding:32px 16px;overflow-y:auto;box-sizing:border-box;}' +
+    '.bom-ov.open{display:flex;}' +
+    '.bom-mod{background:#FFFFFF;border-radius:14px;max-width:1040px;width:100%;box-shadow:0 25px 70px rgba(0,0,0,.3);border:1px solid #E2E8F0;display:flex;flex-direction:column;max-height:calc(100vh - 64px);overflow:hidden;animation:bomFadeIn .2s cubic-bezier(.16,1,.3,1);}' +
+    '@keyframes bomFadeIn{from{opacity:0;transform:scale(.97) translateY(-8px);}to{opacity:1;transform:scale(1) translateY(0);}}' +
+    '.bom-mod-h{padding:18px 24px;border-bottom:1px solid #E2E8F0;position:relative;background:#FAFBFB;}' +
+    '.bom-mod-h h2{font-family:"Be Vietnam Pro",sans-serif;color:#046A38;font-size:18px;font-weight:800;margin:0;display:flex;align-items:center;gap:8px;padding-right:40px;}' +
+    '.bom-mod-h .sub{color:#64748B;font-size:12.5px;margin-top:6px;display:flex;align-items:center;gap:10px;flex-wrap:wrap;}' +
+    '.bom-mod-x{position:absolute;top:16px;right:20px;width:32px;height:32px;border:none;background:#F1F5F9;border-radius:50%;font-size:22px;line-height:1;color:#64748B;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s ease;}' +
+    '.bom-mod-x:hover{background:#E2E8F0;color:#0F172A;}' +
+    '.bom-mod-b{padding:20px 24px 24px;overflow-y:auto;flex:1;}' +
+    '.bom-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;}' +
+    '@media(max-width:768px){.bom-kpis{grid-template-columns:repeat(2,1fr);}}' +
+    '.bom-kpi{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;}' +
+    '.bom-kpi-lb{font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.3px;}' +
+    '.bom-kpi-v{font-family:"JetBrains Mono",SF Pro Text,Menlo,Consolas,monospace!important;font-feature-settings:"tnum" 1;font-size:17px;font-weight:800;color:#0F172A;margin-top:4px;}' +
+    '.bom-kpi-sub{font-size:11px;color:#94A3B8;margin-top:2px;}' +
+    '.bom-tbl{width:100%;border-collapse:collapse;font-size:12.5px;}' +
+    '.bom-tbl th{background:#F1F5F9;color:#475569;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;padding:10px 12px;border-bottom:1px solid #CBD5E1;text-align:left;}' +
+    '.bom-tbl td{padding:9px 12px;border-bottom:1px solid #E2E8F0;vertical-align:middle;}' +
+    '.bom-tbl tbody tr:hover{background:#F8FAFC;}' +
+    '.bom-tbl tfoot td{background:#F8FAFC;font-weight:700;border-top:2px solid #CBD5E1;padding:10px 12px;}' +
+    '.bom-num{font-family:"JetBrains Mono",SF Pro Text,Menlo,Consolas,monospace!important;font-feature-settings:"tnum" 1;text-align:right;}' +
+    '.bom-center{text-align:center;}' +
+    '.bom-zero-row{opacity:.65;}';
+  document.head.appendChild(st);
+}
+
+function ensureBomModal() {
+  ensureBomModalStyles();
+  if (document.getElementById('bomModal')) return;
+  var ov = document.createElement('div');
+  ov.id = 'bomModal';
+  ov.className = 'bom-ov';
+  ov.innerHTML = '<div class="bom-mod">' +
+    '<div class="bom-mod-h">' +
+      '<button class="bom-mod-x" id="bomModX" aria-label="Đóng popup">×</button>' +
+      '<h2 id="bomModTitle"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/></svg> Cấu thành BOM & Định mức Nguyên vật liệu</h2>' +
+      '<div class="sub" id="bomModSub"></div>' +
+    '</div>' +
+    '<div class="bom-mod-b" id="bomModBody"></div>' +
+  '</div>';
+  document.body.appendChild(ov);
+
+  ov.addEventListener('click', function(e) { if (e.target === ov) closeBomModal(); });
+  document.getElementById('bomModX').addEventListener('click', closeBomModal);
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeBomModal(); });
+}
+
+function closeBomModal() {
+  var ov = document.getElementById('bomModal');
+  if (ov) {
+    ov.classList.remove('open');
+    ov.dataset.activeKey = '';
+  }
+}
+
+function openBomModal(code, name) {
+  ensureBomModal();
+  var ov = document.getElementById('bomModal');
+  var key = (code || name || '').trim();
+  if (!key) return;
+  ov.dataset.activeKey = key;
+
+  var subEl = document.getElementById('bomModSub');
+  if (subEl) {
+    subEl.innerHTML = (code ? '<span class="bom-code-tag" style="font-size:12px;padding:2px 8px;">' + esc(code) + '</span>' : '') +
+      '<strong style="font-size:14px;color:#1E293B;">' + esc(name || code) + '</strong>' +
+      '<span style="color:#94A3B8;">• Đang truy xuất view v_bom_production_plan_unique...</span>';
+  }
+
+  var bodyEl = document.getElementById('bomModBody');
+  if (BOM_CLIENT_CACHE[key]) {
+    renderBomModalContent(BOM_CLIENT_CACHE[key]);
+  } else {
+    bodyEl.innerHTML = '<div style="padding:48px 20px;text-align:center;color:#64748B;">' +
+      '<div class="spinner" style="margin:0 auto 12px;width:34px;height:34px;border:3px solid #E2E8F0;border-top-color:#046A38;border-radius:50%;animation:spin 0.8s linear infinite;"></div>' +
+      '<div style="font-size:13.5px;font-weight:600;color:#1E293B;">Đang tải cấu thành định mức nguyên vật liệu...</div>' +
+      '<div style="font-size:11.5px;color:#94A3B8;margin-top:4px;">Truy vấn trực tiếp từ Supabase view v_bom_production_plan_unique</div>' +
+    '</div>';
+  }
+
+  ov.classList.add('open');
+
+  if (!BOM_CLIENT_CACHE[key] && !BOM_CLIENT_LOADING[key]) {
+    BOM_CLIENT_LOADING[key] = true;
+    callAPI('getBomDetail', { productCode: code, productName: name })
+      .then(function(res) {
+        BOM_CLIENT_LOADING[key] = false;
+        BOM_CLIENT_CACHE[key] = res;
+        var curOv = document.getElementById('bomModal');
+        if (curOv && curOv.classList.contains('open') && curOv.dataset.activeKey === key) {
+          renderBomModalContent(res);
+        }
+      })
+      .catch(function(err) {
+        BOM_CLIENT_LOADING[key] = false;
+        var curOv = document.getElementById('bomModal');
+        if (curOv && curOv.classList.contains('open') && curOv.dataset.activeKey === key) {
+          renderBomModalError(err, code, name);
+        }
+      });
+  }
+}
+
+function renderBomModalContent(res) {
+  var subEl = document.getElementById('bomModSub');
+  var bodyEl = document.getElementById('bomModBody');
+  if (!bodyEl) return;
+
+  if (!res || !res.ok) {
+    var msg = (res && res.message) ? res.message : 'Không tìm thấy dữ liệu định mức BOM cho sản phẩm này';
+    if (subEl) {
+      subEl.innerHTML = '<span style="color:#C0342C;font-weight:600;">Không tìm thấy định mức BOM</span>';
+    }
+    bodyEl.innerHTML = '<div style="padding:40px 20px;text-align:center;">' +
+      '<div style="width:48px;height:48px;border-radius:50%;background:#FEE2E2;color:#DC2626;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;">!</div>' +
+      '<h3 style="font-size:16px;color:#1E293B;margin-bottom:6px;">Chưa có dữ liệu BOM</h3>' +
+      '<p style="font-size:13px;color:#64748B;max-width:500px;margin:0 auto 16px;">' + esc(msg) + '</p>' +
+      '<button type="button" class="btn" onclick="closeBomModal()" style="padding:6px 16px;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:6px;font-weight:600;cursor:pointer;">Đóng</button>' +
+    '</div>';
+    return;
+  }
+
+  if (subEl) {
+    subEl.innerHTML = '<span class="bom-code-tag" style="font-size:12px;padding:2px 8px;">' + esc(res.material) + '</span>' +
+      '<strong style="font-size:14px;color:#0F172A;">' + esc(res.material_desc) + '</strong>' +
+      '<span style="color:#64748B;">• ĐVT chuẩn: <b style="color:#046A38;">' + esc(res.unit || '—') + '</b>' +
+      (res.product_group ? ' • Nhóm SP: <b>' + esc(res.product_group) + '</b>' : '') +
+      (res.merch_desc ? ' • Phân loại: <b>' + esc(res.merch_desc) + '</b>' : '') +
+      '</span>';
+  }
+
+  var h = '';
+  // KPI Cards
+  h += '<div class="bom-kpis">' +
+    '<div class="bom-kpi">' +
+      '<div class="bom-kpi-lb">Tổng loại NVL</div>' +
+      '<div class="bom-kpi-v">' + fmt(res.totalNvlCount) + ' <span style="font-size:12px;font-weight:500;color:#64748B;">loại</span></div>' +
+      '<div class="bom-kpi-sub">' + fmt(res.activeNvlCount) + ' loại có định mức > 0</div>' +
+    '</div>' +
+    '<div class="bom-kpi">' +
+      '<div class="bom-kpi-lb">Tổng giá vốn NVL (BOM)</div>' +
+      '<div class="bom-kpi-v" style="color:#046A38;">' + fmtMoney(res.totalNvlCost) + '</div>' +
+      '<div class="bom-kpi-sub">Theo 1 ' + esc(res.unit || 'đơn vị') + ' thành phẩm chuẩn</div>' +
+    '</div>' +
+    '<div class="bom-kpi">' +
+      '<div class="bom-kpi-lb">Đơn vị chuẩn BOM</div>' +
+      '<div class="bom-kpi-v">' + fmt(res.bom_version_qty) + ' ' + esc(res.unit || '') + '</div>' +
+      '<div class="bom-kpi-sub">Phương án BOM: ' + esc(res.alt_bom) + '</div>' +
+    '</div>' +
+    '<div class="bom-kpi">' +
+      '<div class="bom-kpi-lb">Đơn giá thành phẩm</div>' +
+      '<div class="bom-kpi-v">' + (res.price > 0 ? fmtMoney(res.price) : '<span style="color:#94A3B8;">—</span>') + '</div>' +
+      '<div class="bom-kpi-sub">Giá chuẩn tiêu chuẩn SAP</div>' +
+    '</div>' +
+  '</div>';
+
+  // Table
+  h += '<div style="overflow-x:auto;border:1px solid #E2E8F0;border-radius:8px;">' +
+    '<table class="bom-tbl">' +
+      '<thead>' +
+        '<tr>' +
+          '<th class="bom-center" style="width:45px;">STT</th>' +
+          '<th class="bom-center" style="width:110px;">Mã NVL</th>' +
+          '<th>Tên Nguyên vật liệu</th>' +
+          '<th>Nhóm nguyên liệu</th>' +
+          '<th class="bom-num" style="width:110px;">Định lượng</th>' +
+          '<th class="bom-num" style="width:105px;">Đơn giá</th>' +
+          '<th class="bom-num" style="width:115px;">Thành tiền</th>' +
+          '<th class="bom-num" style="width:85px;">Tỷ trọng %</th>' +
+        '</tr>' +
+      '</thead>' +
+      '<tbody>';
+
+  var components = res.components || [];
+  if (!components.length) {
+    h += '<tr><td colspan="8" class="bom-center" style="padding:24px;color:#94A3B8;">Không có dòng nguyên vật liệu nào</td></tr>';
+  } else {
+    components.forEach(function(c, idx) {
+      var isZero = (c.nvl_qty === 0 && c.gia_nvl === 0);
+      var rowCls = isZero ? ' class="bom-zero-row"' : '';
+      var qtyText = c.nvl_qty > 0
+        ? (c.nvl_qty >= 1 ? fmt(c.nvl_qty) : c.nvl_qty.toLocaleString('vi-VN', { maximumFractionDigits: 4 })) + ' ' + esc(c.unit)
+        : '<span style="color:#94A3B8;">0 ' + esc(c.unit) + '</span>';
+      var priceText = c.price > 0 ? fmt(c.price) + '₫' : '<span style="color:#94A3B8;">0₫</span>';
+      var amtText = c.gia_nvl > 0 ? '<strong style="color:#046A38;">' + fmt(c.gia_nvl) + '₫</strong>' : '<span style="color:#94A3B8;">0₫</span>';
+      var pctText = c.cost_pct > 0 ? c.cost_pct.toFixed(1) + '%' : '<span style="color:#94A3B8;">0%</span>';
+
+      h += '<tr' + rowCls + '>' +
+        '<td class="bom-center" style="color:#64748B;font-size:11px;">' + esc(c.item_no || (idx + 1)) + '</td>' +
+        '<td class="bom-center"><span class="bom-code-tag" style="background:#F1F5F9;color:#334155;border-color:#CBD5E1;">' + esc(c.nvl_material) + '</span></td>' +
+        '<td><div style="font-weight:600;color:#1E293B;">' + esc(c.nvl_desc || '(Không tên NVL)') + '</div></td>' +
+        '<td style="color:#64748B;font-size:11.5px;">' + esc(c.merch_desc || '—') + '</td>' +
+        '<td class="bom-num" style="font-weight:600;">' + qtyText + '</td>' +
+        '<td class="bom-num" style="color:#475569;">' + priceText + '</td>' +
+        '<td class="bom-num">' + amtText + '</td>' +
+        '<td class="bom-num" style="font-weight:600;color:' + (c.cost_pct >= 20 ? '#C0342C' : '#046A38') + ';">' + pctText + '</td>' +
+      '</tr>';
+    });
+  }
+
+  h += '</tbody>' +
+      '<tfoot>' +
+        '<tr>' +
+          '<td colspan="4" style="text-align:right;color:#1E293B;">Tổng cộng (' + fmt(res.totalNvlCount) + ' dòng linh kiện):</td>' +
+          '<td class="bom-num">—</td>' +
+          '<td class="bom-num">—</td>' +
+          '<td class="bom-num" style="font-size:14px;color:#046A38;">' + fmtMoney(res.totalNvlCost) + '</td>' +
+          '<td class="bom-num" style="font-size:13px;color:#046A38;">100.0%</td>' +
+        '</tr>' +
+      '</tfoot>' +
+    '</table>' +
+  '</div>';
+
+  h += '<div style="margin-top:14px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;font-size:11px;color:#94A3B8;">' +
+    '<div>Dữ liệu từ Supabase view <b>v_bom_production_plan_unique</b> • Các dòng định lượng = 0 là NVL linh kiện thay thế/dự phòng</div>' +
+    '<button type="button" onclick="closeBomModal()" style="padding:6px 14px;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:6px;font-weight:600;color:#334155;cursor:pointer;">Đóng</button>' +
+  '</div>';
+
+  bodyEl.innerHTML = h;
+}
+
+function renderBomModalError(err, code, name) {
+  var subEl = document.getElementById('bomModSub');
+  var bodyEl = document.getElementById('bomModBody');
+  if (subEl) {
+    subEl.innerHTML = '<span style="color:#C0342C;font-weight:600;">Lỗi kết nối API</span>';
+  }
+  if (bodyEl) {
+    bodyEl.innerHTML = '<div style="padding:40px 20px;text-align:center;">' +
+      '<div style="width:48px;height:48px;border-radius:50%;background:#FEE2E2;color:#DC2626;display:flex;align-items:center;justify-content:center;margin:0 auto 12px;font-size:24px;">✕</div>' +
+      '<h3 style="font-size:16px;color:#1E293B;margin-bottom:6px;">Lỗi khi tải định mức BOM</h3>' +
+      '<p style="font-size:13px;color:#64748B;max-width:500px;margin:0 auto 16px;">' + esc(err ? (err.message || String(err)) : 'Không thể kết nối đến máy chủ') + '</p>' +
+      '<button type="button" class="btn" onclick="openBomModal(\'' + esc(code) + '\', \'' + esc(name) + '\')" style="padding:6px 16px;background:#046A38;color:#fff;border:none;border-radius:6px;font-weight:600;cursor:pointer;margin-right:8px;">Thử lại</button>' +
+      '<button type="button" class="btn" onclick="closeBomModal()" style="padding:6px 16px;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:6px;font-weight:600;cursor:pointer;">Đóng</button>' +
+    '</div>';
+  }
+}
+
+// Bắt sự kiện click toàn cục cho mã sản phẩm BOM
+document.addEventListener('click', function(e) {
+  var link = e.target.closest('.bom-product-link');
+  if (link) {
+    e.preventDefault();
+    var code = link.dataset.code || '';
+    var name = link.dataset.name || '';
+    openBomModal(code, name);
   }
 });

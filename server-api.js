@@ -440,6 +440,8 @@ export function mapTransactionRow(r) {
     nv_kinh_doanh: r.nv_kinh_doanh || "",
     tenSP: r.ten_sp || "",
     ten_sp: r.ten_sp || "",
+    maSP: r.ma_sp || "",
+    ma_sp: r.ma_sp || "",
     soHoaDon: r.so_hoa_don || "",
     so_hoa_don: r.so_hoa_don || "",
     soBillingGoc: r.so_billing_goc || "",
@@ -471,7 +473,7 @@ export async function getDataVersion() {
   return { version: String(data?.version || "1.0.0"), updatedAt: currentUpdatedAt, serverTime: now };
 }
 
-export const TX_SELECT_COLS = "billing_date,ten_cua_hang,ma_cua_hang,ten_kh,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,nv_kinh_doanh,ten_sp,so_hoa_don,so_billing_goc,ly_do_tra_hang,vung_mien,loai_cua_hang";
+export const TX_SELECT_COLS = "billing_date,ten_cua_hang,ma_cua_hang,ten_kh,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,nv_kinh_doanh,ten_sp,ma_sp,so_hoa_don,so_billing_goc,ly_do_tra_hang,vung_mien,loai_cua_hang";
 
 async function _getDashboardData() {
   const REPORT_COLS = "id,dau_thoi_gian,ten_site,ngay_bao_cao,nguoi_bao_cao,suat_sang,suat_trua,suat_chieu,suat_nhan_vien,suat_huy,tong_suat,gio_giao,ly_do_tre,tinh_trang_nvl,su_co_thiet_bi,so_that_thoat,nguyen_nhan_that_thoat,ns_co_mat,ns_vang,ns_tang_ca,su_co_nhan_su,so_khieu_nai,so_khen_ngoi,phan_loai_kn,muc_do_nghiem_trong,chi_tiet_y_kien,co_chi_phi_ngoai,so_tien_ly_do_chi_phi,hinh_anh,de_xuat,suat_luu_mau,suat_giao_vien,ten_khach_hang";
@@ -878,7 +880,8 @@ async function _getRevenueSummary(filtersParam) {
   const prodMap = {};
   curRows.forEach(r => {
     const p = r.ten_sp || "Sản phẩm";
-    if (!prodMap[p]) prodMap[p] = { key: p, name: p, ma_sp: r.ma_sp || "", ten_sp: p, group: r.nhom_sp || "", netRevenue: 0, netRev: 0, foodCost: 0, cogs: 0, salesQty: 0, qty: 0, dvt: r.dvt || "" };
+    if (!prodMap[p]) prodMap[p] = { key: p, name: p, ma_sp: r.ma_sp || "", maSP: r.ma_sp || "", ten_sp: p, group: r.nhom_sp || "", netRevenue: 0, netRev: 0, foodCost: 0, cogs: 0, salesQty: 0, qty: 0, dvt: r.dvt || "" };
+    if (!prodMap[p].ma_sp && r.ma_sp) { prodMap[p].ma_sp = r.ma_sp; prodMap[p].maSP = r.ma_sp; }
     const net = getNet(r);
     const fc = Number(r.gia_von || 0);
     const sl = Number(r.so_luong || 0);
@@ -983,7 +986,8 @@ async function _getRevenueSummary(filtersParam) {
     const sCusts = {};
     sRows.forEach(r => {
       const p = r.ten_sp || "SP";
-      if (!sProds[p]) sProds[p] = { key: p, name: p, ten_sp: p, netRevenue: 0, foodCost: 0, soLuong: 0, salesQty: 0 };
+      if (!sProds[p]) sProds[p] = { key: p, name: p, ten_sp: p, ma_sp: r.ma_sp || "", maSP: r.ma_sp || "", netRevenue: 0, foodCost: 0, soLuong: 0, salesQty: 0 };
+      if (!sProds[p].ma_sp && r.ma_sp) { sProds[p].ma_sp = r.ma_sp; sProds[p].maSP = r.ma_sp; }
       const net = getNet(r);
       const fc = Number(r.gia_von || 0);
       const sl = Number(r.so_luong || 0);
@@ -2960,4 +2964,118 @@ async function _getDiscardNvlSummary(filtersParam) {
     byDay
   };
 }
+
+// ===== BOM PRODUCTION PLAN UNIQUE DETAIL API =====
+const BOM_CACHE = new Map();
+const BOM_CACHE_TTL = 15 * 60 * 1000; // 15 phút
+
+export async function getBomDetail(params = {}) {
+  const pCode = (params.productCode || params.material || params.code || "").toString().trim();
+  const pName = (params.productName || params.name || "").toString().trim();
+
+  if (!pCode && !pName) {
+    return { ok: false, message: "Thiếu mã sản phẩm hoặc tên sản phẩm để truy vấn BOM" };
+  }
+
+  const cacheKey = pCode ? `code:${pCode}` : `name:${pName}`;
+  const now = Date.now();
+  if (BOM_CACHE.has(cacheKey)) {
+    const cached = BOM_CACHE.get(cacheKey);
+    if (now - cached.time < BOM_CACHE_TTL) {
+      return cached.data;
+    }
+  }
+
+  let data = null;
+  if (pCode) {
+    const res = await supabase
+      .from("v_bom_production_plan_unique")
+      .select("*")
+      .eq("material", pCode)
+      .order("item_no", { ascending: true });
+    if (!res.error && res.data && res.data.length > 0) {
+      data = res.data;
+    }
+  }
+
+  if ((!data || !data.length) && pName) {
+    // 1. Tìm theo tên chính xác
+    let res = await supabase
+      .from("v_bom_production_plan_unique")
+      .select("*")
+      .ilike("material_desc", pName)
+      .order("item_no", { ascending: true });
+    if (!res.error && res.data && res.data.length > 0) {
+      data = res.data;
+    } else {
+      // 2. Tìm theo partial match
+      res = await supabase
+        .from("v_bom_production_plan_unique")
+        .select("*")
+        .ilike("material_desc", `%${pName}%`)
+        .order("item_no", { ascending: true })
+        .limit(100);
+      if (!res.error && res.data && res.data.length > 0) {
+        const firstMat = res.data[0].material;
+        data = res.data.filter(r => r.material === firstMat);
+      }
+    }
+  }
+
+  if (!data || !data.length) {
+    const notFoundRes = {
+      ok: false,
+      productCode: pCode,
+      productName: pName,
+      message: `Không tìm thấy định mức BOM trong view v_bom_production_plan_unique cho sản phẩm ${pCode ? `[${pCode}]` : ""} ${pName}`
+    };
+    BOM_CACHE.set(cacheKey, { time: now, data: notFoundRes });
+    return notFoundRes;
+  }
+
+  const header = data.find(r => r.item_no === "0000") || data[0];
+  const components = data.filter(r => r.item_no !== "0000");
+
+  const totalNvlCost = components.reduce((sum, r) => sum + (Number(r.gia_nvl) || 0), 0);
+  const activeNvlCount = components.filter(r => Number(r.nvl_qty) > 0).length;
+
+  const result = {
+    ok: true,
+    material: header.material || pCode,
+    material_desc: header.material_desc || pName,
+    unit: header.unit || "",
+    price: Number(header.price) || 0,
+    bom_version_qty: Number(header.bom_version_qty) || 1,
+    alt_bom: header.alt_bom || "1",
+    product_group: header.product_group || "",
+    merch_desc: header.merch_desc || "",
+    totalNvlCount: components.length,
+    activeNvlCount,
+    totalNvlCost: Math.round(totalNvlCost * 100) / 100,
+    components: components.map(c => {
+      const qty = Number(c.nvl_qty) || 0;
+      const totalQty = Number(c.nvl_qty_total) || qty;
+      const price = Number(c.price) || 0;
+      const giaNvl = Number(c.gia_nvl) || (qty * price);
+      const costPct = totalNvlCost > 0 ? (giaNvl / totalNvlCost) * 100 : 0;
+      return {
+        item_no: c.item_no || "",
+        nvl_material: c.nvl_material || "",
+        nvl_desc: c.nvl_desc || "",
+        nvl_qty: Math.round(qty * 10000) / 10000,
+        nvl_qty_total: Math.round(totalQty * 10000) / 10000,
+        unit: c.unit || "",
+        price: Math.round(price),
+        gia_nvl: Math.round(giaNvl),
+        cost_pct: Math.round(costPct * 10) / 10,
+        merch: c.merch || "",
+        merch_desc: c.merch_desc || ""
+      };
+    })
+  };
+
+  BOM_CACHE.set(cacheKey, { time: now, data: result });
+  return result;
+}
+
 
