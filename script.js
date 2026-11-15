@@ -6272,7 +6272,8 @@ function renderRevDrillSacn(site){
       var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
       var code = x.ma_sp || x.maSP || '';
       var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-      return '<tr><td>'+renderProductBomCell(name, code)+'</td><td class="num">'+fmt(qty)+'</td>'+
+      var uPrice = (qty > 0 && (x.netRevenue || 0) > 0) ? Math.round(x.netRevenue / qty) : (x.price || 0);
+      return '<tr><td>'+renderProductBomCell(name, code, uPrice)+'</td><td class="num">'+fmt(qty)+'</td>'+
         '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
     }).join('')+'</tbody></table></div></div>';
   h += '</div>';
@@ -6288,7 +6289,8 @@ function renderRevDrillSacn(site){
         var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
         var code = x.ma_sp || x.maSP || '';
         var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-        return '<tr><td>'+renderProductBomCell(name, code)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
+        var uPrice = (qty > 0 && (x.netRevenue || 0) > 0) ? Math.round(x.netRevenue / qty) : (x.price || 0);
+        return '<tr><td>'+renderProductBomCell(name, code, uPrice)+'</td><td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
           '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td><td class="num">'+fmtMoney(x.foodCost || x.cogs || 0)+'</td>'+
           '<td class="num" style="color:'+(x.grossProfit>=0?'#15803D':'#C0342C')+'">'+fmtMoney(x.grossProfit)+'</td>'+
           '<td class="num">'+fmt(qty)+'</td></tr>';
@@ -8060,7 +8062,8 @@ function renderRevDrill(site){
       var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
       var code = x.ma_sp || x.maSP || '';
       var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-      return '<tr><td>'+renderProductBomCell(name, code)+'</td>'+
+      var uPrice = (qty > 0 && (x.netRevenue || 0) > 0) ? Math.round(x.netRevenue / qty) : (x.price || 0);
+      return '<tr><td>'+renderProductBomCell(name, code, uPrice)+'</td>'+
         '<td class="num">'+fmt(qty)+'</td>'+
         '<td class="num">'+getDtPill(x.netRevenue, isTop3)+'</td>'+
         '<td class="num">'+getFcPill(x.foodCostPct)+'</td></tr>';
@@ -8083,7 +8086,8 @@ function renderRevDrill(site){
         var name = x.key || x.ten_sp || x.tenSP || '(Không tên)';
         var code = x.ma_sp || x.maSP || '';
         var qty = x.salesQty !== undefined ? x.salesQty : (x.qty || 0);
-        return '<tr><td>'+renderProductBomCell(name, code)+'</td>'+
+        var uPrice = (qty > 0 && (x.netRevenue || 0) > 0) ? Math.round(x.netRevenue / qty) : (x.price || 0);
+        return '<tr><td>'+renderProductBomCell(name, code, uPrice)+'</td>'+
           '<td class="num">'+getFcPill(x.foodCostPct)+'</td>'+
           '<td class="num">'+getDtPill(x.netRevenue, isTop3Dt)+'</td>'+
           '<td class="num">'+fmtMoney(x.foodCost || x.cogs || 0)+'</td>'+
@@ -16062,13 +16066,14 @@ document.addEventListener('change', function(e) {
 // POPUP CHI TIẾT ĐỊNH MỨC NGUYÊN VẬT LIỆU CẤU THÀNH (BOM) TỪ v_bom_production_plan_unique
 // =========================================================================
 
-function renderProductBomCell(name, code) {
+function renderProductBomCell(name, code, price) {
   var pName = String(name || '(Không tên)');
   var pCode = String(code || '').trim();
+  var uPrice = Number(price || 0);
   var codeBadge = pCode
     ? '<span class="bom-code-tag" title="Mã thành phẩm: ' + esc(pCode) + '">' + esc(pCode) + '</span>'
     : '';
-  return '<span class="bom-product-link" data-code="' + esc(pCode) + '" data-name="' + esc(pName) + '" role="button" tabindex="0" title="Bấm để xem định mức nguyên vật liệu cấu thành (BOM)">' +
+  return '<span class="bom-product-link" data-code="' + esc(pCode) + '" data-name="' + esc(pName) + '" data-price="' + uPrice + '" role="button" tabindex="0" title="Bấm để xem định mức nguyên vật liệu cấu thành (BOM)">' +
     codeBadge + '<span class="bom-name-txt">' + esc(pName) + '</span>' +
     '<svg class="bom-link-ic" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 01-2 2H5a2 2 0 01-2-2V8a2 2 0 012-2h6M15 3h6v6M10 14L21 3"/></svg>' +
   '</span>';
@@ -16143,12 +16148,13 @@ function closeBomModal() {
   }
 }
 
-function openBomModal(code, name) {
+function openBomModal(code, name, price) {
   ensureBomModal();
   var ov = document.getElementById('bomModal');
   var key = (code || name || '').trim();
   if (!key) return;
   ov.dataset.activeKey = key;
+  ov.dataset.activePrice = (price && price > 0) ? String(price) : '';
 
   var subEl = document.getElementById('bomModSub');
   if (subEl) {
@@ -16237,11 +16243,20 @@ function renderBomModalContent(res) {
       '<div class="bom-kpi-v">' + fmt(res.bom_version_qty) + ' ' + esc(res.unit || '') + '</div>' +
       '<div class="bom-kpi-sub">Phương án BOM: ' + esc(res.alt_bom) + '</div>' +
     '</div>' +
-    '<div class="bom-kpi">' +
-      '<div class="bom-kpi-lb">Đơn giá thành phẩm</div>' +
-      '<div class="bom-kpi-v">' + (res.price > 0 ? fmtMoney(res.price) : '<span style="color:#94A3B8;">—</span>') + '</div>' +
-      '<div class="bom-kpi-sub">Giá chuẩn tiêu chuẩn SAP</div>' +
-    '</div>' +
+    (function(){
+      var ovEl = document.getElementById('bomModal');
+      var clickedPrice = Number((ovEl && ovEl.dataset.activePrice) || 0);
+      var donGiaBan = clickedPrice > 0 ? clickedPrice : (res.price > 0 ? res.price : 0);
+      var fcPct = (donGiaBan > 0 && (res.totalNvlCost || 0) > 0) ? ((res.totalNvlCost / donGiaBan) * 100) : null;
+      var fcSub = fcPct !== null
+        ? ('Giá vốn chiếm: <b style="color:' + (fcPct <= 35 ? '#046A38' : (fcPct <= 45 ? '#D97706' : '#C0342C')) + ';">' + fcPct.toFixed(1) + '%</b>')
+        : 'Chưa có thông tin giá bán';
+      return '<div class="bom-kpi">' +
+        '<div class="bom-kpi-lb">Đơn giá bán trước thuế</div>' +
+        '<div class="bom-kpi-v">' + (donGiaBan > 0 ? fmtMoney(donGiaBan) : '<span style="color:#94A3B8;">—</span>') + '</div>' +
+        '<div class="bom-kpi-sub">' + fcSub + '</div>' +
+      '</div>';
+    })() +
   '</div>';
 
   // Table
@@ -16333,6 +16348,7 @@ document.addEventListener('click', function(e) {
     e.preventDefault();
     var code = link.dataset.code || '';
     var name = link.dataset.name || '';
-    openBomModal(code, name);
+    var price = Number(link.dataset.price || 0);
+    openBomModal(code, name, price);
   }
 });
