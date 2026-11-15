@@ -12936,34 +12936,162 @@ function bindKehoachFilters(){
 //   document.getElementById('fbarRev').classList.toggle('hide', !isRev);
 //   renderCurrent();
 // }
-function switchTab(tab){
-  TAB = tab;
-  // Cập nhật tiêu đề Topbar
-  var TAB_NAMES = {
-    'overview': 'Báo cáo vận hành',
-    'site': 'Chi tiết theo Site',
-    'incident': 'Sự cố & Adhoc',
-    'revenue': 'Doanh thu & Food Cost (ALL)',
-    'sacn': 'Doanh thu & Food Cost (SACN)',
-    'revenue-est': 'Doanh thu ước tính (AM1 & AM2)',
-    'kehoach': 'So sánh Kế hoạch P&L',
-    'quanlykho': 'Quản lý kho & Xuất nhập tồn',
-    'dinhduong': 'Thông tin dinh dưỡng học đường'
-  };
-  var titleEl = document.getElementById('pageTitle');
-  if (titleEl && TAB_NAMES[tab]) titleEl.textContent = TAB_NAMES[tab];
+/* =========================================================================
+   CẤU HÌNH VÀ MÃ NHẬN DIỆN SIDEBAR TABS (T1, T2, C1, C2, K1, K2, D1, D2)
+   ========================================================================= */
+var SIDEBAR_TABS_CONFIG = [
+  {
+    group: 'Tổng quan',
+    iconSvg: '<svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-5 4 3 5-7"/></svg>',
+    tabs: [
+      { code: 'T1', id: 'overview', name: 'Báo cáo vận hành' },
+      { code: 'T2', id: 'site', name: 'Chi tiết theo Site' }
+    ]
+  },
+  {
+    group: 'Tài chính',
+    iconSvg: '<svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>',
+    tabs: [
+      { code: 'C1', id: 'revenue', name: 'Doanh thu & Food Cost (ALL)' },
+      { code: 'C2', id: 'sacn', name: 'Doanh thu & Food Cost (SALES)' }
+    ]
+  },
+  {
+    group: 'Ước tính & Kế hoạch',
+    iconSvg: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>',
+    tabs: [
+      { code: 'K1', id: 'revenue-est', name: 'Doanh thu ước tính' },
+      { code: 'K2', id: 'kehoach', name: 'So sánh Kế hoạch' }
+    ]
+  },
+  {
+    group: 'Kho & Dinh dưỡng',
+    iconSvg: '<svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg>',
+    tabs: [
+      { code: 'D1', id: 'quanlykho', name: 'Quản lý kho' },
+      { code: 'D2', id: 'dinhduong', name: 'Thông tin dinh dưỡng' }
+    ]
+  }
+];
 
-  // === Cập nhật sidebar active ===
-  document.querySelectorAll('.sb-item').forEach(function(x){ x.classList.toggle('active', x.dataset.tab === tab); });
+var TAB_BY_ID = {};
+var TAB_BY_CODE = {};
+var TAB_BY_HASH = {};
+
+SIDEBAR_TABS_CONFIG.forEach(function(g) {
+  g.tabs.forEach(function(t) {
+    TAB_BY_ID[t.id] = t;
+    TAB_BY_CODE[t.code.toUpperCase()] = t;
+    TAB_BY_HASH[t.code.toLowerCase()] = t;
+    TAB_BY_HASH[t.id.toLowerCase()] = t;
+  });
+});
+
+function renderSidebarNav() {
+  var nav = document.querySelector('.sb-nav');
+  if (!nav) return;
+  var html = '';
+  SIDEBAR_TABS_CONFIG.forEach(function(grp, gIdx) {
+    if (gIdx > 0) {
+      html += '<div class="sb-divider"></div>';
+    }
+    html += '<div class="sb-group">';
+    html += '<div class="sb-group-label">' + grp.iconSvg + '<span>' + esc(grp.group) + '</span></div>';
+    grp.tabs.forEach(function(tab) {
+      var tooltip = tab.code + ' · ' + tab.name;
+      var isActive = (TAB === tab.id);
+      html += '<div class="sb-item' + (isActive ? ' active' : '') + '"' +
+              ' data-tab="' + esc(tab.id) + '"' +
+              ' data-code="' + esc(tab.code) + '"' +
+              ' data-tip="' + esc(tooltip) + '"' +
+              ' title="' + esc(tooltip) + '"' +
+              ' tabindex="0"' +
+              ' role="button"' +
+              (isActive ? ' aria-current="page"' : '') + '>' +
+              '<span class="sb-badge pos-mono font-mono">' + esc(tab.code) + '</span>' +
+              '<span class="sb-item-label">' + esc(tab.name) + '</span>' +
+              '</div>';
+    });
+    html += '</div>';
+  });
+  nav.innerHTML = html;
+  bindSidebarEvents();
+}
+
+function bindSidebarEvents() {
+  document.querySelectorAll('.sb-item').forEach(function(item) {
+    item.onclick = function() {
+      switchTab(item.dataset.tab);
+      if (typeof closeMobileMenu === 'function') closeMobileMenu();
+    };
+    item.onkeydown = function(e) {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault();
+        switchTab(item.dataset.tab);
+        if (typeof closeMobileMenu === 'function') closeMobileMenu();
+      }
+    };
+  });
+}
+
+function switchTab(tab, fromHashChange){
+  TAB = tab;
+
+  // Cập nhật tiêu đề Topbar và document.title
+  var tabInfo = TAB_BY_ID[tab];
+  var tabCode = tabInfo ? tabInfo.code : '';
+  var tabName = tabInfo ? tabInfo.name : tab;
+
+  var titleEl = document.getElementById('pageTitle');
+  if (titleEl) {
+    if (tabCode) {
+      titleEl.innerHTML = '<span class="page-title-badge pos-mono font-mono">' + esc(tabCode) + '</span>' +
+                          '<span class="page-title-text">' + esc(tabName) + '</span>';
+    } else {
+      titleEl.textContent = tabName;
+    }
+  }
+
+  // Update browser document.title: ví dụ: [C2] Doanh thu & Food Cost (SALES) • A.Kitchen
+  if (tabCode) {
+    document.title = '[' + tabCode + '] ' + tabName + ' • A.Kitchen';
+  } else {
+    document.title = tabName + ' • A.Kitchen';
+  }
+
+  // Đồng bộ mã vào URL hash (dạng chữ thường và số: #t1, #c2...)
+  if (tabCode) {
+    var targetHash = '#' + tabCode.toLowerCase();
+    if (window.location.hash.toLowerCase() !== targetHash && !fromHashChange) {
+      if (window.history && window.history.pushState) {
+        window.history.pushState({ tab: tab }, '', targetHash);
+      } else {
+        window.location.hash = targetHash;
+      }
+    }
+  }
+
+  // === Cập nhật sidebar active & aria-current ===
+  document.querySelectorAll('.sb-item').forEach(function(x){
+    var isAct = (x.dataset.tab === tab);
+    x.classList.toggle('active', isAct);
+    if (isAct) {
+      x.setAttribute('aria-current', 'page');
+    } else {
+      x.removeAttribute('aria-current');
+    }
+  });
+
   document.querySelectorAll('#nav button').forEach(function(b){
     b.classList.toggle('on', b.dataset.tab === tab);
   });
+
   ['overview','site','incident','revenue','sacn','revenue-est','kehoach','quanlykho','dinhduong'].forEach(function(t){
     var el = document.getElementById('tab-'+t);
     if (el) el.classList.toggle('hide', t !== tab);
   });
+
   // Mỗi tab dùng 1 thanh filter riêng -> chỉ hiện đúng 1 thanh tương ứng.
-  // Tab quản lý kho có bộ lọc nằm ngay trong panel nên ẩn cả 3 thanh filter cũ.
   document.querySelector('.fbar').classList.toggle('hide',
       tab === 'revenue' || tab === 'sacn' || tab === 'revenue-est' || tab === 'kehoach' || tab === 'quanlykho' || tab === 'dinhduong');
   document.getElementById('fbarRev').classList.toggle('hide', tab !== 'revenue');
@@ -12972,8 +13100,36 @@ function switchTab(tab){
   document.getElementById('fbarPlan').classList.toggle('hide', tab !== 'kehoach');
   document.getElementById('fbarKho').classList.toggle('hide', tab !== 'quanlykho');
   document.getElementById('fbarDD').classList.toggle('hide', tab !== 'dinhduong');
+
   renderCurrent();
 }
+
+function initTabFromHash() {
+  var rawHash = (window.location.hash || '').replace(/^#/, '').toLowerCase().trim();
+  var matchedTab = TAB_BY_HASH[rawHash];
+  if (matchedTab) {
+    switchTab(matchedTab.id, true);
+  } else {
+    // Nếu hash không khớp tab nào thì mở tab mặc định (overview / T1)
+    switchTab('overview', true);
+  }
+}
+
+window.addEventListener('hashchange', function() {
+  var rawHash = (window.location.hash || '').replace(/^#/, '').toLowerCase().trim();
+  var matchedTab = TAB_BY_HASH[rawHash];
+  if (matchedTab && matchedTab.id !== TAB) {
+    switchTab(matchedTab.id, true);
+  }
+});
+
+window.addEventListener('popstate', function() {
+  var rawHash = (window.location.hash || '').replace(/^#/, '').toLowerCase().trim();
+  var matchedTab = TAB_BY_HASH[rawHash];
+  if (matchedTab && matchedTab.id !== TAB) {
+    switchTab(matchedTab.id, true);
+  }
+});
 
 
 function renderCurrent(){
@@ -15982,13 +16138,9 @@ initTooltip();
   });
   ov.addEventListener('click', closeMobileMenu);
 
-  // Nav click
-  document.querySelectorAll('.sb-item').forEach(function(item){
-    item.addEventListener('click', function(){
-      switchTab(item.dataset.tab);
-      closeMobileMenu();
-    });
-  });
+  // Render sidebar tabs from config & init tab from URL hash
+  renderSidebarNav();
+  initTabFromHash();
 
   // Sync logo từ getLogoUrl vào sidebar
   // Logo loaded from local file

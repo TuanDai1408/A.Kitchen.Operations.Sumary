@@ -230,6 +230,21 @@ button, input, select, textarea {
   padding: 12px 14px 6px;
   white-space: nowrap;
   transition: opacity 0.2s ease;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sb-group-label svg {
+  width: 16px;
+  height: 16px;
+  flex: 0 0 16px;
+  stroke: currentColor;
+  fill: none;
+  stroke-width: 1.8;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  color: var(--muted);
 }
 
 .sidebar.collapsed .sb-group-label {
@@ -252,7 +267,7 @@ button, input, select, textarea {
 .sb-item {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 10px;
   padding: 10px 14px;
   border-radius: var(--radius-md);
   cursor: pointer;
@@ -263,6 +278,12 @@ button, input, select, textarea {
   white-space: nowrap;
   min-height: 44px;
   position: relative;
+  outline: none;
+}
+
+.sb-item:focus-visible {
+  outline: 2px solid #1E7A4A;
+  outline-offset: 2px;
 }
 
 .sb-item:hover {
@@ -278,6 +299,41 @@ button, input, select, textarea {
   padding-left: 11px;
   border-radius: var(--radius-md);
   box-shadow: none;
+}
+
+/* Badge mã nhận diện tab (T1, T2, C1, C2...) */
+.sb-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 20px;
+  padding: 3px 4px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', 'SF Pro Text', Menlo, Consolas, monospace !important;
+  font-feature-settings: 'tnum' 1;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+  background: #f3f4f3;
+  border: 1px solid #d5d9d6;
+  color: #5b6560;
+  transition: all 0.16s ease;
+}
+
+.sb-item:hover .sb-badge {
+  background: #e8ebe9;
+  border-color: #d5d9d6;
+  color: #1f2a24;
+}
+
+.sb-item.active .sb-badge {
+  background: #1E7A4A;
+  border-color: #1E7A4A;
+  color: #ffffff;
 }
 
 .sb-item svg {
@@ -301,17 +357,22 @@ button, input, select, textarea {
   transition: opacity 0.2s ease;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+  flex: 1 1 auto;
 }
 
 .sidebar.collapsed .sb-item-label {
   opacity: 0;
   width: 0;
   overflow: hidden;
+  display: none;
 }
 
 .sidebar.collapsed .sb-item {
   justify-content: center;
   padding: 10px 0;
+  gap: 0;
 }
 
 .sidebar.collapsed .sb-item::after {
@@ -419,11 +480,41 @@ body.sb-collapsed .main-wrap {
 }
 
 .page-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 20px;
   font-weight: 800;
   color: var(--text);
   letter-spacing: -0.4px;
   line-height: 1.2;
+}
+
+.page-title-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 32px;
+  height: 22px;
+  padding: 2px 7px;
+  border-radius: 4px;
+  background-color: #1E7A4A;
+  border: 1px solid #1E7A4A;
+  color: #ffffff;
+  font-family: 'JetBrains Mono', 'SF Pro Text', Menlo, Consolas, monospace !important;
+  font-feature-settings: 'tnum' 1;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  flex-shrink: 0;
+  box-sizing: border-box;
+}
+
+.page-title-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .page-meta {

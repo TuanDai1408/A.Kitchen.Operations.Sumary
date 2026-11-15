@@ -68,31 +68,25 @@
     <div class="sb-logo" id="sbLogo"><img src="logo_akitchen_2-removebg-preview.png" alt="A.Kitchen" id="sbLogoImg"></div>
     <button class="sb-collapse-btn" id="sbCollapseBtn" aria-label="Thu gọn / Mở rộng"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M15 18l-6-6 6-6"/></svg></button>
   </div>
-  <nav class="sb-nav">
-    <div class="sb-group"><div class="sb-group-label">Tổng quan</div>
-      <div class="sb-item active" data-tab="overview" data-tip="Báo cáo vận hành"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-5 4 3 5-7"/></svg><span class="sb-item-label">Báo cáo vận hành</span></div>
-      <div class="sb-item" data-tab="site" data-tip="Chi tiết theo Site"><svg viewBox="0 0 24 24"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0118 0z"/><circle cx="12" cy="10" r="3"/></svg><span class="sb-item-label">Chi tiết theo Site</span></div>
+  <nav class="sb-nav" id="sbNav">
+    <div class="sb-group"><div class="sb-group-label"><svg viewBox="0 0 24 24"><path d="M3 3v18h18M7 15l4-5 4 3 5-7"/></svg><span>Tổng quan</span></div>
+      <div class="sb-item active" data-tab="overview" data-code="T1" data-tip="T1 · Báo cáo vận hành" title="T1 · Báo cáo vận hành" tabindex="0" role="button" aria-current="page"><span class="sb-badge pos-mono font-mono">T1</span><span class="sb-item-label">Báo cáo vận hành</span></div>
+      <div class="sb-item" data-tab="site" data-code="T2" data-tip="T2 · Chi tiết theo Site" title="T2 · Chi tiết theo Site" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">T2</span><span class="sb-item-label">Chi tiết theo Site</span></div>
     </div>
     <div class="sb-divider"></div>
-    <div class="sb-group"><div class="sb-group-label">Tài chính</div>
-      <div class="sb-item" data-tab="revenue" data-tip="Doanh thu & Food Cost (ALL)"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span class="sb-item-label">Doanh thu & Food Cost (ALL)</span></div>
-      <div class="sb-item" data-tab="sacn" data-tip="Doanh thu & Food Cost (SACN)">
-      <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>
-      <span class="sb-item-label">Doanh thu & Food Cost (SACN)</span>
-      </div>
+    <div class="sb-group"><div class="sb-group-label"><svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg><span>Tài chính</span></div>
+      <div class="sb-item" data-tab="revenue" data-code="C1" data-tip="C1 · Doanh thu & Food Cost (ALL)" title="C1 · Doanh thu & Food Cost (ALL)" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">C1</span><span class="sb-item-label">Doanh thu & Food Cost (ALL)</span></div>
+      <div class="sb-item" data-tab="sacn" data-code="C2" data-tip="C2 · Doanh thu & Food Cost (SALES)" title="C2 · Doanh thu & Food Cost (SALES)" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">C2</span><span class="sb-item-label">Doanh thu & Food Cost (SALES)</span></div>
     </div>
     <div class="sb-divider"></div>
-    <div class="sb-group"><div class="sb-group-label">Ước tính & Kế hoạch</div>
-      <div class="sb-item" data-tab="revenue-est" data-tip="Doanh thu ước tính">
-      <svg viewBox="0 0 24 24"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/><path d="M18 14l4 4-4 4"/></svg>
-      <span class="sb-item-label">Doanh thu ước tính</span>
-      </div>
-      <div class="sb-item" data-tab="kehoach" data-tip="So sánh Kế hoạch"><svg viewBox="0 0 24 24"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><path d="M22 4L12 14.01l-3-3"/></svg><span class="sb-item-label">So sánh Kế hoạch</span></div>
+    <div class="sb-group"><div class="sb-group-label"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg><span>Ước tính & Kế hoạch</span></div>
+      <div class="sb-item" data-tab="revenue-est" data-code="K1" data-tip="K1 · Doanh thu ước tính" title="K1 · Doanh thu ước tính" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">K1</span><span class="sb-item-label">Doanh thu ước tính</span></div>
+      <div class="sb-item" data-tab="kehoach" data-code="K2" data-tip="K2 · So sánh Kế hoạch" title="K2 · So sánh Kế hoạch" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">K2</span><span class="sb-item-label">So sánh Kế hoạch</span></div>
     </div>
     <div class="sb-divider"></div>
-    <div class="sb-group"><div class="sb-group-label">Kho & Dinh dưỡng</div>
-      <div class="sb-item" data-tab="quanlykho" data-tip="Quản lý kho"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg><span class="sb-item-label">Quản lý kho</span></div>
-      <div class="sb-item" data-tab="dinhduong" data-tip="Thông tin dinh dưỡng"><svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 00-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 00-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 000-7.78z"/></svg><span class="sb-item-label">Thông tin dinh dưỡng</span></div>
+    <div class="sb-group"><div class="sb-group-label"><svg viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><path d="M3.27 6.96L12 12.01l8.73-5.05M12 22.08V12"/></svg><span>Kho & Dinh dưỡng</span></div>
+      <div class="sb-item" data-tab="quanlykho" data-code="D1" data-tip="D1 · Quản lý kho" title="D1 · Quản lý kho" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">D1</span><span class="sb-item-label">Quản lý kho</span></div>
+      <div class="sb-item" data-tab="dinhduong" data-code="D2" data-tip="D2 · Thông tin dinh dưỡng" title="D2 · Thông tin dinh dưỡng" tabindex="0" role="button"><span class="sb-badge pos-mono font-mono">D2</span><span class="sb-item-label">Thông tin dinh dưỡng</span></div>
     </div>
   </nav>
   <div class="sb-footer">
@@ -105,7 +99,7 @@
 <div class="app-topbar">
   <div class="topbar-left">
     <div class="page-title-wrap">
-      <h1 class="page-title" id="pageTitle">Báo cáo vận hành</h1>
+      <h1 class="page-title" id="pageTitle"><span class="page-title-badge pos-mono font-mono">T1</span><span class="page-title-text">Báo cáo vận hành</span></h1>
       <div class="page-meta">
         <span class="meta-tag">A.Kitchen</span>
         <span class="meta-sep">•</span>
