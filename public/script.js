@@ -16264,11 +16264,12 @@ function ensureBomModalStyles() {
     '.bom-mod-x{position:absolute;top:16px;right:20px;width:32px;height:32px;border:none;background:#F1F5F9;border-radius:50%;font-size:22px;line-height:1;color:#64748B;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s ease;}' +
     '.bom-mod-x:hover{background:#E2E8F0;color:#0F172A;}' +
     '.bom-mod-b{padding:20px 24px 24px;overflow-y:auto;flex:1;}' +
-    '.bom-kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:18px;}' +
-    '@media(max-width:768px){.bom-kpis{grid-template-columns:repeat(2,1fr);}}' +
+    '.bom-kpis{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:18px;}' +
+    '@media(max-width:1024px){.bom-kpis{grid-template-columns:repeat(3,1fr);}}' +
+    '@media(max-width:640px){.bom-kpis{grid-template-columns:repeat(2,1fr);}}' +
     '.bom-kpi{background:#F8FAFC;border:1px solid #E2E8F0;border-radius:8px;padding:10px 14px;}' +
     '.bom-kpi-lb{font-size:11px;font-weight:600;color:#64748B;text-transform:uppercase;letter-spacing:.3px;}' +
-    '.bom-kpi-v{font-family:"JetBrains Mono",SF Pro Text,Menlo,Consolas,monospace!important;font-feature-settings:"tnum" 1;font-size:17px;font-weight:800;color:#0F172A;margin-top:4px;}' +
+    '.bom-kpi-v{font-family:"JetBrains Mono",SF Pro Text,Menlo,Consolas,monospace!important;font-feature-settings:"tnum" 1;font-size:16.5px;font-weight:800;color:#0F172A;margin-top:4px;white-space:nowrap;}' +
     '.bom-kpi-sub{font-size:11px;color:#94A3B8;margin-top:2px;}' +
     '.bom-tbl{width:100%;border-collapse:collapse;font-size:12.5px;}' +
     '.bom-tbl th{background:#F1F5F9;color:#475569;font-weight:700;font-size:11.5px;text-transform:uppercase;letter-spacing:.3px;padding:10px 12px;border-bottom:1px solid #CBD5E1;text-align:left;}' +
@@ -16406,9 +16407,21 @@ function renderBomModalContent(res) {
       '<div class="bom-kpi-sub">Phương án BOM: ' + esc(res.alt_bom) + '</div>' +
     '</div>' +
     (function(){
+      var giaUocTinhS = Number(res.standard_price !== undefined ? res.standard_price : (res.price || 0));
+      var sPct = (giaUocTinhS > 0 && (res.totalNvlCost || 0) > 0) ? ((res.totalNvlCost / giaUocTinhS) * 100) : null;
+      var sSub = sPct !== null
+        ? ('Giá vốn chiếm: <b style="color:' + (sPct <= 35 ? '#046A38' : (sPct <= 45 ? '#D97706' : '#C0342C')) + ';">' + sPct.toFixed(1) + '%</b>')
+        : (giaUocTinhS > 0 ? ('Giá chuẩn SAP (' + esc(res.price_control || 'S') + ')') : 'Chưa có giá chuẩn');
+      return '<div class="bom-kpi">' +
+        '<div class="bom-kpi-lb">Giá ước tính (S)</div>' +
+        '<div class="bom-kpi-v" style="color:#1E4E79;">' + (giaUocTinhS > 0 ? fmtMoney(giaUocTinhS) : '<span style="color:#94A3B8;">—</span>') + '</div>' +
+        '<div class="bom-kpi-sub">' + sSub + '</div>' +
+      '</div>';
+    })() +
+    (function(){
       var ovEl = document.getElementById('bomModal');
       var clickedPrice = Number((ovEl && ovEl.dataset.activePrice) || 0);
-      var donGiaBan = clickedPrice > 0 ? clickedPrice : (res.price > 0 ? res.price : 0);
+      var donGiaBan = clickedPrice > 0 ? clickedPrice : 0;
       var fcPct = (donGiaBan > 0 && (res.totalNvlCost || 0) > 0) ? ((res.totalNvlCost / donGiaBan) * 100) : null;
       var fcSub = fcPct !== null
         ? ('Giá vốn chiếm: <b style="color:' + (fcPct <= 35 ? '#046A38' : (fcPct <= 45 ? '#D97706' : '#C0342C')) + ';">' + fcPct.toFixed(1) + '%</b>')
