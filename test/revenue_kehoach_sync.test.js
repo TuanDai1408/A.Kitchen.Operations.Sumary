@@ -6,7 +6,7 @@ test('Revenue ALL vs Ke Hoach - Data synchronization parity across months', asyn
   const kh = await getKeHoachData();
   assert.ok(kh && kh.ok, 'getKeHoachData returned ok');
 
-  const testMonths = ['2026-01', '2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11'];
+  const testMonths = ['2026-03', '2026-04', '2026-05', '2026-06', '2026-07', '2026-08', '2026-09', '2026-10', '2026-11', '2026-12'];
 
   for (const m of testMonths) {
     const from = `${m}-01`;

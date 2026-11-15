@@ -369,7 +369,7 @@ var SACN_EXCLUDE_MASITE = ['K502','K003','K800','D007']; // Mã site bị loại
 var REV_SACN = null;
 var REV_SACN_INIT = false;
 var RF_SACN = { gran:'week', scope:'4', periods:[], from:'', to:'', sites:[], vungMien:[], loaiCuaHang:[], kenh:'', nhomSP:'', nvkd:'', khachHang:[] };
-var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', huyMode:'suat', huyDim:'site', mixChartMode:'fcNhom', geoMode:'loai' };
+var RUI_SACN = { drillSite:'', mixDim:'nhomSP', trendMetric:'net', periodGran:'week', barDim:'khachHang', huyMode:'suat', huyDim:'site', mixChartMode:'fcNhom', geoMode:'loai', trendView:'am1', comboSort:'dt', shareMode:'both', siteMetricGran:'month' };
 // =========================================================================
 // QUY CHUẨN QUY ĐỔI SỐ SUẤT ĂN DÙNG CHUNG (K003, D007 & CÁC SITE TOÀN HỆ THỐNG)
 // Chuẩn thống nhất theo tab Doanh thu & Foodcost (ALL / SACN)
@@ -3345,6 +3345,23 @@ function computeAndDrawRevenueSacn(){
       s.huySuatHuy = h.suatHuy;
       s.huyTongSuat = h.tongSuat;
     }
+    var am2Site = est_calcAM2ForScope({
+      rows: cur,
+      siteName: s.key,
+      sites: [s.key],
+      from: f.from,
+      to: f.to,
+      netRevenue: s.netRevenue,
+      foodCost: s.foodCost
+    });
+    s.am1 = am2Site.am1;
+    s.am2 = am2Site.am2;
+    s.am2Pct = am2Site.am2Pct;
+    s.ns = am2Site.ns;
+    s.hasNS = am2Site.hasNS;
+    s.dt = s.netRevenue;
+    s.fc = s.foodCost;
+    s.site = s.key;
   });
 
   var byNhom  = rev_groupBy(cur, function (r) { return r.nhomSP; }, 'netRevenue');
@@ -3477,8 +3494,19 @@ function computeAndDrawRevenueSacn(){
         };
       }));
 
+  var personnelSacn = (REV_RAW && REV_RAW.personnelBySiteKy) || (REV_EST_RAW && REV_EST_RAW.personnelBySiteKy) || [];
+  var planSitesSacn = (REV_RAW && REV_RAW.planSites) || (REV_EST_RAW && REV_EST_RAW.keHoach && REV_EST_RAW.keHoach.sites) || [];
+  var nsMapSacn = {};
+  personnelSacn.forEach(function(pn){
+    var s = String(pn.site || '').trim();
+    var k = String(pn.ky || '').trim();
+    if (!s || !k) return;
+    nsMapSacn[s + '|' + k] = (nsMapSacn[s + '|' + k] || 0) + Number(pn.amount || 0);
+  });
+
   REV_SACN = {
     ok: true, dims: dims, kpi: kpi, kpiPrev: kpiPrev, byDate: byDate,
+    rows: cur, planSites: planSitesSacn, nsMap: nsMapSacn,
     periodCompare: periodCompare, bySite: bySite, byNhomSP: byNhom, byKenh: byKenh,
     byVung: byVung, byLoaiCH: byLoaiCH,
     byNVKD: byNVKD, byKhachHang: byKHSacnFinal, byLyDoTraHang: byLyDo,
@@ -5086,6 +5114,31 @@ function rev_buildSiteDetail(dims, cur, f, opexItems, huyReport) {
   });
   return siteDetail;
 }
+function sacn_renderShareInner(mode, totAM1, totAM2) {
+  if (mode === 'both') {
+    return '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:6px;">' +
+      '<div style="background:#FAFBFB;padding:8px;border-radius:8px;border:1px solid #E2EBE6;">' +
+        '<div style="text-align:center;font-size:11px;font-weight:700;color:#046A38;margin-bottom:4px;text-transform:uppercase;">AM1 (Lãi gộp): ' + fmtMoney(totAM1) + '</div>' +
+        '<div class="cbox" style="height:230px;"><canvas id="sChRevAM1Share"></canvas></div>' +
+      '</div>' +
+      '<div style="background:#FAFBFB;padding:8px;border-radius:8px;border:1px solid #E2EBE6;">' +
+        '<div style="text-align:center;font-size:11px;font-weight:700;color:#046A38;margin-bottom:4px;text-transform:uppercase;">Lãi AM2: ' + fmtMoney(totAM2) + '</div>' +
+        '<div class="cbox" style="height:230px;"><canvas id="sChRevAM2Share"></canvas></div>' +
+      '</div>' +
+    '</div>';
+  } else if (mode === 'am2') {
+    return '<div style="margin-top:6px;">' +
+      '<div style="text-align:center;font-size:11.5px;font-weight:700;color:#046A38;margin-bottom:6px;text-transform:uppercase;">Tổng Lãi AM2: ' + fmtMoney(totAM2) + '</div>' +
+      '<div class="cbox" style="height:250px;"><canvas id="sChRevAM2Share"></canvas></div>' +
+    '</div>';
+  } else {
+    return '<div style="margin-top:6px;">' +
+      '<div style="text-align:center;font-size:11.5px;font-weight:700;color:#046A38;margin-bottom:6px;text-transform:uppercase;">Tổng Lãi gộp AM1: ' + fmtMoney(totAM1) + '</div>' +
+      '<div class="cbox" style="height:250px;"><canvas id="sChRevAM1Share"></canvas></div>' +
+    '</div>';
+  }
+}
+
 function drawRevenueSacnEmpty(){
   var banner = akRevInfoBanner(
     'Số liệu theo hóa đơn đã xuất (các site mô hình SACN).',
@@ -5279,58 +5332,100 @@ function drawRevenueSacn(){
         '<button data-v="site" class="'+(RUI_SACN.barDim==='site'?'on':'')+'">Cửa hàng</button></div>')+
     '<div class="cbox"><canvas id="sChRevSite"></canvas></div></div>';
 
-  html += '<div class="card">'+cardHead(IC.stack,'Cơ cấu doanh thu',
-      '<div class="tg" id="sTgMix">'+
-        '<button data-v="nhomSP" class="'+(RUI_SACN.mixDim==='nhomSP'?'on':'')+'">Nhóm SP</button>'+
-        '<button data-v="nganhHang" class="'+(RUI_SACN.mixDim==='nganhHang'?'on':'')+'">Ngành hàng</button></div>')+
-    '<div class="cbox"><canvas id="sChRevMix"></canvas></div></div>';
+    // 1. Chart WATERFALL Cơ cấu lãi (DT → FC → NS → AM2) (5 cột)
+  var totDT_Sacn = k.netRevenue || 0;
+  var totFC_Sacn = k.foodCost || 0;
+  var totAM1_Sacn = k.am1 !== undefined ? k.am1 : (totDT_Sacn - totFC_Sacn);
+  var totNS_Sacn = k.ns || 0;
+  var totAM2_Sacn = k.am2 !== undefined ? k.am2 : (totAM1_Sacn - totNS_Sacn);
 
-  html += '<div class="card">'+cardHead(IC.trash,
-      (RUI_SACN.huyMode==='nvl'
-        ? 'Tỷ lệ hủy NVL-BTP'+(RUI_SACN.huyDim==='day'?' theo ngày':' theo cửa hàng')
-        : 'Tỷ lệ hủy hàng theo cửa hàng (ngưỡng '+ng.huyPct.toFixed(2).replace('.',',')+'%)'),
-      '<div class="tg" id="sTgHuyMode" style="margin-right:6px">'+
-        '<button data-v="suat" class="'+(RUI_SACN.huyMode!=='nvl'?'on':'')+'">Suất hủy</button>'+
-        '<button data-v="nvl" class="'+(RUI_SACN.huyMode==='nvl'?'on':'')+'">NVL-BTP</button></div>'+
-      '<div class="tg'+(RUI_SACN.huyMode==='nvl'?'':' hide')+'" id="sTgHuyDim">'+
-        '<button data-v="site" class="'+(RUI_SACN.huyDim!=='day'?'on':'')+'">Theo site</button>'+
-        '<button data-v="day" class="'+(RUI_SACN.huyDim==='day'?'on':'')+'">Theo ngày</button></div>')+
-    '<div class="cbox"><canvas id="sChRevHuy"></canvas></div>'+
-    (RUI_SACN.huyMode==='nvl'
-      ? '<div style="font-size:11px;color:#A8A8A8;margin-top:6px">Kg tiêu hủy · Giá trị · % trên doanh thu thuần (MB51 Goods Issue)</div>'
-      : '')+
-    '</div>';
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18M7 16l4-4 4 4 6-6"/></svg> Cơ cấu lãi (DT → FC → NS → AM2)</h3>' +
+        '<span style="font-size:11px;color:#888;">Thác nước biến động: Doanh thu → Giá vốn → Lãi gộp AM1 → Nhân sự → Lãi AM2</span>' +
+      '</div>' +
+      '<div style="text-align:right;">' +
+        '<div style="font-size:10.5px;color:var(--muted);">Lãi AM2</div>' +
+        '<div style="font-size:13.5px;font-weight:800;color:' + (totAM2_Sacn >= 0 ? '#046A38' : '#C0342C') + ';" id="sWfAM2Val">' + fmtMoney(totAM2_Sacn) + '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox" style="height:280px"><canvas id="sChRevWaterfall"></canvas></div>' +
+  '</div>';
 
-  var isFcNhomSacn = RUI_SACN.mixChartMode === 'fcNhom';
-  html += '<div class="card">'+cardHead(
-      isFcNhomSacn ? IC.line : IC.stack,
-      isFcNhomSacn ? 'Food cost % theo nhóm sản phẩm' : 'Doanh thu theo kênh bán hàng',
-      '<div class="tg" id="sTgMixChart">'+
-        '<button data-v="kenh" class="'+(!isFcNhomSacn?'on':'')+'">Kênh bán hàng</button>'+
-        '<button data-v="fcNhom" class="'+(isFcNhomSacn?'on':'')+'">FC% nhóm SP</button>'+
-      '</div>')+
-    '<div class="cbox"><canvas id="sChRevKenhMix"></canvas></div></div>';
+  // 2. Xu hướng AM1 & Biên AM1 % theo kỳ (có nút chuyển đổi qua lại AM1 / AM2)
+  var trendViewSacn = RUI_SACN.trendView || 'am1';
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3 id="sTrendTitle"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg> ' + (trendViewSacn === 'am2' ? 'Xu hướng Lãi AM2 & Biên AM2 %' : 'Xu hướng AM1 & Biên AM1 %') + '</h3>' +
+        '<span style="font-size:11px;color:#888;" id="sTrendSub">' + (trendViewSacn === 'am2' ? 'Lãi AM2 (trục trái VNĐ) | Biên AM2 % (trục phải %)' : 'AM1 (trục trái VNĐ) | Biên AM1 % (trục phải %)') + '</span>' +
+      '</div>' +
+      '<div class="tg" id="sTgTrendView">' +
+        '<button data-view="am1" class="' + (trendViewSacn === 'am1' ? 'on' : '') + '">AM1 & Biên AM1 %</button>' +
+        '<button data-view="am2" class="' + (trendViewSacn === 'am2' ? 'on' : '') + '">AM2 & Biên AM2 %</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox" style="height:280px"><canvas id="sChRevTrendCombined"></canvas></div>' +
+  '</div>';
 
-  var isLoaiSacn = RUI_SACN.geoMode === 'loai';
-  html += '<div class="card">'+cardHead(
-      IC.bars,
-      isLoaiSacn ? 'Hiệu quả theo Loại cửa hàng' : 'Hiệu quả theo Vùng miền',
-      '<div class="tg" id="sTgGeo">'+
-        '<button data-v="vung" class="'+(!isLoaiSacn?'on':'')+'">Theo Vùng miền</button>'+
-        '<button data-v="loai" class="'+(isLoaiSacn?'on':'')+'">Theo Loại cửa hàng</button>'+
-      '</div>')+
-    '<div class="cbox"><canvas id="sChRevGeo"></canvas></div></div>';
+  // 3. Tỷ trọng đóng góp AM1 & AM2 từng Site
+  var shareModeSacn = RUI_SACN.shareMode || 'both';
+  html += '<div class="card">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.21 15.89A10 10 0 118 2.83M22 12A10 10 0 0012 2v10z"/></svg> Tỷ trọng đóng góp AM1 & AM2 từng Site</h3>' +
+        '<span style="font-size:11px;color:#888;">Tương quan chuyển dịch từ Lãi gộp (AM1) sang Lãi AM2</span>' +
+      '</div>' +
+      '<div class="tg" id="sTgShareMode">' +
+        '<button type="button" data-mode="both" class="' + (shareModeSacn === 'both' ? 'on' : '') + '">AM1 & AM2</button>' +
+        '<button type="button" data-mode="am1" class="' + (shareModeSacn === 'am1' ? 'on' : '') + '">Chỉ AM1</button>' +
+        '<button type="button" data-mode="am2" class="' + (shareModeSacn === 'am2' ? 'on' : '') + '">Chỉ AM2</button>' +
+      '</div>' +
+    '</div>' +
+    '<div id="sShareCanvasWrap">' + sacn_renderShareInner(shareModeSacn, totAM1_Sacn, totAM2_Sacn) + '</div>' +
+    '<div id="sAM1ShareLegend" style="margin-top:10px;display:flex;flex-wrap:wrap;gap:8px 12px;font-size:11px;max-height:160px;overflow-y:auto;padding-top:8px;border-top:1px dashed #E5E7EB;"></div>' +
+  '</div>';
+
+  // 4. Số lượng · Doanh thu · Food cost · AM1 · AM2 theo thời gian
+  var siteMetricGranSacn = RUI_SACN.siteMetricGran || 'month';
+  html += '<div class="card">' +
+    '<div class="card-t" style="flex-wrap:wrap;gap:8px;">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg> Số lượng · Doanh thu · Food cost · AM1 · AM2 theo thời gian</h3>' +
+        '<span style="font-size:11px;color:var(--muted);" id="sSiteMetricSub">Trục X: Thời gian theo kỳ lọc · Grouped bar tiền (trục trái VNĐ) & Line số lượng suất (trục phải)</span>' +
+      '</div>' +
+      '<div class="tg" id="sTgSiteMetricGran">' +
+        '<button type="button" data-v="week" class="' + (siteMetricGranSacn === 'week' ? 'on' : '') + '">TUẦN</button>' +
+        '<button type="button" data-v="month" class="' + (siteMetricGranSacn === 'month' ? 'on' : '') + '">THÁNG</button>' +
+        '<button type="button" data-v="quarter" class="' + (siteMetricGranSacn === 'quarter' ? 'on' : '') + '">QUÝ</button>' +
+        '<button type="button" data-v="year" class="' + (siteMetricGranSacn === 'year' ? 'on' : '') + '">NĂM</button>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox" style="height:320px"><canvas id="sChRevSiteMetrics"></canvas></div>' +
+  '</div>';
   html += '</div>';
 
-  html += '<div class="card" style="margin-top:13px">'+
-    cardHead(IC.line,'So sánh Doanh thu • Lãi gộp • Food cost % theo kỳ',
-      '<div class="tg" id="sTgPeriod">'+
-        '<button data-v="day" class="'+(RUI_SACN.periodGran==='day'?'on':'')+'">Ngày</button>'+
-        '<button data-v="week" class="'+(RUI_SACN.periodGran==='week'?'on':'')+'">Tuần</button>'+
-        '<button data-v="month" class="'+(RUI_SACN.periodGran==='month'?'on':'')+'">Tháng</button>'+
-        '<button data-v="quarter" class="'+(RUI_SACN.periodGran==='quarter'?'on':'')+'">Quý</button>'+
-        '<button data-v="year" class="'+(RUI_SACN.periodGran==='year'?'on':'')+'">Năm</button></div>')+
-    '<div class="cbox tall"><canvas id="sChRevPeriod"></canvas></div></div>';
+  // 5. Phân tích Doanh thu, Food Cost & Biên AM1, AM2 theo Site
+  var comboSortSacn = RUI_SACN.comboSort || 'dt';
+  html += '<div class="card" style="margin-top:13px">' +
+    '<div class="card-t">' +
+      '<div>' +
+        '<h3><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20V10M18 20V4M6 20v-4"/></svg> Phân tích Doanh thu, Food Cost & Biên AM1, AM2 theo Site</h3>' +
+        '<span style="font-size:11px;color:#888;">2 Cột: Doanh thu & Food Cost (trục trái VNĐ) | Line liền: Biên AM1 % | Line nét đứt: Biên AM2 % (trục phải %) — Rê chuột để xem giá trị chi tiết</span>' +
+      '</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;">' +
+        '<span style="font-size:11px;color:#888;">Sắp xếp theo:</span>' +
+        '<div class="tg" id="sTgComboSort">' +
+          '<button data-sort="dt" class="' + (comboSortSacn === 'dt' ? 'on' : '') + '">Doanh thu</button>' +
+          '<button data-sort="fc" class="' + (comboSortSacn === 'fc' ? 'on' : '') + '">Food Cost</button>' +
+          '<button data-sort="am1" class="' + (comboSortSacn === 'am1' ? 'on' : '') + '">AM1</button>' +
+          '<button data-sort="am2" class="' + (comboSortSacn === 'am2' ? 'on' : '') + '">AM2</button>' +
+        '</div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="cbox tall"><canvas id="sChRevComboSite"></canvas></div>' +
+  '</div>';
 
   html += '<div class="card" style="margin-top:13px">'+
     cardHead(IC.grid,'Hiệu quả theo cửa hàng — bấm để xem chi tiết','')+
@@ -5381,13 +5476,13 @@ function drawRevenueSacn(){
   document.getElementById('tab-sacn').innerHTML = html;
 
   var safe = function(name, fn){ try { fn(); } catch(e){ console.error('Lỗi vẽ (SACN) '+name+':', e); } };
-  safe('trend',   drawRevTrendSacn);
-  safe('site',    drawRevSiteSacn);
-  safe('mix',     drawRevMixSacn);
-  safe('huy',     drawRevHuySacn);
-  safe('kenhMix', drawRevKenhMixSacn);
-  safe('geo',     drawRevGeoSacn);
-  safe('period',  drawRevPeriodSacn);
+  safe('trend',         drawRevTrendSacn);
+  safe('site',          drawRevSiteSacn);
+  safe('waterfall',     drawRevWaterfallSacn);
+  safe('trendCombined', drawRevTrendCombinedSacn);
+  safe('share',         drawRevShareChartsSacn);
+  safe('siteMetrics',   drawRevSiteMetricsSacn);
+  safe('comboSite',     drawRevComboSiteSacn);
   if (RUI_SACN.drillSite) safe('drill', function(){ renderRevDrillSacn(RUI_SACN.drillSite); });
   bindRevenueEventsSacn();
 }
@@ -6215,6 +6310,879 @@ function renderRevDrillSacn(site){
   box.innerHTML = h;
 }
 
+// ===== CÁC HÀM VẼ BIỂU ĐỒ MỚI CHO TAB SACN (ĐỒNG BỘ THEO TAB DOANH THU ƯỚC TÍNH) =====
+
+function drawRevWaterfallSacn() {
+  destroyChart('sChRevWaterfall');
+  var ctx = ctxOf('sChRevWaterfall');
+  if (!ctx || !REV_SACN || !REV_SACN.kpi) return;
+
+  var k = REV_SACN.kpi;
+  var totDT = k.netRevenue || 0;
+  var totFC = k.foodCost || 0;
+  var totAM1 = k.am1 !== undefined ? k.am1 : (totDT - totFC);
+  var totNS = k.ns || 0;
+  var totAM2 = k.am2 !== undefined ? k.am2 : (totAM1 - totNS);
+
+  var labels = [
+    '1. Doanh thu',
+    '2. Food cost',
+    '3. Lãi gộp AM1',
+    '4. Chi phí NS',
+    '5. Lãi AM2'
+  ];
+
+  var floatingData = [
+    [0, totDT],
+    [totAM1, totDT],
+    [0, totAM1],
+    [totAM2, totAM1],
+    totAM2 >= 0 ? [0, totAM2] : [totAM2, 0]
+  ];
+
+  var bgColors = [
+    '#046A38',
+    '#FF6720',
+    '#7C3AED',
+    '#D97706',
+    totAM2 >= 0 ? '#2563EB' : '#C0342C'
+  ];
+
+  var borderColors = bgColors.slice();
+
+  CHARTS.sChRevWaterfall = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [{
+        label: 'Giá trị (VNĐ)',
+        data: floatingData,
+        backgroundColor: bgColors,
+        borderColor: borderColors,
+        borderWidth: 1.5,
+        borderRadius: 4,
+        barPercentage: 0.6
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'nearest', intersect: true },
+      plugins: {
+        legend: { display: false },
+        tooltip: Object.assign({}, TIP_STYLE, {
+          callbacks: {
+            title: function(items) {
+              return items.length ? items[0].label : '';
+            },
+            label: function(c) {
+              var idx = c.dataIndex;
+              if (idx === 0) return 'Doanh thu thuần: ' + fmtMoney(totDT);
+              if (idx === 1) {
+                var pctFC = totDT > 0 ? (totFC / totDT * 100).toFixed(1) : '0';
+                return 'Food cost (-): ' + fmtMoney(totFC) + ' (' + pctFC + '% DT)';
+              }
+              if (idx === 2) {
+                var pctAM1 = totDT > 0 ? (totAM1 / totDT * 100).toFixed(1) : '0';
+                return 'Lãi gộp AM1: ' + fmtMoney(totAM1) + ' (' + pctAM1 + '% DT)';
+              }
+              if (idx === 3) {
+                var pctNS = totDT > 0 ? (totNS / totDT * 100).toFixed(1) : '0';
+                return 'Chi phí Nhân sự (-): ' + fmtMoney(totNS) + ' (' + pctNS + '% DT)';
+              }
+              if (idx === 4) {
+                var pctAM2 = totDT > 0 ? (totAM2 / totDT * 100).toFixed(1) : '0';
+                return 'Lãi AM2: ' + fmtMoney(totAM2) + ' (' + pctAM2 + '% DT)';
+              }
+              return '';
+            }
+          }
+        })
+      },
+      scales: {
+        x: {
+          ticks: { font: { family: "'Be Vietnam Pro', sans-serif", size: 11, weight: '500' } },
+          grid: { display: false }
+        },
+        y: {
+          ticks: {
+            font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+            callback: function(v) { return fmtMoney(v); }
+          },
+          grid: { color: '#F0F0F0' }
+        }
+      }
+    },
+    plugins: [{
+      id: 'waterfallConnectorsSacn',
+      afterDraw: function(chart) {
+        var ctxDraw = chart.ctx;
+        var meta = chart.getDatasetMeta(0);
+        var yScale = chart.scales.y;
+        if (!meta || !meta.data || meta.data.length < 5 || !yScale) return;
+
+        ctxDraw.save();
+        ctxDraw.beginPath();
+        ctxDraw.setLineDash([3, 3]);
+        ctxDraw.strokeStyle = '#9CA3AF';
+        ctxDraw.lineWidth = 1.2;
+
+        var connValues = [totDT, totAM1, totAM1, totAM2];
+        for (var i = 0; i < 4; i++) {
+          var b1 = meta.data[i];
+          var b2 = meta.data[i + 1];
+          if (b1 && b2) {
+            var py = yScale.getPixelForValue(connValues[i]);
+            var x1 = b1.x + (b1.width ? b1.width / 2 : 15);
+            var x2 = b2.x - (b2.width ? b2.width / 2 : 15);
+            ctxDraw.moveTo(x1, py);
+            ctxDraw.lineTo(x2, py);
+          }
+        }
+        ctxDraw.stroke();
+        ctxDraw.restore();
+      }
+    }]
+  });
+}
+
+function drawRevTrendCombinedSacn() {
+  destroyChart('sChRevTrendCombined');
+  var ctx = ctxOf('sChRevTrendCombined');
+  if (!ctx || !REV_SACN) return;
+
+  var rows = REV_SACN.rows || [];
+  var planSites = REV_SACN.planSites || [];
+  var nsMap = REV_SACN.nsMap || {};
+  var viewMode = RUI_SACN.trendView || 'am1';
+
+  var dates = Object.keys(rows.reduce(function(acc, r){ if (r.ngay) acc[r.ngay] = 1; return acc; }, {}));
+  var isWeek = dates.length > 0 && dates.length <= 45;
+
+  var bucketMap = {};
+  rows.forEach(function(r) {
+    if (!r.ngay && !r.ky) return;
+    var k, lbl, mArr = [];
+    if (isWeek) {
+      var w = est_getWeekInfo(r.ngay);
+      k = w.key;
+      lbl = w.label;
+      mArr = [w.month];
+    } else {
+      k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
+      lbl = k ? (k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
+      mArr = [k];
+    }
+
+    if (!bucketMap[k]) {
+      bucketMap[k] = { key: k, label: lbl, months: mArr, dt: 0, fc: 0, sites: new Set() };
+    }
+    var lineNet = r.netRevenue !== undefined ? r.netRevenue : (r.isReturn ? -(r.thanhTien||0) : ((r.thanhTien||0)-(r.ckTruocThue||0)));
+    var lineCost = r.foodCost !== undefined ? r.foodCost : (r.giaVon || 0);
+    bucketMap[k].dt += lineNet;
+    bucketMap[k].fc += lineCost;
+    if (r.site) bucketMap[k].sites.add(r.site);
+  });
+
+  var sortedKeys = Object.keys(bucketMap).sort();
+  var labels = [];
+  var am1Data = [];
+  var bienAM1Data = [];
+  var am2Data = [];
+  var bienAM2Data = [];
+
+  sortedKeys.forEach(function(k) {
+    var b = bucketMap[k];
+    labels.push(b.label);
+    var am1 = b.dt - b.fc;
+    am1Data.push(Math.round(am1));
+    var bien1 = b.dt > 0 ? (am1 / b.dt * 100) : 0;
+    bienAM1Data.push(Number(bien1.toFixed(1)));
+
+    var nsVal = 0;
+    b.sites.forEach(function(site) {
+      var ps = est_matchPlanSite(site, planSites);
+      (b.months || []).forEach(function(m) {
+        var mNS = nsMap[ps + '|' + m] || 0;
+        if (isWeek) mNS = mNS / 4.33;
+        nsVal += mNS;
+      });
+    });
+
+    var am2 = am1 - nsVal;
+    var bien2 = b.dt > 0 ? (am2 / b.dt * 100) : 0;
+    am2Data.push(Math.round(am2));
+    bienAM2Data.push(Number(bien2.toFixed(1)));
+  });
+
+  var commonOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    interaction: { mode: 'index', intersect: false, axis: 'x' },
+    hover: { mode: 'index', intersect: false },
+    plugins: {
+      legend: {
+        display: true,
+        position: 'top',
+        labels: {
+          font: { family: "'Be Vietnam Pro', sans-serif", size: 11, weight: '700' },
+          usePointStyle: true,
+          boxWidth: 8,
+          padding: 12
+        }
+      },
+      tooltip: Object.assign({}, TIP_STYLE, {
+        callbacks: {
+          label: function(c) {
+            if (c.dataset.yAxisID === 'y1') return c.dataset.label + ': ' + fmtPct1(c.parsed.y) + '%';
+            return c.dataset.label + ': ' + fmtMoney(c.parsed.y);
+          }
+        }
+      })
+    },
+    scales: {
+      x: {
+        ticks: { font: { family: "'Be Vietnam Pro', sans-serif", size: 10.5, weight: '600' } },
+        grid: { display: false }
+      },
+      y: {
+        type: 'linear',
+        position: 'left',
+        ticks: {
+          font: { family: "'JetBrains Mono', monospace", size: 10.5, weight: '600' },
+          callback: function(v) { return fmtMoney(v); }
+        },
+        grid: { color: '#F0F0F0' }
+      },
+      y1: {
+        type: 'linear',
+        position: 'right',
+        grid: { drawOnChartArea: false },
+        ticks: {
+          font: { family: "'JetBrains Mono', monospace", size: 10.5, weight: '600' },
+          precision: 1,
+          callback: function(v) { return fmtPct1(v) + '%'; }
+        }
+      }
+    }
+  };
+
+  if (viewMode === 'am2') {
+    CHARTS.sChRevTrendCombined = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Lãi AM2',
+            data: am2Data,
+            borderColor: '#046A38',
+            backgroundColor: 'rgba(4, 106, 56, 0.08)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#046A38',
+            yAxisID: 'y'
+          },
+          {
+            label: 'Biên AM2 %',
+            data: bienAM2Data,
+            borderColor: '#FF6720',
+            backgroundColor: '#FF6720',
+            borderWidth: 2.5,
+            borderDash: [6, 4],
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#FF6720',
+            tension: 0.3,
+            fill: false,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: commonOptions
+    });
+  } else {
+    CHARTS.sChRevTrendCombined = new Chart(ctx, {
+      type: 'line',
+      data: {
+        labels: labels,
+        datasets: [
+          {
+            label: 'Lãi gộp AM1',
+            data: am1Data,
+            borderColor: '#046A38',
+            backgroundColor: 'rgba(4, 106, 56, 0.08)',
+            fill: true,
+            tension: 0.3,
+            borderWidth: 2.5,
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#046A38',
+            yAxisID: 'y'
+          },
+          {
+            label: 'Biên AM1 %',
+            data: bienAM1Data,
+            borderColor: '#FF6720',
+            backgroundColor: '#FF6720',
+            borderWidth: 2.5,
+            borderDash: [6, 4],
+            pointRadius: 4,
+            pointHoverRadius: 6,
+            pointBackgroundColor: '#FF6720',
+            pointBorderColor: '#fff',
+            pointBorderWidth: 1.5,
+            tension: 0.3,
+            fill: false,
+            yAxisID: 'y1'
+          }
+        ]
+      },
+      options: commonOptions
+    });
+  }
+}
+
+function drawRevShareChartsSacn() {
+  destroyChart('sChRevAM1Share');
+  destroyChart('sChRevAM2Share');
+
+  var ctxAM1 = ctxOf('sChRevAM1Share');
+  var ctxAM2 = ctxOf('sChRevAM2Share');
+  if (!REV_SACN) return;
+
+  var siteList = REV_SACN.bySite || [];
+  var shareMode = RUI_SACN.shareMode || 'both';
+
+  var SACN_SITE_PALETTE = [
+    '#046A38', '#FF6720', '#2563EB', '#D97706',
+    '#7C3AED', '#64748B', '#DC2626', '#0891B2'
+  ];
+
+  var uniqueSites = Array.from(new Set(siteList.map(function(s){ return s.site || s.key; }))).sort(function(a, b){
+    return a.localeCompare(b, 'vi');
+  });
+  var siteColorMap = {};
+  uniqueSites.forEach(function(siteName, idx){
+    siteColorMap[siteName] = SACN_SITE_PALETTE[idx % SACN_SITE_PALETTE.length];
+  });
+
+  var posAM1 = 0, posAM2 = 0;
+  siteList.forEach(function(s){
+    if (s.am1 > 0) posAM1 += s.am1;
+    if (s.am2 > 0) posAM2 += s.am2;
+  });
+
+  if (ctxAM1 && (shareMode === 'both' || shareMode === 'am1')) {
+    var am1Sites = siteList.filter(function(s){ return (s.am1 || 0) > 0; }).sort(function(a,b){ return (b.am1||0) - (a.am1||0); });
+    var am1Labels = am1Sites.map(function(s){ return s.site || s.key; });
+    var am1Data = am1Sites.map(function(s){ return Math.round(s.am1 || 0); });
+    var am1Colors = am1Sites.map(function(s){ return siteColorMap[s.site || s.key] || '#999'; });
+
+    CHARTS.sChRevAM1Share = new Chart(ctxAM1, {
+      type: 'doughnut',
+      data: {
+        labels: am1Labels,
+        datasets: [{
+          data: am1Data,
+          backgroundColor: am1Colors,
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, TIP_STYLE, {
+            callbacks: {
+              label: function(c){
+                var s = am1Sites[c.dataIndex];
+                var pct1 = posAM1 > 0 ? (s.am1 / posAM1 * 100).toFixed(1) : '0';
+                var pct2 = posAM2 > 0 ? (Math.max(0, s.am2) / posAM2 * 100).toFixed(1) : '0';
+                return [
+                  ' ' + c.label,
+                  ' • Tỷ trọng AM1: ' + pct1 + '% (' + fmtMoney(s.am1) + ')',
+                  ' • Tỷ trọng Lãi AM2: ' + pct2 + '% (' + fmtMoney(s.am2) + ')',
+                  ' • Chi phí nhân sự: ' + fmtMoney(s.ns || 0)
+                ];
+              }
+            }
+          })
+        },
+        cutout: shareMode === 'both' ? '55%' : '62%'
+      }
+    });
+  }
+
+  if (ctxAM2 && (shareMode === 'both' || shareMode === 'am2')) {
+    var am2Sites = siteList.filter(function(s){ return (s.am2 || 0) > 0; }).sort(function(a,b){ return (b.am2||0) - (a.am2||0); });
+    var am2Labels = am2Sites.map(function(s){ return s.site || s.key; });
+    var am2Data = am2Sites.map(function(s){ return Math.round(s.am2 || 0); });
+    var am2Colors = am2Sites.map(function(s){ return siteColorMap[s.site || s.key] || '#999'; });
+
+    CHARTS.sChRevAM2Share = new Chart(ctxAM2, {
+      type: 'doughnut',
+      data: {
+        labels: am2Labels,
+        datasets: [{
+          data: am2Data,
+          backgroundColor: am2Colors,
+          borderWidth: 2,
+          borderColor: '#fff'
+        }]
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: Object.assign({}, TIP_STYLE, {
+            callbacks: {
+              label: function(c){
+                var s = am2Sites[c.dataIndex];
+                var pct2 = posAM2 > 0 ? (s.am2 / posAM2 * 100).toFixed(1) : '0';
+                var pct1 = posAM1 > 0 ? (Math.max(0, s.am1) / posAM1 * 100).toFixed(1) : '0';
+                return [
+                  ' ' + c.label,
+                  ' • Tỷ trọng Lãi AM2: ' + pct2 + '% (' + fmtMoney(s.am2) + ')',
+                  ' • Tỷ trọng AM1: ' + pct1 + '% (' + fmtMoney(s.am1) + ')',
+                  ' • Chi phí nhân sự: ' + fmtMoney(s.ns || 0)
+                ];
+              }
+            }
+          })
+        },
+        cutout: shareMode === 'both' ? '55%' : '62%'
+      }
+    });
+  }
+
+  var legendBox = document.getElementById('sAM1ShareLegend');
+  if (legendBox){
+    var sortedForLegend = siteList.slice().sort(function(a,b){ return (b.am1||0) - (a.am1||0); });
+    var sitesForLegend = sortedForLegend.filter(function(s){ return (s.am1||0) > 0 || (s.am2||0) > 0; });
+    legendBox.innerHTML = sitesForLegend.map(function(s){
+      var siteName = s.site || s.key;
+      var col = siteColorMap[siteName] || '#666';
+      var pct1 = posAM1 > 0 ? (Math.max(0, s.am1) / posAM1 * 100).toFixed(1) : '0';
+      var pct2 = posAM2 > 0 ? (Math.max(0, s.am2) / posAM2 * 100).toFixed(1) : '0';
+      if (shareMode === 'both') {
+        return '<div style="background:#FFF;padding:5px 9px;border-radius:6px;border:1px solid #E5E7EB;display:inline-flex;align-items:center;gap:6px;font-size:11px;">' +
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + col + ';display:inline-block;flex-shrink:0;"></span>' +
+          '<strong style="color:var(--text);">' + esc(siteName) + ':</strong>' +
+          '<span style="color:#046A38;font-weight:700;">AM1 ' + pct1 + '%</span>' +
+          '<span style="color:var(--muted);">→</span>' +
+          '<span style="color:#046A38;font-weight:700;">AM2 ' + pct2 + '%</span>' +
+        '</div>';
+      } else if (shareMode === 'am2') {
+        return '<div style="background:#FFF;padding:5px 9px;border-radius:6px;border:1px solid #E5E7EB;display:inline-flex;align-items:center;gap:6px;font-size:11px;">' +
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + col + ';display:inline-block;flex-shrink:0;"></span>' +
+          '<strong style="color:var(--text);">' + esc(siteName) + ':</strong>' +
+          '<span style="color:#046A38;font-weight:700;">Lãi AM2: ' + fmtMoney(s.am2) + ' (' + pct2 + '%)</span>' +
+        '</div>';
+      } else {
+        return '<div style="background:#FFF;padding:5px 9px;border-radius:6px;border:1px solid #E5E7EB;display:inline-flex;align-items:center;gap:6px;font-size:11px;">' +
+          '<span style="width:10px;height:10px;border-radius:50%;background:' + col + ';display:inline-block;flex-shrink:0;"></span>' +
+          '<strong style="color:var(--text);">' + esc(siteName) + ':</strong>' +
+          '<span style="color:#046A38;font-weight:700;">AM1: ' + fmtMoney(s.am1) + ' (' + pct1 + '%)</span>' +
+        '</div>';
+      }
+    }).join('');
+  }
+}
+
+function drawRevSiteMetricsSacn() {
+  destroyChart('sChRevSiteMetrics');
+  var ctx = ctxOf('sChRevSiteMetrics');
+  if (!ctx || !REV_SACN) return;
+
+  var currentGran = RUI_SACN.siteMetricGran || 'month';
+  var rows = REV_SACN.rows || [];
+  var planSites = REV_SACN.planSites || [];
+  var nsMap = REV_SACN.nsMap || {};
+
+  var granLabel = currentGran === 'week' ? 'Tuần' : (currentGran === 'quarter' ? 'Quý' : (currentGran === 'year' ? 'Năm' : 'Tháng'));
+
+  var bucketMap = {};
+  rows.forEach(function(r){
+    if (!r.ngay && !r.ky) return;
+    var k, lbl, mArr = [];
+    if (currentGran === 'week') {
+      var w = est_getWeekInfo(r.ngay);
+      k = w.key;
+      lbl = w.label;
+      mArr = [w.month];
+    } else if (currentGran === 'quarter') {
+      var q = est_getQuarterInfo(r.ngay);
+      k = q.key;
+      lbl = 'Q' + q.quarter + '/' + q.year;
+      var qStartMonth = (q.quarter - 1) * 3 + 1;
+      mArr = [
+        q.year + '-' + ('0' + qStartMonth).slice(-2),
+        q.year + '-' + ('0' + (qStartMonth + 1)).slice(-2),
+        q.year + '-' + ('0' + (qStartMonth + 2)).slice(-2)
+      ];
+    } else if (currentGran === 'year') {
+      var yr = (r.ngay || r.ky || '').substring(0, 4);
+      k = yr;
+      lbl = yr;
+      for (var mi = 1; mi <= 12; mi++) {
+        mArr.push(yr + '-' + ('0' + mi).slice(-2));
+      }
+    } else {
+      k = (r.ngay ? r.ngay.substring(0, 7) : '') || r.ky || '';
+      lbl = k ? (k.substring(5, 7) + '/' + k.substring(0, 4)) : '';
+      mArr = [k];
+    }
+
+    if (!k) return;
+    if (!bucketMap[k]) {
+      bucketMap[k] = { key: k, label: lbl, months: mArr, dt: 0, fc: 0, suat: 0, sites: new Set() };
+    }
+    var lineNet = r.netRevenue !== undefined ? r.netRevenue : (r.isReturn ? -(r.thanhTien||0) : ((r.thanhTien||0)-(r.ckTruocThue||0)));
+    var lineCost = r.foodCost !== undefined ? r.foodCost : (r.giaVon || 0);
+    var lineSuat = (r.planPortionQty !== undefined ? r.planPortionQty : (r.portionQty !== undefined ? r.portionQty : (r.soLuong || 0)));
+    if (r.isReturn) lineSuat = -Math.abs(lineSuat);
+
+    bucketMap[k].dt += lineNet;
+    bucketMap[k].fc += lineCost;
+    bucketMap[k].suat += lineSuat;
+    if (r.site) bucketMap[k].sites.add(r.site);
+  });
+
+  var sortedKeys = Object.keys(bucketMap).sort();
+  if (currentGran === 'week' && sortedKeys.length > 24) {
+    sortedKeys = sortedKeys.slice(-24);
+  }
+
+  var bucketList = sortedKeys.map(function(k){
+    var b = bucketMap[k];
+    var am1 = b.dt - b.fc;
+    var nsVal = 0;
+    b.sites.forEach(function(site) {
+      var ps = est_matchPlanSite(site, planSites);
+      (b.months || []).forEach(function(m) {
+        var mNS = nsMap[ps + '|' + m] || 0;
+        if (currentGran === 'week') mNS = mNS / 4.33;
+        nsVal += mNS;
+      });
+    });
+    var am2 = am1 - nsVal;
+    return {
+      key: k,
+      label: b.label,
+      dt: Math.round(b.dt),
+      fc: Math.round(b.fc),
+      am1: Math.round(am1),
+      am2: Math.round(am2),
+      suat: Math.round(b.suat)
+    };
+  });
+
+  var subEl = document.getElementById('sSiteMetricSub');
+  if (subEl) {
+    subEl.textContent = 'Kỳ: ' + granLabel + ' (' + bucketList.length + ' ' + granLabel.toLowerCase() + ') · Cột tiền: Trục trái (VNĐ) · Đường số lượng: Trục phải (Suất)';
+  }
+
+  var labels = bucketList.map(function(b){ return b.label; });
+  var dtData = bucketList.map(function(b){ return b.dt; });
+  var fcData = bucketList.map(function(b){ return b.fc; });
+  var am1Data = bucketList.map(function(b){ return b.am1; });
+  var am2Data = bucketList.map(function(b){ return b.am2; });
+  var suatData = bucketList.map(function(b){ return b.suat; });
+
+  CHARTS.sChRevSiteMetrics = new Chart(ctx, {
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Doanh thu',
+          data: dtData,
+          backgroundColor: '#046A38',
+          borderColor: '#046A38',
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 2,
+          barPercentage: 0.8,
+          categoryPercentage: 0.8
+        },
+        {
+          type: 'bar',
+          label: 'Food cost',
+          data: fcData,
+          backgroundColor: '#FF6720',
+          borderColor: '#FF6720',
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 3,
+          barPercentage: 0.8,
+          categoryPercentage: 0.8
+        },
+        {
+          type: 'bar',
+          label: 'AM1 (Lãi gộp)',
+          data: am1Data,
+          backgroundColor: '#7C3AED',
+          borderColor: '#7C3AED',
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 4,
+          barPercentage: 0.8,
+          categoryPercentage: 0.8
+        },
+        {
+          type: 'bar',
+          label: 'AM2',
+          data: am2Data,
+          backgroundColor: '#D97706',
+          borderColor: '#D97706',
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 5,
+          barPercentage: 0.8,
+          categoryPercentage: 0.8
+        },
+        {
+          type: 'line',
+          label: 'Số lượng suất ăn',
+          data: suatData,
+          borderColor: '#2563EB',
+          backgroundColor: '#2563EB',
+          pointBackgroundColor: '#2563EB',
+          pointBorderColor: '#ffffff',
+          pointBorderWidth: 1.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2.5,
+          tension: 0.25,
+          yAxisID: 'y1',
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      hover: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { font: { family: "'Be Vietnam Pro', sans-serif", size: 11 }, usePointStyle: true, boxWidth: 10 }
+        },
+        tooltip: Object.assign({}, TIP_STYLE, {
+          callbacks: {
+            label: function(c){
+              if (c.dataset.type === 'line' || c.datasetIndex === 4) {
+                return ' ' + c.dataset.label + ': ' + fmt(c.parsed.y) + ' suất';
+              }
+              return ' ' + c.dataset.label + ': ' + fmtMoney(c.parsed.y);
+            }
+          }
+        })
+      },
+      scales: {
+        x: {
+          ticks: { font: { family: "'Be Vietnam Pro', sans-serif", size: 10.5 } },
+          grid: { display: false }
+        },
+        y: {
+          position: 'left',
+          ticks: {
+            font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+            callback: function(v){ return fmtMoney(v); }
+          },
+          grid: { color: '#F0F0F0' }
+        },
+        y1: {
+          position: 'right',
+          grid: { drawOnChartArea: false },
+          ticks: {
+            font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+            callback: function(v){ return fmt(v); }
+          }
+        }
+      }
+    }
+  });
+}
+
+function drawRevComboSiteSacn() {
+  destroyChart('sChRevComboSite');
+  var ctx = ctxOf('sChRevComboSite');
+  if (!ctx || !REV_SACN) return;
+
+  var siteList = (REV_SACN.bySite || []).slice();
+  var sortMode = RUI_SACN.comboSort || 'dt';
+
+  if (sortMode === 'am1'){
+    siteList.sort(function(a,b){ return (b.am1||0) - (a.am1||0); });
+  } else if (sortMode === 'am2'){
+    siteList.sort(function(a,b){ return (b.am2||0) - (a.am2||0); });
+  } else if (sortMode === 'fc'){
+    siteList.sort(function(a,b){ return (b.fc || b.foodCost || 0) - (a.fc || a.foodCost || 0); });
+  } else {
+    siteList.sort(function(a,b){ return (b.dt || b.netRevenue || 0) - (a.dt || a.netRevenue || 0); });
+  }
+
+  var labels = siteList.map(function(s){ return s.site || s.key; });
+  var dtData = siteList.map(function(s){ return Math.round(s.dt || s.netRevenue || 0); });
+  var fcData = siteList.map(function(s){ return Math.round(s.fc || s.foodCost || 0); });
+  var am1PctData = siteList.map(function(s){
+    var dt = s.dt || s.netRevenue || 0;
+    var am1 = s.am1 !== undefined ? s.am1 : (dt - (s.fc || s.foodCost || 0));
+    return Number((dt > 0 ? (am1 / dt * 100) : 0).toFixed(1));
+  });
+  var am2PctData = siteList.map(function(s){
+    var dt = s.dt || s.netRevenue || 0;
+    var am2 = s.am2 !== undefined ? s.am2 : 0;
+    return Number((dt > 0 ? (am2 / dt * 100) : 0).toFixed(1));
+  });
+
+  CHARTS.sChRevComboSite = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: labels,
+      datasets: [
+        {
+          type: 'bar',
+          label: 'Doanh thu (Cột)',
+          data: dtData,
+          backgroundColor: 'rgba(4, 106, 56, 0.85)',
+          borderColor: '#046A38',
+          borderWidth: 1,
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 3
+        },
+        {
+          type: 'bar',
+          label: 'Food Cost / Giá vốn (Cột)',
+          data: fcData,
+          backgroundColor: 'rgba(255, 103, 32, 0.85)',
+          borderColor: '#FF6720',
+          borderWidth: 1,
+          borderRadius: 4,
+          yAxisID: 'y',
+          order: 4
+        },
+        {
+          type: 'line',
+          label: 'Biên AM1 % (Line)',
+          data: am1PctData,
+          borderColor: '#7C3AED',
+          backgroundColor: '#7C3AED',
+          borderWidth: 2.5,
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+          yAxisID: 'y1',
+          order: 1
+        },
+        {
+          type: 'line',
+          label: 'Biên AM2 % (Line)',
+          data: am2PctData,
+          borderColor: '#2563EB',
+          backgroundColor: '#2563EB',
+          borderWidth: 2.5,
+          borderDash: [6, 4],
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          tension: 0.25,
+          yAxisID: 'y1',
+          order: 2
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { mode: 'index', intersect: false, axis: 'x' },
+      hover: { mode: 'index', intersect: false },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'top',
+          labels: { font: { family: "'Be Vietnam Pro', sans-serif", size: 11 }, usePointStyle: true, boxWidth: 10 }
+        },
+        tooltip: Object.assign({}, TIP_STYLE, {
+          callbacks: {
+            label: function(c){
+              var s = siteList[c.dataIndex];
+              if (!s) return ' ' + c.dataset.label + ': ' + c.formattedValue;
+              var dt = s.dt || s.netRevenue || 0;
+              var fc = s.fc || s.foodCost || 0;
+              var am1 = s.am1 !== undefined ? s.am1 : (dt - fc);
+              var am2 = s.am2 !== undefined ? s.am2 : 0;
+              if (c.datasetIndex === 0) {
+                return ' Doanh thu: ' + fmtMoney(dt);
+              } else if (c.datasetIndex === 1) {
+                var fcPct = dt > 0 ? (fc / dt * 100).toFixed(1) : '0';
+                return ' Food Cost (Giá vốn): ' + fmtMoney(fc) + ' (' + fcPct + '%)';
+              } else if (c.datasetIndex === 2) {
+                var am1Pct = (dt > 0 ? (am1 / dt * 100) : 0).toFixed(1);
+                return ' Biên AM1: ' + am1Pct + '%  —  Giá trị AM1: ' + fmtMoney(am1);
+              } else if (c.datasetIndex === 3) {
+                var am2Pct = (dt > 0 ? (am2 / dt * 100) : 0).toFixed(1);
+                return ' Biên AM2: ' + am2Pct + '%  —  Giá trị AM2: ' + fmtMoney(am2);
+              }
+              return ' ' + c.dataset.label + ': ' + c.formattedValue;
+            }
+          }
+        })
+      },
+      scales: {
+        x: {
+          ticks: {
+            font: { family: "'Be Vietnam Pro', sans-serif", size: 10.5 },
+            maxRotation: 25,
+            minRotation: 0,
+            autoSkip: false
+          },
+          grid: { display: false }
+        },
+        y: {
+          position: 'left',
+          title: {
+            display: true,
+            text: 'VNĐ (Doanh thu & Food Cost)',
+            font: { family: "'Be Vietnam Pro', sans-serif", size: 10.5, weight: '600' }
+          },
+          ticks: {
+            font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+            callback: function(v){ return fmtMoney(v); }
+          },
+          grid: { color: '#F0F0F0' }
+        },
+        y1: {
+          position: 'right',
+          title: {
+            display: true,
+            text: 'Tỷ lệ % (Biên AM1 & AM2)',
+            font: { family: "'Be Vietnam Pro', sans-serif", size: 10.5, weight: '600' }
+          },
+          grid: { drawOnChartArea: false },
+          suggestedMin: 0,
+          suggestedMax: 100,
+          ticks: {
+            font: { family: "'JetBrains Mono', monospace", size: 10.5 },
+            precision: 1,
+            callback: function(v){ return fmtPct1(v) + '%'; }
+          }
+        }
+      }
+    }
+  });
+}
+
 function bindRevenueEventsSacn(){
   var tgHuyMode = document.getElementById('sTgHuyMode');
   if (tgHuyMode) tgHuyMode.addEventListener('click', function(e){
@@ -6247,6 +7215,58 @@ function bindRevenueEventsSacn(){
     tgM.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
     drawRevMixSacn();
   });
+  // Toggle Xu hướng AM1 ↔ AM2 (SACN)
+  var tgTrendViewSacn = document.getElementById('sTgTrendView');
+  if (tgTrendViewSacn) tgTrendViewSacn.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.trendView = b.dataset.view;
+    tgTrendViewSacn.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var tTitle = document.getElementById('sTrendTitle');
+    var tSub = document.getElementById('sTrendSub');
+    if (tTitle) {
+      tTitle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 20V10M12 20V4M6 20v-6"/></svg> ' +
+        (RUI_SACN.trendView === 'am2' ? 'Xu hướng Lãi AM2 & Biên AM2 %' : 'Xu hướng AM1 & Biên AM1 %');
+    }
+    if (tSub) {
+      tSub.textContent = (RUI_SACN.trendView === 'am2' ? 'Lãi AM2 (trục trái VNĐ) | Biên AM2 % (trục phải %)' : 'AM1 (trục trái VNĐ) | Biên AM1 % (trục phải %)');
+    }
+    drawRevTrendCombinedSacn();
+  });
+
+  // Toggle Tỷ trọng đóng góp AM1 & AM2 mode (SACN)
+  var tgShareModeSacn = document.getElementById('sTgShareMode');
+  if (tgShareModeSacn) tgShareModeSacn.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.shareMode = b.dataset.mode;
+    tgShareModeSacn.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    var wrap = document.getElementById('sShareCanvasWrap');
+    if (wrap && REV_SACN && REV_SACN.kpi) {
+      var k = REV_SACN.kpi;
+      var totAM1 = k.am1 !== undefined ? k.am1 : ((k.netRevenue||0) - (k.foodCost||0));
+      var totAM2 = k.am2 !== undefined ? k.am2 : (totAM1 - (k.ns||0));
+      wrap.innerHTML = sacn_renderShareInner(RUI_SACN.shareMode, totAM1, totAM2);
+    }
+    drawRevShareChartsSacn();
+  });
+
+  // Toggle kỳ Granularity cho Site Metrics (SACN)
+  var tgSiteMetricGranSacn = document.getElementById('sTgSiteMetricGran');
+  if (tgSiteMetricGranSacn) tgSiteMetricGranSacn.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.siteMetricGran = b.dataset.v;
+    tgSiteMetricGranSacn.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    drawRevSiteMetricsSacn();
+  });
+
+  // Toggle Sắp xếp Combo Chart theo Site (SACN)
+  var tgComboSortSacn = document.getElementById('sTgComboSort');
+  if (tgComboSortSacn) tgComboSortSacn.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    RUI_SACN.comboSort = b.dataset.sort;
+    tgComboSortSacn.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x===b); });
+    drawRevComboSiteSacn();
+  });
+
   var tgBar = document.getElementById('sTgBarDim');
   if (tgBar) tgBar.addEventListener('click', function(e){
     var b = e.target.closest('button'); if (!b) return;
