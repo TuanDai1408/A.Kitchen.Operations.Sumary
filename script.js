@@ -15171,7 +15171,7 @@ var QLK = (function(){
     // Nếu chưa có trong cache và chưa đang tải: gọi API để lấy chứng từ chi tiết
     if (!cachedDocs && !D._detailLoading[code]) {
       D._detailLoading[code] = true;
-      callAPI('getWarehouseDetail', { material: code, from: f.from, to: f.to })
+      callAPI('getWarehouseDetail', { material: code, from: f.from, to: f.to, filters: JSON.stringify({ material: code, from: f.from, to: f.to }) })
         .then(function(detailRes){
           D._detailLoading[code] = false;
           var docs = (detailRes && detailRes.transactions) ? detailRes.transactions : [];
@@ -15243,6 +15243,7 @@ var QLK = (function(){
     if (artDocs && Array.isArray(artDocs)) {
       // Lọc danh sách chứng từ theo bộ lọc hiện tại của tab
       artTx = artDocs.filter(function(t){
+        if (t.article !== code && t.material !== code) return false;
         if (f.from && t.date && t.date < f.from) return false;
         if (f.to && t.date && t.date > f.to) return false;
         if (f.sites && f.sites.length && f.sites.indexOf(t.site_name || '') < 0 && f.sites.indexOf(t.site || '') < 0) return false;

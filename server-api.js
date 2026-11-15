@@ -2250,10 +2250,18 @@ export async function getWarehouseDetail(filtersParam) {
   } else if (typeof filtersParam === "object" && filtersParam !== null) {
     filters = filtersParam;
   }
+  if (filters.filters && typeof filters.filters === "string") {
+    try { filters = { ...filters, ...JSON.parse(filters.filters) }; } catch {}
+  } else if (filters.filters && typeof filters.filters === "object") {
+    filters = { ...filters, ...filters.filters };
+  }
 
-  const matCode = filters.material || filters.article || filters.code || "";
-  let q = supabase.from("mb51_material_docs").select("*");
-  if (matCode) q = q.eq("material", matCode);
+  const matCode = String(filters.material || filters.article || filters.code || filters.productCode || "").trim();
+  if (!matCode) {
+    return { success: true, material: "", transactions: [] };
+  }
+
+  let q = supabase.from("mb51_material_docs").select("*").eq("material", matCode);
   if (filters.from) q = q.gte("posting_date", filters.from);
   if (filters.to) q = q.lte("posting_date", filters.to);
   if (filters.site) q = q.eq("site", filters.site);

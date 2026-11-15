@@ -2,7 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
-import { getWarehouseDashboardData, getWarehouseSummary } from "../server-api.js";
+import { getWarehouseDashboardData, getWarehouseSummary, getWarehouseDetail } from "../server-api.js";
 
 test("Warehouse Recent Month Optimization - only materials with documents in period are returned by default", async () => {
   const res = await getWarehouseDashboardData({
@@ -60,4 +60,30 @@ test("Warehouse Recent Month Optimization - script.js and public/script.js filte
     scriptContent.includes("Chỉ hiển thị các nguyên vật liệu có phát sinh chứng từ xuất nhập trong 1 tháng gần nhất"),
     "UI note must mention 1 thang gan nhat"
   );
+});
+
+test("Warehouse Detail API - returns documents for clicked material with various param formats", async () => {
+  const matCode = "5100003577";
+
+  // 1. Direct query object (from req.query)
+  const res1 = await getWarehouseDetail({ material: matCode, from: "2026-10-11", to: "2026-11-11" });
+  assert.ok(res1.success);
+  assert.equal(res1.material, matCode);
+  assert.ok(res1.transactions.length > 0, "Must return documents for 5100003577");
+  assert.ok(res1.transactions.every(t => t.article === matCode), "All transactions must match material code");
+
+  // 2. Nested filters JSON string (from req.query.filters)
+  const res2 = await getWarehouseDetail(JSON.stringify({ material: matCode, from: "2026-10-11", to: "2026-11-11" }));
+  assert.ok(res2.success);
+  assert.equal(res2.transactions.length, res1.transactions.length);
+
+  // 3. Object with nested filters property
+  const res3 = await getWarehouseDetail({ filters: JSON.stringify({ material: matCode, from: "2026-10-11", to: "2026-11-11" }) });
+  assert.ok(res3.success);
+  assert.equal(res3.transactions.length, res1.transactions.length);
+
+  // 4. Empty material should return empty transactions gracefully without querying arbitrary rows
+  const resEmpty = await getWarehouseDetail({});
+  assert.ok(resEmpty.success);
+  assert.equal(resEmpty.transactions.length, 0);
 });

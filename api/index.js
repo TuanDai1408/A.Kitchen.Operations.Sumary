@@ -67,9 +67,11 @@ export default async function handler(req, res) {
       case "getWarehouseSummary":
         data = await api.getWarehouseSummary(req.query.filters || payload?.filters);
         break;
-      case "getWarehouseDetail":
-        data = await api.getWarehouseDetail(req.query.filters || payload?.filters);
+      case "getWarehouseDetail": {
+        const detailFilters = req.query.filters || payload?.filters || req.query || payload;
+        data = await api.getWarehouseDetail(detailFilters);
         break;
+      }
       case "getWarehouseDashboardData":
         data = await api.getWarehouseDashboardData(req.query.filters || payload?.filters);
         break;
