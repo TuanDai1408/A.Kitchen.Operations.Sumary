@@ -3506,7 +3506,7 @@ function computeAndDrawRevenueSacn(){
 
   REV_SACN = {
     ok: true, dims: dims, kpi: kpi, kpiPrev: kpiPrev, byDate: byDate,
-    rows: cur, planSites: planSitesSacn, nsMap: nsMapSacn,
+    rows: cur, planSites: planSitesSacn, nsMap: nsMapSacn, personnelBySiteKy: personnelSacn,
     periodCompare: periodCompare, bySite: bySite, byNhomSP: byNhom, byKenh: byKenh,
     byVung: byVung, byLoaiCH: byLoaiCH,
     byNVKD: byNVKD, byKhachHang: byKHSacnFinal, byLyDoTraHang: byLyDo,

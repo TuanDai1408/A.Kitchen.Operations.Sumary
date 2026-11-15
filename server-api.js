@@ -718,22 +718,77 @@ async function _getRevenueSummary(filtersParam) {
   const kpiCur = agg(curRows);
   const kpiPrev = agg(prevRows);
 
-  let totalNS = 0;
+  const viSort = (a, b) => a.localeCompare(b, "vi");
+
+  const personnelBySiteKy = [];
+  const planSiteSet = new Set();
   (plRows || []).forEach(p => {
-    if (p.hang_muc === "ChiPhiNhanSu") totalNS += Number(p.gia_tri || 0);
+    const s = String(p.site || "").trim();
+    if (s) planSiteSet.add(s);
+    if (p.hang_muc === "ChiPhiNhanSu") {
+      const k = String(p.ky || "").trim();
+      const amount = Number(p.gia_tri || 0);
+      if (s && k) personnelBySiteKy.push({ site: s, ky: k, amount, period: k });
+    }
   });
-  const daysSpan = reqFrom && reqTo ? Math.max(1, Math.round((new Date(reqTo) - new Date(reqFrom)) / 86400000) + 1) : 30;
-  const scaledNS = Math.round(totalNS * (daysSpan / 30));
+  const planSites = Array.from(planSiteSet).sort(viSort);
+
+  function calcNsSum(fromStr, toStr, targetSites) {
+    if (!fromStr || !toStr || !personnelBySiteKy.length) return 0;
+    const curD = new Date(fromStr + "T00:00:00");
+    const endD = new Date(toStr + "T00:00:00");
+    if (isNaN(curD.getTime()) || isNaN(endD.getTime()) || curD > endD) return 0;
+    const monthWeights = {};
+    let d = new Date(curD);
+    while (d <= endD) {
+      const y = d.getFullYear();
+      const m = d.getMonth();
+      const mKey = `${y}-${String(m + 1).padStart(2, "0")}`;
+      const firstDay = new Date(y, m, 1);
+      const lastDay = new Date(y, m + 1, 0);
+      const startSpan = d > firstDay ? d : firstDay;
+      const endSpan = endD < lastDay ? endD : lastDay;
+      const days = Math.round((endSpan - startSpan) / 86400000) + 1;
+      const totalDays = lastDay.getDate();
+      monthWeights[mKey] = (monthWeights[mKey] || 0) + Math.min(1, Math.max(0, days / totalDays));
+      d = new Date(y, m + 1, 1);
+    }
+
+    const tSet = targetSites && targetSites.length ? new Set(targetSites.map(s => String(s).toLowerCase().trim())) : null;
+    let sum = 0;
+    personnelBySiteKy.forEach(p => {
+      const w = monthWeights[p.ky];
+      if (!w) return;
+      if (tSet) {
+        const sNorm = String(p.site).toLowerCase().trim();
+        let matched = false;
+        for (const t of tSet) {
+          if (sNorm === t || sNorm.includes(t) || t.includes(sNorm)) {
+            matched = true;
+            break;
+          }
+        }
+        if (!matched) return;
+      }
+      sum += (p.amount || 0) * w;
+    });
+    return Math.round(sum);
+  }
+
+  const curSitesForNS = siteFilter ? (Array.isArray(siteFilter) ? siteFilter : [siteFilter]) : null;
+  const curNS = calcNsSum(reqFrom, reqTo, curSitesForNS);
+  const prevNS = calcNsSum(prFrom, prTo, curSitesForNS);
+
   kpiCur.am1 = kpiCur.grossProfit;
-  kpiCur.ns = scaledNS;
-  kpiCur.hasNS = scaledNS > 0;
-  kpiCur.am2 = kpiCur.am1 - scaledNS;
+  kpiCur.ns = curNS;
+  kpiCur.hasNS = curNS > 0;
+  kpiCur.am2 = kpiCur.am1 - curNS;
   kpiCur.am2Pct = kpiCur.netRevenue > 0 ? (kpiCur.am2 / kpiCur.netRevenue) * 100 : 0;
 
   kpiPrev.am1 = kpiPrev.grossProfit;
-  kpiPrev.ns = scaledNS;
-  kpiPrev.hasNS = scaledNS > 0;
-  kpiPrev.am2 = kpiPrev.am1 - scaledNS;
+  kpiPrev.ns = prevNS;
+  kpiPrev.hasNS = prevNS > 0;
+  kpiPrev.am2 = kpiPrev.am1 - prevNS;
   kpiPrev.am2Pct = kpiPrev.netRevenue > 0 ? (kpiPrev.am2 / kpiPrev.netRevenue) * 100 : 0;
 
   let suatHuy = 0, tongSuat = 0;
@@ -766,7 +821,7 @@ async function _getRevenueSummary(filtersParam) {
     grossProfit: d.netRevenue - d.foodCost,
     foodCostPct: d.netRevenue > 0 ? (d.foodCost / d.netRevenue) * 100 : 0,
     am1: d.netRevenue - d.foodCost,
-    am2: d.netRevenue - d.foodCost - (scaledNS / Math.max(1, Object.keys(dayMap).length))
+    am2: d.netRevenue - d.foodCost - (curNS / Math.max(1, Object.keys(dayMap).length))
   }));
 
   const siteMap = {};
@@ -1049,7 +1104,6 @@ async function _getRevenueSummary(filtersParam) {
     if (r.vung_mien) vungSet.add(r.vung_mien);
     if (r.loai_cua_hang) loaiSet.add(r.loai_cua_hang);
   });
-  const viSort = (a, b) => a.localeCompare(b, "vi");
 
   // Nạp toàn bộ danh mục ngày có dữ liệu bán hàng để dropdown kỳ (Tuần/Tháng/Quý/Năm) luôn có đủ dữ liệu
   if (!global._cachedAllBillingDates || Date.now() - (global._cachedAllBillingDatesAt || 0) > 300000) {
@@ -1181,6 +1235,8 @@ async function _getRevenueSummary(filtersParam) {
     huyRows,
     siteDetail,
     dims,
+    personnelBySiteKy,
+    planSites,
     nguong: DEFAULT_NGUONG,
     totalLines: curRows.length,
     filteredLines: curRows.length,
