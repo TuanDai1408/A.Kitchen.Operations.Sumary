@@ -81,6 +81,12 @@ export default async function handler(req, res) {
       case "getNutritionDashboardData":
         data = await api.getNutritionDashboardData();
         break;
+      case "getBomDetail": {
+        const pCode = req.query.productCode || req.query.material || req.query.code || payload?.productCode || payload?.material || payload?.code;
+        const pName = req.query.productName || req.query.name || payload?.productName || payload?.name;
+        data = await api.getBomDetail({ productCode: pCode, productName: pName });
+        break;
+      }
       case "exportIncidents":
         data = {
           ok: true,
