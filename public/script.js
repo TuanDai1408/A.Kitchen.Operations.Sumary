@@ -14283,7 +14283,7 @@ var QLK = (function(){
     '</div>'+
     '<div class="card"><div class="card-t"><h3>'+svg(IC.grid)+' Tồn kho &amp; giao dịch theo mã NVL</h3>'+
       '<button class="btn btn-out" id="qlkCsvBtn">⬇ Xuất CSV</button></div>'+
-      '<div class="qlk-note" style="margin-top:0;margin-bottom:10px">Chỉ hiển thị các nguyên vật liệu có phát sinh chứng từ trong phạm vi bộ lọc. Bấm vào một dòng để xem chi tiết toàn bộ chứng từ giao dịch của mã đó.</div>'+
+      '<div class="qlk-note" style="margin-top:0;margin-bottom:10px">Chỉ hiển thị các nguyên vật liệu có phát sinh chứng từ xuất nhập trong 1 tháng gần nhất (hoặc theo phạm vi ngày bộ lọc). Bấm vào một dòng để xem chi tiết toàn bộ chứng từ giao dịch của mã đó.</div>'+
       '<div class="qlk-scroll" id="qlkStockBox"></div></div>'+
     '<div class="card qlk-mb" id="qlkHuySection" style="margin-top:16px">'+
       '<div class="card-t" style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px">'+
@@ -15007,6 +15007,8 @@ var QLK = (function(){
     var cnt = txCountByArticle(tx || []);
     var map = {};
     (items || []).forEach(function(x){
+      var hasDoc = (x.doc_count || 0) > 0 || (x._ct || 0) > 0 || (cnt[x.code] || 0) > 0 || x.receipts !== 0 || x.issues_abs !== 0;
+      if (!hasDoc) return;
       var c = String(x.code || '').trim();
       if (!c) return;
       if (!map[c]) {

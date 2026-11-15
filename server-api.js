@@ -1882,7 +1882,7 @@ export async function getWarehouseDashboardData(filtersParam) {
   if (reqFrom && reqFrom > "2026-09-01") {
     const priorTo = getDayBefore(reqFrom);
     fetchPromises.push(
-      fetchAllRows("mb51_material_docs", "material,material_desc,quantity,amount_lc,site,site_name,entry_unit,nhom_hang,mov_type,stor_loc,posting_date", "posting_date", null, priorTo, "posting_date")
+      fetchAllRows("mb51_material_docs", "material,material_desc,quantity,amount_lc,site,stor_loc,mov_type,posting_date", "posting_date", null, priorTo, "posting_date")
     );
   }
 
@@ -2015,33 +2015,35 @@ export async function getWarehouseDashboardData(filtersParam) {
     }
   });
 
-  // Bổ sung các mã có tồn đầu nhưng không phát sinh trong kỳ
-  Object.keys(stockBeginMap).forEach(key => {
-    if (!itemsMap[key] && stockBeginMap[key] !== 0) {
-      const parts = key.split("|");
-      const site = parts[0];
-      const code = parts[1];
-      itemsMap[key] = {
-        code,
-        name: matDescMap[code] || code,
-        category: matCatMap[code] || "Chưa phân loại",
-        uom: matUomMap[code] || "Kg",
-        type: "Khác / Chưa phân loại",
-        types: new Set(["Khác / Chưa phân loại"]),
-        slocs: new Set(),
-        stock_begin: stockBeginMap[key],
-        stock_begin_val: stockBeginValueMap[key] || 0,
-        receipts: 0,
-        issues: 0,
-        issues_abs: 0,
-        receipts_val: 0,
-        issues_val: 0,
-        doc_count: 0,
-        site_name: site,
-        site
-      };
-    }
-  });
+  // Bổ sung các mã có tồn đầu nhưng không phát sinh trong kỳ (chỉ nạp khi include_dormant = true; mặc định tối ưu: chỉ load NVL có chứng từ phát sinh trong kỳ)
+  if (filters.include_dormant) {
+    Object.keys(stockBeginMap).forEach(key => {
+      if (!itemsMap[key] && stockBeginMap[key] !== 0) {
+        const parts = key.split("|");
+        const site = parts[0];
+        const code = parts[1];
+        itemsMap[key] = {
+          code,
+          name: matDescMap[code] || code,
+          category: matCatMap[code] || "Chưa phân loại",
+          uom: matUomMap[code] || "Kg",
+          type: "Khác / Chưa phân loại",
+          types: new Set(["Khác / Chưa phân loại"]),
+          slocs: new Set(),
+          stock_begin: stockBeginMap[key],
+          stock_begin_val: stockBeginValueMap[key] || 0,
+          receipts: 0,
+          issues: 0,
+          issues_abs: 0,
+          receipts_val: 0,
+          issues_val: 0,
+          doc_count: 0,
+          site_name: site,
+          site
+        };
+      }
+    });
+  }
 
   const missingNames = Object.keys(itemsMap).filter(k => itemsMap[k].name === itemsMap[k].code).map(k => itemsMap[k].code);
   const uniqueMissing = [...new Set(missingNames)];
@@ -2089,7 +2091,9 @@ export async function getWarehouseDashboardData(filtersParam) {
   // CÔNG THỨC BẮT BUỘC (UNIFIED PIPELINE):
   // GT_cuoi = GT_dau + GT_nhap - GT_xuat
   // SL_cuoi = SL_dau + SL_nhap - SL_xuat
-  const items = Object.values(itemsMap).map(it => {
+  const items = Object.values(itemsMap)
+    .filter(it => filters.include_dormant || (it.doc_count || 0) > 0 || it.receipts !== 0 || it.issues_abs !== 0)
+    .map(it => {
     const price = priceMap[it.code] || (it.receipts_abs > 0 ? Math.round(it.receipts_val / it.receipts_abs) : 0);
     const stockBegin = it.stock_begin;
     const stockBeginValue = (it.stock_begin_val !== undefined && it.stock_begin_val !== 0)
