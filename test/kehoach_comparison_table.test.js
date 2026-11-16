@@ -66,7 +66,7 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   const sPub = fs.readFileSync('public/script.js', 'utf8');
 
   // Verify functions exist in both files
-  ['kh_weekAgg', 'kh7ComparisonTableHtml', 'kh7TableHtml', 'kh7BodyHtml'].forEach(fn => {
+  ['kh_weekAgg', 'kh7ComparisonTableHtml', 'kh7TableHtml', 'kh7BodyHtml', 'kh7AopVarianceChartHtml', 'bindKhAopCutEvents'].forEach(fn => {
     assert.ok(sRoot.includes(`function ${fn}`), `script.js must contain function ${fn}`);
     assert.ok(sPub.includes(`function ${fn}`), `public/script.js must contain function ${fn}`);
   });
@@ -78,9 +78,15 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   assert.ok(sRoot.includes('( Click vào để xem chi tiết theo tuần )'), 'script.js must contain hover note for collapsed month');
   assert.ok(sRoot.includes('( Click để thu gọn theo tháng )'), 'script.js must contain hover note for expanded month');
   assert.strictEqual(sRoot.includes('<span>Cách tính mức cần đạt (YTG)</span>'), false, 'script.js must NOT contain YTG summary card as requested');
-  assert.ok(sRoot.includes('Đọc nhanh tháng hiện tại'), 'script.js must contain current month quick-read card');
+  assert.strictEqual(sRoot.includes('Đọc nhanh tháng hiện tại'), false, 'script.js must NOT contain quick-read current month card as requested');
   assert.ok(sRoot.includes('kh7-badge ytg'), 'script.js must contain YTG badge');
   assert.ok(sRoot.includes('kh7-ytg-cell'), 'script.js must contain YTG cell class');
+
+  // Verify AOP Variance & Cum % chart
+  assert.ok(sRoot.includes('Biểu đồ chênh lệch AOP từng tháng &amp; % Đạt AOP lũy kế'), 'script.js must contain AOP variance chart title');
+  assert.ok(sRoot.includes('Cột là chênh lệch thực tế so với AOP của tháng. Đường phía trên là % đạt AOP lũy kế.'), 'script.js must contain AOP variance sub-title');
+  assert.ok(sRoot.includes('id="khAopCutSelect"'), 'script.js must contain cut month selector');
+  assert.ok(sRoot.includes('kh-aop-insight-box'), 'script.js must contain insight box');
 
   assert.ok(sPub.includes('Các tháng đã chốt (T1–T'), 'public/script.js must contain closed months header');
   assert.ok(sPub.includes('YTM-1'), 'public/script.js must contain YTM-1 header');
@@ -88,9 +94,14 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   assert.ok(sPub.includes('( Click vào để xem chi tiết theo tuần )'), 'public/script.js must contain hover note for collapsed month');
   assert.ok(sPub.includes('( Click để thu gọn theo tháng )'), 'public/script.js must contain hover note for expanded month');
   assert.strictEqual(sPub.includes('<span>Cách tính mức cần đạt (YTG)</span>'), false, 'public/script.js must NOT contain YTG summary card as requested');
-  assert.ok(sPub.includes('Đọc nhanh tháng hiện tại'), 'public/script.js must contain current month quick-read card');
+  assert.strictEqual(sPub.includes('Đọc nhanh tháng hiện tại'), false, 'public/script.js must NOT contain quick-read current month card as requested');
   assert.ok(sPub.includes('kh7-badge ytg'), 'public/script.js must contain YTG badge');
   assert.ok(sPub.includes('kh7-ytg-cell'), 'public/script.js must contain YTG cell class');
+
+  assert.ok(sPub.includes('Biểu đồ chênh lệch AOP từng tháng &amp; % Đạt AOP lũy kế'), 'public/script.js must contain AOP variance chart title');
+  assert.ok(sPub.includes('Cột là chênh lệch thực tế so với AOP của tháng. Đường phía trên là % đạt AOP lũy kế.'), 'public/script.js must contain AOP variance sub-title');
+  assert.ok(sPub.includes('id="khAopCutSelect"'), 'public/script.js must contain cut month selector');
+  assert.ok(sPub.includes('kh-aop-insight-box'), 'public/script.js must contain insight box');
 });
 
 test('Ke Hoach Comparison Table - CSS styles in style.css and public/style.css', () => {
@@ -105,10 +116,12 @@ test('Ke Hoach Comparison Table - CSS styles in style.css and public/style.css',
     assert.ok(css.includes('.kh-col-ytm'), 'CSS must include .kh-col-ytm');
     assert.ok(css.includes('.kh-col-fy'), 'CSS must include .kh-col-fy');
     assert.ok(css.includes('.kh7-ytg-cell'), 'CSS must include .kh7-ytg-cell');
-    assert.ok(css.includes('.kh-ytg-summary-section'), 'CSS must include .kh-ytg-summary-section');
     assert.ok(css.includes('.kh7-badge.ytg'), 'CSS must include .kh7-badge.ytg');
     assert.ok(css.includes('.kh-expandable-th'), 'CSS must include .kh-expandable-th');
     assert.ok(css.includes('.kh-exp-tooltip'), 'CSS must include .kh-exp-tooltip');
     assert.ok(css.includes("font-family: 'Be Vietnam Pro'"), 'CSS must use Be Vietnam Pro font');
+    assert.ok(css.includes('.kh-aop-chart-card'), 'CSS must include .kh-aop-chart-card');
+    assert.ok(css.includes('.kh-aop-svg'), 'CSS must include .kh-aop-svg');
+    assert.ok(css.includes('.kh-aop-insight-box'), 'CSS must include .kh-aop-insight-box');
   });
 });
