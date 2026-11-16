@@ -12344,8 +12344,16 @@ function drawKhAch(){
   var sites = kh_selSites();
   var allPeriods = (KH && KH.periods) || [];
 
+  // Lọc hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
+  var validPeriods = allPeriods.filter(function(p){
+    if (PF.year === 2026 || !PF.year) {
+      return p.key >= '2026-03';
+    }
+    return true;
+  });
+
   var lastActualIdx = -1;
-  allPeriods.forEach(function(per, idx){
+  validPeriods.forEach(function(per, idx){
     var o = kh_periodAgg(per, sites);
     METRICS_KH.forEach(function(m){
       var v = m.get(o);
@@ -12355,8 +12363,8 @@ function drawKhAch(){
     });
   });
 
-  var maxShowIdx = lastActualIdx >= 0 ? Math.min(allPeriods.length - 1, Math.max(lastActualIdx + 2, 5)) : allPeriods.length - 1;
-  var periods = allPeriods.slice(0, maxShowIdx + 1);
+  var maxShowIdx = lastActualIdx >= 0 ? Math.min(validPeriods.length - 1, Math.max(lastActualIdx + 2, 5)) : validPeriods.length - 1;
+  var periods = validPeriods.slice(0, maxShowIdx + 1);
 
   var ds = METRICS_KH.map(function(m){
     return {
@@ -13048,7 +13056,12 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     if (item.hasAct && item.act !== null) {
       closedMonths.push(item);
     } else {
-      missingMonths.push(item.label);
+      // Năm 2026: T1 và T2 là trước thời điểm phát sinh giao dịch nên không coi là thiếu số liệu
+      if (year === '2026' && item.month < 3) {
+        // bỏ qua T1, T2
+      } else {
+        missingMonths.push(item.label);
+      }
     }
   }
 
@@ -13291,9 +13304,17 @@ function kh7BodyHtml(sites, periods){
   h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S, sites, periods)+'</div>';
 
   if (KHUI.kh7Mode === 'ytd') {
+    // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
+    var chartPeriods = (periods || []).filter(function(p){
+      if (PF.year === 2026 || !PF.year) {
+        return p.key >= '2026-03';
+      }
+      return true;
+    });
+    var chartS = kh_buildSeries(m, sites, chartPeriods);
     h += '<div class="kh7-chart-t">'+svg(IC.line,14,C.brand)+'Biểu đồ so sánh &amp; đường lũy kế tới cuối năm</div>'+
-         '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+
-         ' · Cột: '+S.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
+         '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+' (từ 03/'+PF.year+')'+
+         ' · Cột: '+chartS.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
          '<div class="cbox kh7-chart"><canvas id="chKh7"></canvas></div>';
   } else {
     h += kh7AopVarianceChartHtml(m, sites, periods);
@@ -13340,7 +13361,15 @@ function drawKh7Chart(){
   destroyChart('chKh7');
   var ctx = ctxOf('chKh7'); if (!ctx) return;
   var m = kh_metricByKey(KHUI.metric);
-  var S = kh_buildSeries(m, kh_selSites(), (KH && KH.periods) || []);
+  var allPeriods = (KH && KH.periods) || [];
+  // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
+  var filteredPeriods = allPeriods.filter(function(p){
+    if (PF.year === 2026 || !PF.year) {
+      return p.key >= '2026-03';
+    }
+    return true;
+  });
+  var S = kh_buildSeries(m, kh_selSites(), filteredPeriods);
   var f = m.fmt7 || m.fmt;
   var unitTxt = m.unit7 || '';
   var ROB = "'Roboto', sans-serif";

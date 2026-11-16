@@ -88,6 +88,10 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   assert.ok(sRoot.includes('id="khAopCutSelect"'), 'script.js must contain cut month selector');
   assert.ok(sRoot.includes('kh-aop-insight-box'), 'script.js must contain insight box');
 
+  // Verify time filter from 03/2026 for both charts
+  assert.ok(sRoot.includes("p.key >= '2026-03'"), 'script.js must filter periods from 03/2026');
+  assert.ok(sPub.includes("p.key >= '2026-03'"), 'public/script.js must filter periods from 03/2026');
+
   assert.ok(sPub.includes('Các tháng đã chốt (T1–T'), 'public/script.js must contain closed months header');
   assert.ok(sPub.includes('YTM-1'), 'public/script.js must contain YTM-1 header');
   assert.ok(sPub.includes('kh-expandable-th'), 'public/script.js must contain expandable month th');
