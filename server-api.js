@@ -1549,6 +1549,15 @@ export async function getKeHoachData(filtersParam) {
     periodMap.set(ky, `Tháng ${ky.substring(5, 7)}/${ky.substring(0, 4)}`);
   });
 
+  // Đảm bảo đủ các tháng T01 đến T12 cho năm 2026 để phục vụ báo cáo kế hoạch cả năm (T1–T12)
+  for (let m = 1; m <= 12; m++) {
+    const mStr = String(m).padStart(2, "0");
+    const ky = `2026-${mStr}`;
+    if (!periodMap.has(ky)) {
+      periodMap.set(ky, `Tháng ${mStr}/2026`);
+    }
+  }
+
   const SITE_TONG = "Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)";
   const siteSet = new Set();
   plRows.forEach(p => { if (p.site) siteSet.add(p.site); });
@@ -1559,10 +1568,23 @@ export async function getKeHoachData(filtersParam) {
   const viSort = (a, b) => a.localeCompare(b, "vi");
   const sites = Array.from(siteSet).sort(viSort);
 
-  // Tính Actuals gom theo site và ky (YYYY-MM)
+  // Helper xác định tuần trong tháng (W1: 1-7, W2: 8-14, W3: 15-21, W4: 22-hết)
+  const getWeekKey = (dStr) => {
+    if (!dStr || dStr.length < 10) return null;
+    const day = parseInt(String(dStr).substring(8, 10), 10);
+    if (isNaN(day) || day < 1) return null;
+    if (day <= 7) return "W1";
+    if (day <= 14) return "W2";
+    if (day <= 21) return "W3";
+    return "W4";
+  };
+
+  // Tính Actuals gom theo site và ky (YYYY-MM), đồng thời gom theo tuần
   const txActual = {};
+  const txActualWeek = {};
   txRows.forEach(t => {
-    const ym = String(t.billing_date || "").substring(0, 7);
+    const dStr = String(t.billing_date || "");
+    const ym = dStr.substring(0, 7);
     const site = t.ten_cua_hang;
     if (!ym || !site) return;
     const k = `${site}|${ym}`;
@@ -1575,17 +1597,41 @@ export async function getKeHoachData(filtersParam) {
       const suat = normalizePortionQty(t.so_luong, t.ma_cua_hang || t.ten_cua_hang, t.dvt);
       txActual[k].tongSuat += suat;
     }
+
+    const w = getWeekKey(dStr);
+    if (w) {
+      const kw = `${site}|${ym}|${w}`;
+      if (!txActualWeek[kw]) txActualWeek[kw] = { net: 0, foodCost: 0, tongSuat: 0, count: 0 };
+      txActualWeek[kw].net += net;
+      txActualWeek[kw].foodCost += Number(t.gia_von || 0);
+      if (!isRet) {
+        const suatW = normalizePortionQty(t.so_luong, t.ma_cua_hang || t.ten_cua_hang, t.dvt);
+        txActualWeek[kw].tongSuat += suatW;
+      }
+      txActualWeek[kw].count++;
+    }
   });
 
   const repActual = {};
+  const repActualWeek = {};
   repRows.forEach(r => {
-    const ym = String(r.ngay_bao_cao || "").substring(0, 7);
+    const dStr = String(r.ngay_bao_cao || "");
+    const ym = dStr.substring(0, 7);
     const site = r.ten_site;
     if (!ym || !site) return;
     const k = `${site}|${ym}`;
     if (!repActual[k]) repActual[k] = { tong: 0, huy: 0 };
     repActual[k].tong += Number(r.tong_suat || 0);
     repActual[k].huy += Number(r.suat_huy || 0);
+
+    const w = getWeekKey(dStr);
+    if (w) {
+      const kw = `${site}|${ym}|${w}`;
+      if (!repActualWeek[kw]) repActualWeek[kw] = { tong: 0, huy: 0, count: 0 };
+      repActualWeek[kw].tong += Number(r.tong_suat || 0);
+      repActualWeek[kw].huy += Number(r.suat_huy || 0);
+      repActualWeek[kw].count++;
+    }
   });
 
   const opexActual = {};
@@ -1602,6 +1648,17 @@ export async function getKeHoachData(filtersParam) {
 
   const periods = activePeriods.map(perKey => {
     const label = periodMap.get(perKey) || perKey;
+    const ymParts = perKey.split("-");
+    const yNum = parseInt(ymParts[0], 10);
+    const mNum = parseInt(ymParts[1], 10);
+    const daysInMonth = (yNum && mNum) ? new Date(yNum, mNum, 0).getDate() : 30;
+    const weekConfigs = [
+      { week: "W1", days: 7 },
+      { week: "W2", days: 7 },
+      { week: "W3", days: 7 },
+      { week: "W4", days: Math.max(1, daysInMonth - 21) }
+    ];
+
     const bySite = {};
     sites.forEach(site => {
       const k = `${site}|${perKey}`;
@@ -1636,6 +1693,52 @@ export async function getKeHoachData(filtersParam) {
       // Số suất ăn thực tế: Lấy chuẩn đồng nhất theo Tab Doanh thu & Foodcost (ALL) từ transactions (quy chuẩn qua normalizePortionQty).
       const actSL = Number(actTx.tongSuat || 0);
 
+      const siteWeeks = {};
+      weekConfigs.forEach(wCfg => {
+        const wKey = `${site}|${perKey}|${wCfg.week}`;
+        let actTxW = txActualWeek[wKey];
+        if (!actTxW) {
+          for (const tKey of Object.keys(txActualWeek)) {
+            const parts = tKey.split("|");
+            if (parts[1] === perKey && parts[2] === wCfg.week) {
+              const s1 = parts[0].toLowerCase().replace(/\s+/g, " ").trim();
+              const s2 = site.toLowerCase().replace(/\s+/g, " ").trim();
+              if (s1 === s2 || s1.includes(s2) || s2.includes(s1)) {
+                actTxW = txActualWeek[tKey];
+                break;
+              }
+            }
+          }
+        }
+        const repWKey = `${site}|${perKey}|${wCfg.week}`;
+        const actRepW = repActualWeek[repWKey] || { tong: 0, huy: 0, count: 0 };
+        const hasTxW = Boolean(actTxW);
+        const hasRepW = Boolean(actRepW && actRepW.count > 0);
+        const hasWActual = hasTxW || hasRepW;
+        const wWeight = wCfg.days / daysInMonth;
+
+        const actNetW = hasTxW ? actTxW.net : null;
+        const actFCW = hasTxW ? actTxW.foodCost : null;
+        const actSLW = hasTxW ? actTxW.tongSuat : (hasRepW && actRepW.tong > 0 ? actRepW.tong : null);
+        const actHuyW = hasRepW ? actRepW.huy : null;
+        const actLGW = (actNetW !== null && actFCW !== null) ? (actNetW - actFCW) : null;
+        const actEBW = actLGW;
+
+        siteWeeks[wCfg.week] = {
+          week: wCfg.week,
+          days: wCfg.days,
+          weight: wWeight,
+          hasActual: hasWActual,
+          DoanhThu: { actual: actNetW, plan: (plan["DoanhThu"] || 0) * wWeight },
+          SanLuongTong: { actual: actSLW, plan: (plan["SanLuongTong"] || 0) * wWeight },
+          FoodCost: { actualVal: actFCW, planVal: (plan["FoodCost"] || 0) * wWeight },
+          LaiGop: { actual: actLGW, plan: (plan["LaiGop"] || 0) * wWeight },
+          HuyPct: { actualHuy: actHuyW, actualTong: actSLW },
+          VatTuTieuHao: { actual: 0, plan: (plan["ChiPhiVanHanh"] || 0) * wWeight },
+          EBITDA: { actual: actEBW, plan: (plan["EBITDA"] || 0) * wWeight, hasActual: hasTxW }
+        };
+      });
+
       bySite[site] = {
         DoanhThu: { actual: actNet, plan: plan["DoanhThu"] || 0 },
         SanLuongTong: { actual: actSL, plan: plan["SanLuongTong"] || 0 },
@@ -1644,7 +1747,8 @@ export async function getKeHoachData(filtersParam) {
         HuyPct: { actualHuy: actRep.huy, actualTong: actSL > 0 ? actSL : actRep.tong },
         VatTuTieuHao: { actual: 0, plan: plan["ChiPhiVanHanh"] || 0 },
         EBITDA: { actual: actEbitda, plan: plan["EBITDA"] || 0, hasActual: actNet > 0 || hasOpex },
-        hasActual: hasTx || hasRepRow
+        hasActual: hasTx || hasRepRow,
+        weeks: siteWeeks
       };
     });
 
@@ -1672,6 +1776,74 @@ export async function getKeHoachData(filtersParam) {
       if (o.hasActual) sumHasActual = true;
     });
 
+    const tongWeeks = {};
+    weekConfigs.forEach(wCfg => {
+      let sumWNet = 0, sumWFC = 0, sumWSL = 0, sumWHuy = 0, sumWLG = 0, sumWEB = 0;
+      let sumWPlanDT = 0, sumWPlanSL = 0, sumWPlanFC = 0, sumWPlanLG = 0, sumWPlanVT = 0, sumWPlanEB = 0;
+      let hasNetActual = false;
+      let hasFCActual = false;
+      let hasSLActual = false;
+      let hasHuyActual = false;
+      let hasLGActual = false;
+      let hasEBActual = false;
+      let hasTongWActual = false;
+      const wWeight = wCfg.days / daysInMonth;
+
+      sites.forEach(s => {
+        if (s === SITE_TONG) return;
+        const sw = bySite[s].weeks[wCfg.week];
+        if (sw && sw.hasActual) {
+          hasTongWActual = true;
+          if (sw.DoanhThu.actual !== null) {
+            hasNetActual = true;
+            sumWNet += sw.DoanhThu.actual;
+          }
+          if (sw.FoodCost.actualVal !== null) {
+            hasFCActual = true;
+            sumWFC += sw.FoodCost.actualVal;
+          }
+          if (sw.SanLuongTong.actual !== null) {
+            hasSLActual = true;
+            sumWSL += sw.SanLuongTong.actual;
+          }
+          if (sw.HuyPct.actualHuy !== null) {
+            hasHuyActual = true;
+            sumWHuy += sw.HuyPct.actualHuy;
+          }
+          if (sw.LaiGop.actual !== null) {
+            hasLGActual = true;
+            sumWLG += sw.LaiGop.actual;
+          }
+          if (sw.EBITDA.actual !== null) {
+            hasEBActual = true;
+            sumWEB += sw.EBITDA.actual;
+          }
+        }
+        if (sw) {
+          sumWPlanDT += sw.DoanhThu.plan;
+          sumWPlanSL += sw.SanLuongTong.plan;
+          sumWPlanFC += sw.FoodCost.planVal;
+          sumWPlanLG += sw.LaiGop.plan;
+          sumWPlanVT += sw.VatTuTieuHao.plan;
+          sumWPlanEB += sw.EBITDA.plan;
+        }
+      });
+
+      tongWeeks[wCfg.week] = {
+        week: wCfg.week,
+        days: wCfg.days,
+        weight: wWeight,
+        hasActual: hasTongWActual,
+        DoanhThu: { actual: hasNetActual ? sumWNet : null, plan: (planTong["DoanhThu"] !== undefined ? planTong["DoanhThu"] : sumWPlanDT) * wWeight },
+        SanLuongTong: { actual: hasSLActual ? sumWSL : null, plan: (planTong["SanLuongTong"] !== undefined ? planTong["SanLuongTong"] : sumWPlanSL) * wWeight },
+        FoodCost: { actualVal: hasFCActual ? sumWFC : null, planVal: (planTong["FoodCost"] !== undefined ? planTong["FoodCost"] : sumWPlanFC) * wWeight },
+        LaiGop: { actual: hasLGActual ? sumWLG : null, plan: (planTong["LaiGop"] !== undefined ? planTong["LaiGop"] : sumWPlanLG) * wWeight },
+        HuyPct: { actualHuy: hasHuyActual ? sumWHuy : 0, actualTong: sumWSL },
+        VatTuTieuHao: { actual: 0, plan: (planTong["ChiPhiVanHanh"] !== undefined ? planTong["ChiPhiVanHanh"] : sumWPlanVT) * wWeight },
+        EBITDA: { actual: hasEBActual ? sumWEB : null, plan: (planTong["EBITDA"] !== undefined ? planTong["EBITDA"] : sumWPlanEB) * wWeight, hasActual: hasEBActual }
+      };
+    });
+
     bySite[SITE_TONG] = {
       DoanhThu: { actual: sumActNet, plan: planTong["DoanhThu"] !== undefined ? planTong["DoanhThu"] : sumPlanDT },
       SanLuongTong: { actual: sumActTong, plan: planTong["SanLuongTong"] !== undefined ? planTong["SanLuongTong"] : sumPlanSL },
@@ -1680,7 +1852,8 @@ export async function getKeHoachData(filtersParam) {
       HuyPct: { actualHuy: sumActHuy, actualTong: sumActTong },
       VatTuTieuHao: { actual: 0, plan: planTong["ChiPhiVanHanh"] !== undefined ? planTong["ChiPhiVanHanh"] : sumPlanVT },
       EBITDA: { actual: sumActEbitda, plan: planTong["EBITDA"] !== undefined ? planTong["EBITDA"] : sumPlanEB, hasActual: sumActNet > 0 },
-      hasActual: sumHasActual
+      hasActual: sumHasActual,
+      weeks: tongWeeks
     };
 
     return { key: perKey, label, bySite };

@@ -3765,8 +3765,189 @@ tfoot tr td {
   letter-spacing: 0.2px;
 }
 
-#tab-kehoach .kh7-badge.tt { background: #E7F6EC; color: #15803D; }
+#tab-kehoach .kh7-badge.tt { background: #DBEAFE; color: #1E40AF; border: 1px solid #93C5FD; }
 #tab-kehoach .kh7-badge.kh { background: #FEF6E0; color: #A16207; }
+#tab-kehoach .kh7-badge.ytg { background: #FEF3C7; color: #92400E; border: 1px solid #F59E0B; }
+
+/* Bảng so sánh nâng cao: YTM-1, Tuần tháng hiện tại & Cả năm */
+#tab-kehoach table.kh-cmp-table {
+  font-family: 'Be Vietnam Pro', sans-serif;
+  width: 100%;
+}
+#tab-kehoach table.kh-cmp-table td,
+#tab-kehoach table.kh-cmp-table th {
+  font-family: 'Be Vietnam Pro', sans-serif;
+}
+#tab-kehoach table.kh-cmp-table td.font-mono,
+#tab-kehoach table.kh-cmp-table td {
+  font-family: 'JetBrains Mono', 'SF Pro Text', Menlo, Consolas, monospace !important;
+  font-feature-settings: 'tnum' 1;
+}
+#tab-kehoach table.kh-cmp-table .kh7-c-name {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  min-width: 250px;
+  width: 250px;
+  max-width: 250px;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-th {
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  padding: 8px 10px;
+  text-align: center;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-closed {
+  background: #F8FAFC;
+  color: #475569;
+  border-bottom: 2px solid #94A3B8;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-ytm {
+  background: #EFF6FF;
+  color: #1D4ED8;
+  border-bottom: 2px solid #3B82F6;
+  font-weight: 800;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-cur {
+  background: #ECFDF5;
+  color: #047857;
+  border-bottom: 2px solid #10B981;
+  font-weight: 800;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-fut {
+  background: #FFFBEB;
+  color: #B45309;
+  border-bottom: 2px solid #F59E0B;
+  font-weight: 800;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-fy {
+  background: #F1F5F9;
+  color: #0F172A;
+  border-bottom: 2px solid #1E293B;
+  font-weight: 800;
+}
+#tab-kehoach table.kh-cmp-table th.kh-grp-desc {
+  background: #FAFBFA;
+  color: #64748B;
+  text-align: left;
+  border-bottom: 1px solid var(--line);
+  min-width: 260px;
+  width: 260px;
+}
+#tab-kehoach table.kh-cmp-table th.kh-col-ytm-hd {
+  background: #DBEAFE;
+  color: #1E40AF;
+  font-weight: 700;
+}
+#tab-kehoach table.kh-cmp-table th.kh-col-cur-hd {
+  background: #D1FAE5;
+  color: #065F46;
+  font-weight: 700;
+}
+#tab-kehoach table.kh-cmp-table th.kh-col-fy-hd {
+  background: #E2E8F0;
+  color: #0F172A;
+  font-weight: 800;
+}
+#tab-kehoach table.kh-cmp-table td.kh-col-ytm {
+  background: #F0F7FF !important;
+  font-weight: 700;
+  border-left: 1px solid #BFDBFE;
+  border-right: 1px solid #BFDBFE;
+}
+#tab-kehoach table.kh-cmp-table td.kh-col-fy {
+  background: #F8FAFC !important;
+  font-weight: 800;
+  border-left: 2px solid #94A3B8;
+  border-right: 1px solid #CBD5E1;
+}
+#tab-kehoach table.kh-cmp-table td.kh-col-desc {
+  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-size: 11.5px;
+  color: #64748B;
+  font-weight: 400;
+  text-align: left;
+  white-space: normal;
+  line-height: 1.45;
+  min-width: 260px;
+  width: 260px;
+}
+#tab-kehoach table.kh-cmp-table td.kh7-ytg-cell {
+  background: #FFFBEB !important;
+  color: #92400E !important;
+  font-weight: 700;
+}
+
+/* 2 Khối tóm tắt tính toán YTG & Đọc nhanh tháng */
+.kh-ytg-summary-section {
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+.kh-ytg-card {
+  padding: 16px 20px;
+  border-radius: 10px;
+  background: #FFFFFF;
+  border: 1px solid var(--line);
+  box-shadow: 0 1px 3px rgba(0,0,0,0.04);
+}
+.kh-ytg-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+.kh-ytg-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.kh-ytg-sub {
+  font-size: 11.5px;
+  color: var(--muted);
+  font-weight: 400;
+  margin-left: 6px;
+}
+.kh-ytg-grid {
+  display: grid;
+  gap: 12px;
+}
+.kh-ytg-item {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 10px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.kh-ytg-item.highlight-amber {
+  background: #FFFBEB;
+  border: 1px solid #FDE68A;
+}
+.kh-ytg-item-lbl {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.kh-ytg-item-val {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--text);
+  font-family: 'JetBrains Mono', 'SF Pro Text', Menlo, Consolas, monospace !important;
+  font-feature-settings: 'tnum' 1;
+}
+.kh-ytg-item-desc {
+  font-size: 11px;
+  color: #64748B;
+  line-height: 1.35;
+}
 
 #tab-kehoach .kh7-khsuffix {
   font-size: 9.5px;

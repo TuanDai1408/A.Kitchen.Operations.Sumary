@@ -11736,6 +11736,94 @@ function kh_periodAgg(per, sites){
   return o;
 }
 
+// Tổng hợp số liệu theo tuần của 1 tháng cụ thể (W1..W4)
+function kh_weekAgg(per, weekKey, sites){
+  var o = {
+    DoanhThu:{actual:0,plan:0},
+    SanLuong:{actual:0,plan:0},
+    FoodCost:{actualVal:0,planVal:0,actualPct:0,planPct:0},
+    LaiGop:{actual:0,plan:0},
+    Huy:{actualHuy:0,actualTong:0,actual:0,plan:(KH && KH.nguong && KH.nguong.huyPct)||0.5},
+    VatTuTieuHao:{actual:0, plan:0},
+    EBITDA:{actual:0,plan:0,hasActual:false},
+    hasActual:false
+  };
+  if (!per || !per.bySite) return o;
+  var isAllSites = !PF.site;
+  if (isAllSites) {
+    var tongKey = (KH && KH.siteTong) ? KH.siteTong : KEHOACH_SITE_TONG;
+    var aTong = per.bySite[tongKey];
+    if (!aTong) {
+      var target = String(tongKey).toLowerCase().replace(/\s+/g,' ').trim();
+      Object.keys(per.bySite).forEach(function(k){
+        if (aTong) return;
+        var nk = String(k).toLowerCase().replace(/\s+/g,' ').trim();
+        if (nk === target || nk.indexOf('toàn hệ thống') >= 0) aTong = per.bySite[k];
+      });
+    }
+    if (aTong && aTong.weeks && aTong.weeks[weekKey]) {
+      var w = aTong.weeks[weekKey];
+      o.hasActual = !!w.hasActual;
+      o.DoanhThu.actual = w.DoanhThu.actual;
+      o.DoanhThu.plan = w.DoanhThu.plan;
+      o.SanLuong.actual = w.SanLuongTong.actual;
+      o.SanLuong.plan = w.SanLuongTong.plan;
+      o.FoodCost.actualVal = w.FoodCost.actualVal;
+      o.FoodCost.planVal = w.FoodCost.planVal;
+      o.FoodCost.actualPct = (w.DoanhThu.actual > 0) ? (w.FoodCost.actualVal / w.DoanhThu.actual * 100) : 0;
+      o.FoodCost.planPct = (w.DoanhThu.plan > 0) ? (w.FoodCost.planVal / w.DoanhThu.plan * 100) : 0;
+      o.LaiGop.actual = w.LaiGop.actual;
+      o.LaiGop.plan = w.LaiGop.plan;
+      o.Huy.actualHuy = w.HuyPct.actualHuy;
+      o.Huy.actualTong = w.HuyPct.actualTong;
+      o.Huy.actual = (w.HuyPct.actualTong > 0) ? (w.HuyPct.actualHuy / w.HuyPct.actualTong * 100) : 0;
+      o.VatTuTieuHao.actual = w.VatTuTieuHao ? w.VatTuTieuHao.actual : 0;
+      o.VatTuTieuHao.plan = w.VatTuTieuHao ? w.VatTuTieuHao.plan : 0;
+      o.EBITDA.actual = w.EBITDA.actual;
+      o.EBITDA.plan = w.EBITDA.plan;
+      o.EBITDA.hasActual = !!w.EBITDA.hasActual;
+      return o;
+    }
+  }
+
+  sites.forEach(function(s){
+    var a = per.bySite[s]; if (!a || !a.weeks || !a.weeks[weekKey]) return;
+    var w = a.weeks[weekKey];
+    if (w.hasActual) o.hasActual = true;
+    if (w.DoanhThu.actual !== null) o.DoanhThu.actual = (o.DoanhThu.actual || 0) + w.DoanhThu.actual;
+    o.DoanhThu.plan += w.DoanhThu.plan;
+    if (w.SanLuongTong.actual !== null) o.SanLuong.actual = (o.SanLuong.actual || 0) + w.SanLuongTong.actual;
+    o.SanLuong.plan += w.SanLuongTong.plan;
+    if (w.FoodCost.actualVal !== null) o.FoodCost.actualVal = (o.FoodCost.actualVal || 0) + w.FoodCost.actualVal;
+    o.FoodCost.planVal += w.FoodCost.planVal;
+    if (w.LaiGop.actual !== null) o.LaiGop.actual = (o.LaiGop.actual || 0) + w.LaiGop.actual;
+    o.LaiGop.plan += w.LaiGop.plan;
+    if (w.HuyPct.actualHuy !== null) o.Huy.actualHuy += w.HuyPct.actualHuy;
+    if (w.HuyPct.actualTong !== null) o.Huy.actualTong += w.HuyPct.actualTong;
+    if (w.VatTuTieuHao && w.VatTuTieuHao.actual !== null) o.VatTuTieuHao.actual += w.VatTuTieuHao.actual;
+    if (w.VatTuTieuHao) o.VatTuTieuHao.plan += w.VatTuTieuHao.plan;
+    if (w.EBITDA.hasActual) {
+      o.EBITDA.actual = (o.EBITDA.actual || 0) + (w.EBITDA.actual || 0);
+      o.EBITDA.hasActual = true;
+    }
+    o.EBITDA.plan += w.EBITDA.plan;
+  });
+  if (!o.hasActual) {
+    o.DoanhThu.actual = null;
+    o.SanLuong.actual = null;
+    o.FoodCost.actualVal = null;
+    o.LaiGop.actual = null;
+    o.Huy.actualHuy = null;
+    o.Huy.actualTong = null;
+    o.VatTuTieuHao.actual = null;
+    o.EBITDA.actual = null;
+  }
+  o.FoodCost.actualPct = (o.DoanhThu.actual > 0) ? (o.FoodCost.actualVal / o.DoanhThu.actual * 100) : 0;
+  o.FoodCost.planPct = (o.DoanhThu.plan > 0) ? (o.FoodCost.planVal / o.DoanhThu.plan * 100) : 0;
+  o.Huy.actual = (o.Huy.actualTong > 0) ? (o.Huy.actualHuy / o.Huy.actualTong * 100) : 0;
+  return o;
+}
+
 
 
 
@@ -12504,24 +12592,348 @@ function kh7CardsHtml(m, S){
   return c1+c2+c3+c4;
 }
 
-function kh7TableHtml(m, S){
+// Bảng so sánh nâng cao: YTM-1, tuần tháng hiện tại (W1..W4), các tháng tới và cả năm (FY)
+function kh7ComparisonTableHtml(m, sites, periods){
   var f = m.fmt7 || m.fmt;
+  var U = (m.unit7||'').toUpperCase();
+  var isPct = !!m.isPct;
+  var year = String(PF.year || 2026);
+  var dash = '<span class="kh7-dash">–</span>';
+
+  var pMap = {};
+  (periods || []).forEach(function(p){ pMap[p.key] = p; });
+
+  // Xác định tháng hiện tại (curM) là tháng lớn nhất có dữ liệu thực tế trong năm (mặc định 11 nếu 2026)
+  var curM = 11;
+  for (var mi = 12; mi >= 1; mi--) {
+    var kTest = year + '-' + (mi < 10 ? '0' + mi : mi);
+    var pTest = pMap[kTest];
+    if (pTest) {
+      var aggTest = kh_periodAgg(pTest, sites);
+      if (aggTest.hasActual && (aggTest.DoanhThu.actual > 0 || (aggTest.SanLuong && aggTest.SanLuong.actual > 0))) {
+        curM = mi;
+        break;
+      }
+    }
+  }
+
+  var getPer = function(monthNum){
+    var k = year + '-' + (monthNum < 10 ? '0' + monthNum : monthNum);
+    return pMap[k] || { key: k, label: 'Tháng ' + (monthNum < 10 ? '0' + monthNum : monthNum) + '/' + year, bySite: {} };
+  };
+
+  // 1. Thu thập dữ liệu các tháng đã chốt (T1 đến T[curM-1])
+  var closedCols = [];
+  var sumPlanClosed = 0, sumActClosed = 0, countPlanClosed = 0, countActClosed = 0;
+  for (var mIdx = 1; mIdx < curM; mIdx++) {
+    var p = getPer(mIdx);
+    var agg = kh_periodAgg(p, sites);
+    var v = kh_val(m, agg);
+    var plan = v.plan;
+    if (isPct && !(plan > 0)) plan = null;
+    var act = v.actual;
+    closedCols.push({ code: 'T' + mIdx, label: 'T' + mIdx, plan: plan, act: act, hasAct: act !== null });
+    if (plan !== null && plan !== undefined) { sumPlanClosed += plan; countPlanClosed++; }
+    if (act !== null && act !== undefined) { sumActClosed += act; countActClosed++; }
+  }
+
+  // Cột YTM-1 (LK T1–T[curM-1])
+  var ytm1Plan = isPct ? (countPlanClosed ? sumPlanClosed / countPlanClosed : null) : sumPlanClosed;
+  var ytm1Act = isPct ? (countActClosed ? sumActClosed / countActClosed : null) : (countActClosed ? sumActClosed : null);
+  var ytm1Col = {
+    code: 'ytm1',
+    label: 'LK T1–T' + (curM - 1),
+    plan: ytm1Plan,
+    act: ytm1Act,
+    hasAct: ytm1Act !== null
+  };
+
+  // 2. Tuần của tháng hiện tại (Tháng curM: W1..W4)
+  var curMonthPer = getPer(curM);
+  var curWeeksCols = [];
+  var sumPlanCurWeeks = 0, sumActCurWeeks = 0;
+  var countCurWeeksClosed = 0;
+  ['W1', 'W2', 'W3', 'W4'].forEach(function(wKey){
+    var wAgg = kh_weekAgg(curMonthPer, wKey, sites);
+    var v = kh_val(m, wAgg);
+    var plan = v.plan;
+    if (isPct && !(plan > 0)) plan = null;
+    var act = v.actual;
+    curWeeksCols.push({ code: 'T' + curM + '_' + wKey, label: wKey, week: wKey, plan: plan, act: act, hasAct: act !== null });
+    if (act !== null && act !== undefined) {
+      sumActCurWeeks += act;
+      sumPlanCurWeeks += (plan || 0);
+      countCurWeeksClosed++;
+    }
+  });
+
+  // 3. Tuần của các tháng tiếp theo (ví dụ Tháng 12: W1..W4)
+  var futureWeeksCols = [];
+  var futureMonthList = [];
+  for (var fM = curM + 1; fM <= 12; fM++) {
+    futureMonthList.push(fM);
+    var fPer = getPer(fM);
+    ['W1', 'W2', 'W3', 'W4'].forEach(function(wKey){
+      var wAgg = kh_weekAgg(fPer, wKey, sites);
+      var v = kh_val(m, wAgg);
+      var plan = v.plan;
+      if (isPct && !(plan > 0)) plan = null;
+      futureWeeksCols.push({ code: 'T' + fM + '_' + wKey, label: wKey, month: fM, week: wKey, plan: plan, act: null, hasAct: false });
+    });
+  }
+
+  // 4. Cả năm (FY)
+  var sumPlanFY = 0, countPlanFY = 0;
+  for (var fyM = 1; fyM <= 12; fyM++) {
+    var fyPer = getPer(fyM);
+    var fyAgg = kh_periodAgg(fyPer, sites);
+    var fyV = kh_val(m, fyAgg);
+    var pVal = fyV.plan;
+    if (isPct && !(pVal > 0)) pVal = null;
+    if (pVal !== null && pVal !== undefined) { sumPlanFY += pVal; countPlanFY++; }
+  }
+  var fyPlan = isPct ? (countPlanFY ? sumPlanFY / countPlanFY : null) : sumPlanFY;
+  var fyActGot = isPct ? null : ((ytm1Act || 0) + sumActCurWeeks);
+
+  // 5. Tính Mức cần đạt (YTG)
+  var remainNeed = isPct ? null : (fyPlan - (fyActGot || 0));
+  var planRemaining = 0;
+  curWeeksCols.forEach(function(c){
+    if (!c.hasAct && c.plan) planRemaining += c.plan;
+  });
+  futureWeeksCols.forEach(function(c){
+    if (c.plan) planRemaining += c.plan;
+  });
+
+  var heSo = 1;
+  if (!isPct) {
+    heSo = (planRemaining > 0 && remainNeed !== null) ? (remainNeed / planRemaining) : 1;
+  }
+
+  // Tính Dòng 3 (L3) và Dòng 4 (Chênh lệch) cho tất cả các cột
+  var computeL3AndDiff = function(col){
+    if (col.hasAct && col.act !== null && col.act !== undefined) {
+      col.l3 = col.act;
+      col.badge = 'TT';
+      col.diff = (col.plan !== null && col.plan !== undefined) ? (col.act - col.plan) : null;
+    } else {
+      if (isPct) {
+        col.l3 = col.plan;
+      } else {
+        col.l3 = (col.plan !== null && col.plan !== undefined) ? (col.plan * heSo) : null;
+      }
+      col.badge = 'YTG';
+      col.diff = (col.l3 !== null && col.plan !== null && col.plan !== undefined) ? (col.l3 - col.plan) : null;
+    }
+  };
+
+  closedCols.forEach(computeL3AndDiff);
+  curWeeksCols.forEach(computeL3AndDiff);
+  futureWeeksCols.forEach(computeL3AndDiff);
+
+  ytm1Col.l3 = ytm1Col.act;
+  ytm1Col.badge = 'TT';
+  ytm1Col.diff = (ytm1Col.act !== null && ytm1Col.plan !== null) ? (ytm1Col.act - ytm1Col.plan) : null;
+
+  var fyCol = {
+    code: 'fy',
+    label: 'Cả năm',
+    plan: fyPlan,
+    act: fyActGot,
+    hasAct: true,
+    l3: fyPlan,
+    badge: null,
+    diff: 0
+  };
+
+  var descLines = [
+    'Kế hoạch năm (AOP). KH tuần = KH tháng chia theo số ngày.',
+    'Doanh thu thực tế đã ghi nhận. Ô trống nghĩa là chưa có số.',
+    'Thực tế nếu đã có, chưa có thì lấy mức cần đạt. Ô nền vàng là kỳ chưa có thực tế.',
+    'Dòng 3 trừ KH. Kỳ đã có số: xanh là vượt, đỏ là hụt. Kỳ chưa có số: đỏ là phải chạy vượt KH. Cột FY bằng 0 nghĩa là chạm đúng KH năm.'
+  ];
+
+  var diffCurMonth = sumActCurWeeks - sumPlanCurWeeks;
+
+  var h = '<table class="kh7-table kh-cmp-table"><thead>';
+  h += '<tr class="kh-grp-row">';
+  h += '<th class="kh7-c-name" rowspan="2">Chỉ tiêu / đơn vị ('+esc(U)+')</th>';
+  h += '<th colspan="'+closedCols.length+'" class="kh-grp-th kh-grp-closed">Các tháng đã chốt (T1–T'+(curM-1)+')</th>';
+  h += '<th colspan="1" class="kh-grp-th kh-grp-ytm">YTM-1</th>';
+  h += '<th colspan="4" class="kh-grp-th kh-grp-cur">Tháng '+curM+' (hiện tại) theo tuần</th>';
+  futureMonthList.forEach(function(fm){
+    h += '<th colspan="4" class="kh-grp-th kh-grp-fut">Tháng '+fm+' theo tuần</th>';
+  });
+  h += '<th colspan="1" class="kh-grp-th kh-grp-fy">FY</th>';
+  h += '<th class="kh-grp-th kh-grp-desc" rowspan="2">Diễn giải</th>';
+  h += '</tr>';
+
+  h += '<tr class="kh-sub-row">';
+  closedCols.forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
+  h += '<th class="kh-col-ytm-hd">'+esc(ytm1Col.label)+'</th>';
+  curWeeksCols.forEach(function(c){ h += '<th class="kh-col-cur-hd">'+esc(c.label)+'</th>'; });
+  futureWeeksCols.forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
+  h += '<th class="kh-col-fy-hd">'+esc(fyCol.label)+'</th>';
+  h += '</tr></thead><tbody>';
+
+  // DÒNG 1: 1. Kế hoạch (KH Target)
+  h += '<tr class="kh7-r1"><td class="kh7-c-name">1. Kế hoạch (KH Target)</td>';
+  closedCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+  h += '<td class="kh-col-ytm">'+(ytm1Col.plan!==null&&ytm1Col.plan!==undefined?f(ytm1Col.plan):dash)+'</td>';
+  curWeeksCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+  futureWeeksCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+  h += '<td class="kh-col-fy">'+(fyCol.plan!==null&&fyCol.plan!==undefined?f(fyCol.plan):dash)+'</td>';
+  h += '<td class="kh-col-desc">'+esc(descLines[0])+'</td></tr>';
+
+  // DÒNG 2: 2. Thực tế (TT)
+  h += '<tr class="kh7-r2"><td class="kh7-c-name">2. Thực tế (TT)</td>';
+  closedCols.forEach(function(c){ h += '<td>'+(c.act!==null&&c.act!==undefined?f(c.act):dash)+'</td>'; });
+  h += '<td class="kh-col-ytm">'+(ytm1Col.act!==null&&ytm1Col.act!==undefined?f(ytm1Col.act):dash)+'</td>';
+  curWeeksCols.forEach(function(c){ h += '<td>'+(c.hasAct?f(c.act):dash)+'</td>'; });
+  futureWeeksCols.forEach(function(c){ h += '<td>'+dash+'</td>'; });
+  h += '<td class="kh-col-fy">'+(fyCol.act!==null&&fyCol.act!==undefined?f(fyCol.act):dash)+'</td>';
+  h += '<td class="kh-col-desc">'+esc(descLines[1])+'</td></tr>';
+
+  // DÒNG 3: 3. Thực tế, chưa có thì cần đạt (YTG)
+  h += '<tr class="kh7-r3"><td class="kh7-c-name">3. Thực tế, chưa có thì cần đạt (YTG)</td>';
+  closedCols.forEach(function(c){
+    h += '<td>'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge tt">TT</span></td>';
+  });
+  h += '<td class="kh-col-ytm">'+(ytm1Col.l3!==null&&ytm1Col.l3!==undefined?f(ytm1Col.l3):dash)+(ytm1Col.act!==null?'<span class="kh7-badge tt">TT</span>':'')+'</td>';
+  curWeeksCols.forEach(function(c){
+    if (c.hasAct){
+      h += '<td>'+f(c.l3)+'<span class="kh7-badge tt">TT</span></td>';
+    } else {
+      h += '<td class="kh7-ytg-cell">'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
+    }
+  });
+  futureWeeksCols.forEach(function(c){
+    h += '<td class="kh7-ytg-cell">'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
+  });
+  h += '<td class="kh-col-fy">'+(fyCol.l3!==null&&fyCol.l3!==undefined?f(fyCol.l3):dash)+'</td>';
+  h += '<td class="kh-col-desc">'+esc(descLines[2])+'</td></tr>';
+
+  // DÒNG 4: 4. Chênh lệch (Dòng 3 − KH)
+  h += '<tr class="kh7-r4"><td class="kh7-c-name">4. Chênh lệch (Dòng 3 − KH)</td>';
+  closedCols.forEach(function(c){
+    h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+  });
+  h += '<td class="kh-col-ytm" style="'+kh7DiffStyle(m, ytm1Col.diff, ytm1Col.hasAct)+'">'+(ytm1Col.diff!==null&&ytm1Col.diff!==undefined?kh7sgn(m, ytm1Col.diff):dash)+'</td>';
+  curWeeksCols.forEach(function(c){
+    h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+  });
+  futureWeeksCols.forEach(function(c){
+    h += '<td style="'+kh7DiffStyle(m, c.diff, false)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+  });
+  h += '<td class="kh-col-fy" style="background:#F3F4F6;color:#6B7280;font-weight:700">0</td>';
+  h += '<td class="kh-col-desc">'+esc(descLines[3])+'</td></tr>';
+
+  h += '</tbody></table>';
+
+  // 2 Khối Cards tóm tắt tính toán phía dưới bảng
+  h += '<div class="kh-ytg-summary-section">';
+  // Khối 1: Cách tính mức cần đạt (YTG)
+  h += '<div class="card kh-ytg-card">'+
+    '<div class="kh-ytg-title">'+
+      '<span class="kh-ytg-icon">'+svg(IC.calc||IC.wallet, 16, '#1E7A4A')+'</span>'+
+      '<span>Cách tính mức cần đạt (YTG)</span>'+
+      '<span class="kh-ytg-sub">Phần còn thiếu để cả năm chạm KH, chia theo tỷ trọng KH các kỳ còn lại</span>'+
+    '</div>'+
+    '<div class="grid g6 kh-ytg-grid">'+
+      '<div class="kh-ytg-item">'+
+        '<div class="kh-ytg-item-lbl">KH cả năm</div>'+
+        '<div class="kh-ytg-item-val font-mono">'+(fyPlan!==null?f(fyPlan):dash)+'</div>'+
+        '<div class="kh-ytg-item-desc">Tổng KH 12 tháng</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item">'+
+        '<div class="kh-ytg-item-lbl">Thực tế đã có</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:#2563EB">'+(fyActGot!==null?f(fyActGot):dash)+'</div>'+
+        '<div class="kh-ytg-item-desc">YTM-1 + các tuần đã chốt</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item">'+
+        '<div class="kh-ytg-item-lbl">Còn thiếu để chạm KH cả năm</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:'+((remainNeed||0)>0?'#C0342C':'#15803D')+'">'+(remainNeed!==null?f(remainNeed):dash)+'</div>'+
+        '<div class="kh-ytg-item-desc">Phần phải làm thêm các kỳ tới</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item">'+
+        '<div class="kh-ytg-item-lbl">KH các kỳ chưa có thực tế</div>'+
+        '<div class="kh-ytg-item-val font-mono">'+f(planRemaining)+'</div>'+
+        '<div class="kh-ytg-item-desc">Cộng KH các tuần &amp; tháng chưa có số</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item highlight-amber">'+
+        '<div class="kh-ytg-item-lbl">Hệ số cần đạt (% KH mỗi kỳ)</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:#92400E">'+(isPct?'100.00%':((heSo*100).toFixed(2)+'%'))+'</div>'+
+        '<div class="kh-ytg-item-desc">Mỗi kỳ còn lại phải đạt tỷ lệ này</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item" style="background:'+((heSo-1)>0?'#FDECEC':'#E7F6EC')+'">'+
+        '<div class="kh-ytg-item-lbl">Mức vượt / thấp hơn so KH</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:'+((heSo-1)>0?'#C0342C':'#15803D')+'">'+
+          (isPct ? '0.00%' : (((heSo-1)>=0?'+':'')+((heSo-1)*100).toFixed(2)+'%'))+
+        '</div>'+
+        '<div class="kh-ytg-item-desc">'+((heSo-1)>0?'Phải chạy vượt kế hoạch':'Đã đạt tốt hơn kế hoạch')+'</div>'+
+      '</div>'+
+    '</div></div>';
+
+  // Khối 2: Đọc nhanh tháng hiện tại
+  h += '<div class="card kh-ytg-card">'+
+    '<div class="kh-ytg-title">'+
+      '<span class="kh-ytg-icon">'+svg(IC.clock||IC.meal, 16, '#2563EB')+'</span>'+
+      '<span>Đọc nhanh tháng hiện tại (Tháng '+curM+')</span>'+
+      '<span class="kh-ytg-sub">Tiến độ thực tế các tuần đã chốt so với kế hoạch cùng kỳ</span>'+
+    '</div>'+
+    '<div class="grid g4 kh-ytg-grid">'+
+      '<div class="kh-ytg-item">'+
+        '<div class="kh-ytg-item-lbl">Thực tế các tuần đã chốt</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:#2563EB">'+(countCurWeeksClosed>0?f(sumActCurWeeks):dash)+'</div>'+
+        '<div class="kh-ytg-item-desc">Đã chốt '+countCurWeeksClosed+'/4 tuần</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item">'+
+        '<div class="kh-ytg-item-lbl">KH cùng kỳ</div>'+
+        '<div class="kh-ytg-item-val font-mono">'+(countCurWeeksClosed>0?f(sumPlanCurWeeks):dash)+'</div>'+
+        '<div class="kh-ytg-item-desc">Kế hoạch tương ứng các tuần đã qua</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item" style="background:'+(diffCurMonth>=0?'#E7F6EC':'#FDECEC')+'">'+
+        '<div class="kh-ytg-item-lbl">Chênh lệch so với KH cùng kỳ</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:'+(diffCurMonth>=0?'#15803D':'#C0342C')+'">'+
+          (countCurWeeksClosed>0?((diffCurMonth>=0?'+':'')+f(diffCurMonth)):dash)+
+        '</div>'+
+        '<div class="kh-ytg-item-desc">'+(diffCurMonth>=0?'Vượt KH cùng kỳ':'Hụt so với KH cùng kỳ')+'</div>'+
+      '</div>'+
+      '<div class="kh-ytg-item highlight-amber">'+
+        '<div class="kh-ytg-item-lbl">Các tuần còn lại phải đạt (% KH tuần)</div>'+
+        '<div class="kh-ytg-item-val font-mono" style="color:#92400E">'+(isPct?'100.00%':((heSo*100).toFixed(2)+'%'))+'</div>'+
+        '<div class="kh-ytg-item-desc">Mục tiêu chạy chỉ tiêu mỗi tuần tới</div>'+
+      '</div>'+
+    '</div></div>';
+
+  h += '</div>';
+
+  return h;
+}
+
+function kh7TableHtml(m, S, sites, periods){
   var ytd = KHUI.kh7Mode === 'ytd';
+  if (!ytd) {
+    var selSites = sites || kh_selSites();
+    var allPeriods = periods || (KH && KH.periods) || [];
+    return kh7ComparisonTableHtml(m, selSites, allPeriods);
+  }
+  var f = m.fmt7 || m.fmt;
   var U = (m.unit7||'').toUpperCase();
   var perWord = (PF.gran==='quarter')?'QUÝ':(PF.gran==='year'?'NĂM':'THÁNG');
   var dash = '<span class="kh7-dash">–</span>';
   var rows = [
     { cls:'kh7-r1', name:'L1. Kế hoạch (KH)',
-      vals:ytd?S.cumL1:S.l1, badge:null, cum:S.planAll, remain:null, diffRow:false },
+      vals:S.cumL1, badge:null, cum:S.planAll, remain:null, diffRow:false },
     { cls:'kh7-r2', name:'L2. Thực tế (TT)',
-      vals:ytd?S.cumL2:S.l2, badge:null, cum:S.actGot, remain:null, diffRow:false },
+      vals:S.cumL2, badge:null, cum:S.actGot, remain:null, diffRow:false },
     { cls:'kh7-r3', name:'L3. Ước tính cuối kỳ',
-      vals:ytd?S.cumL3:S.l3, badge:S.badge, cum:S.projAll, remain:S.remain, diffRow:false },
+      vals:S.cumL3, badge:S.badge, cum:S.projAll, remain:S.remain, diffRow:false },
     { cls:'kh7-r4', name:'Dòng Δ (Chênh / Cần đạt)',
-      vals:ytd?S.deltaCum:S.delta, badge:null, cum:S.deltaLast, remain:S.remain, diffRow:true }
+      vals:S.deltaCum, badge:null, cum:S.deltaLast, remain:S.remain, diffRow:true }
   ];
 
-  var h = '<table class="kh7-table"><thead><tr><th class="kh7-c-name">Chỉ tiêu / '+(ytd?'lũy kế '+perWord:perWord)+' ('+esc(U)+')</th>';
+  var h = '<table class="kh7-table"><thead><tr><th class="kh7-c-name">Chỉ tiêu / lũy kế '+perWord+' ('+esc(U)+')</th>';
   S.labels.forEach(function(lb){ h += '<th>'+esc(kh7ShortLabel(lb))+'</th>'; });
   var fullScope = kh_countBuckets(KH_RAW, PF.gran, PF.year) <= S.n;
   h += '<th class="kh7-sum kh7-s1" title="Lũy kế trong phạm vi">'+(fullScope?'Lũy kế cả năm':'Lũy kế phạm vi')+'</th>'+
@@ -12541,11 +12953,7 @@ function kh7TableHtml(m, S){
           (S.hasAct[i] ? kh7sgn(m, v) : (f(v)+' <span class="kh7-khsuffix">(KH)</span>'))+'</td>';
         return;
       }
-      // Badge TT/KH chỉ có nghĩa ở chế độ từng kỳ; bản lũy kế là số trộn nhiều kỳ.
-      var bdg = (r.badge && !ytd)
-        ? '<span class="kh7-badge '+(r.badge[i]==='TT'?'tt':'kh')+'">'+r.badge[i]+'</span>'
-        : '';
-      h += '<td>'+f(v)+bdg+'</td>';
+      h += '<td>'+f(v)+'</td>';
     });
 
     var t1 = (r.cum===null||r.cum===undefined) ? '' : f(r.cum);
@@ -12571,7 +12979,7 @@ function kh7BodyHtml(sites, periods){
   });
   h += '</div>';
   h += '<div class="grid g4 kh7-cards">'+kh7CardsHtml(m, S)+'</div>';
-  h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S)+'</div>';
+  h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S, sites, periods)+'</div>';
   h += '<div class="kh7-chart-t">'+svg(IC.line,14,C.brand)+'Biểu đồ so sánh &amp; đường lũy kế tới cuối năm</div>'+
        '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+
        ' · Cột: '+S.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
@@ -12590,7 +12998,7 @@ function drawKehoach7(sites, periods){
       '</div>'+
       '<div class="kh7-hr"><span class="kh7-tgl-lb">Bảng:</span>'+
         '<div class="tg" id="kh7Mode">'+
-          '<button data-v="month" class="'+(mode==='month'?'on':'')+'">Theo từng tháng</button>'+
+          '<button data-v="month" class="'+(mode==='month'?'on':'')+'">Bảng so sánh (YTM-1 &amp; Tuần)</button>'+
           '<button data-v="ytd" class="'+(mode==='ytd'?'on':'')+'">Lũy kế cộng dồn (YTD từng tháng)</button>'+
         '</div>'+
       '</div>'+
