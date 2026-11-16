@@ -71,19 +71,23 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
     assert.ok(sPub.includes(`function ${fn}`), `public/script.js must contain function ${fn}`);
   });
 
-  // Verify header labels and badges exist
+  // Verify header labels, expandable columns and cards
   assert.ok(sRoot.includes('Các tháng đã chốt (T1–T'), 'script.js must contain closed months header');
   assert.ok(sRoot.includes('YTM-1'), 'script.js must contain YTM-1 header');
-  assert.ok(sRoot.includes('(hiện tại) theo tuần'), 'script.js must contain current month weekly header');
-  assert.ok(sRoot.includes('Cách tính mức cần đạt (YTG)'), 'script.js must contain YTG calculation summary card');
+  assert.ok(sRoot.includes('kh-expandable-th'), 'script.js must contain expandable month th');
+  assert.ok(sRoot.includes('( Click vào để xem chi tiết theo tuần )'), 'script.js must contain hover note for collapsed month');
+  assert.ok(sRoot.includes('( Click để thu gọn theo tháng )'), 'script.js must contain hover note for expanded month');
+  assert.strictEqual(sRoot.includes('<span>Cách tính mức cần đạt (YTG)</span>'), false, 'script.js must NOT contain YTG summary card as requested');
   assert.ok(sRoot.includes('Đọc nhanh tháng hiện tại'), 'script.js must contain current month quick-read card');
   assert.ok(sRoot.includes('kh7-badge ytg'), 'script.js must contain YTG badge');
   assert.ok(sRoot.includes('kh7-ytg-cell'), 'script.js must contain YTG cell class');
 
   assert.ok(sPub.includes('Các tháng đã chốt (T1–T'), 'public/script.js must contain closed months header');
   assert.ok(sPub.includes('YTM-1'), 'public/script.js must contain YTM-1 header');
-  assert.ok(sPub.includes('(hiện tại) theo tuần'), 'public/script.js must contain current month weekly header');
-  assert.ok(sPub.includes('Cách tính mức cần đạt (YTG)'), 'public/script.js must contain YTG calculation summary card');
+  assert.ok(sPub.includes('kh-expandable-th'), 'public/script.js must contain expandable month th');
+  assert.ok(sPub.includes('( Click vào để xem chi tiết theo tuần )'), 'public/script.js must contain hover note for collapsed month');
+  assert.ok(sPub.includes('( Click để thu gọn theo tháng )'), 'public/script.js must contain hover note for expanded month');
+  assert.strictEqual(sPub.includes('<span>Cách tính mức cần đạt (YTG)</span>'), false, 'public/script.js must NOT contain YTG summary card as requested');
   assert.ok(sPub.includes('Đọc nhanh tháng hiện tại'), 'public/script.js must contain current month quick-read card');
   assert.ok(sPub.includes('kh7-badge ytg'), 'public/script.js must contain YTG badge');
   assert.ok(sPub.includes('kh7-ytg-cell'), 'public/script.js must contain YTG cell class');
@@ -103,5 +107,8 @@ test('Ke Hoach Comparison Table - CSS styles in style.css and public/style.css',
     assert.ok(css.includes('.kh7-ytg-cell'), 'CSS must include .kh7-ytg-cell');
     assert.ok(css.includes('.kh-ytg-summary-section'), 'CSS must include .kh-ytg-summary-section');
     assert.ok(css.includes('.kh7-badge.ytg'), 'CSS must include .kh7-badge.ytg');
+    assert.ok(css.includes('.kh-expandable-th'), 'CSS must include .kh-expandable-th');
+    assert.ok(css.includes('.kh-exp-tooltip'), 'CSS must include .kh-exp-tooltip');
+    assert.ok(css.includes("font-family: 'Be Vietnam Pro'"), 'CSS must use Be Vietnam Pro font');
   });
 });

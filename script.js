@@ -12670,15 +12670,19 @@ function kh7ComparisonTableHtml(m, sites, periods){
   // 3. Tuần của các tháng tiếp theo (ví dụ Tháng 12: W1..W4)
   var futureWeeksCols = [];
   var futureMonthList = [];
+  var futureWeeksByMonth = {};
   for (var fM = curM + 1; fM <= 12; fM++) {
     futureMonthList.push(fM);
+    futureWeeksByMonth[fM] = [];
     var fPer = getPer(fM);
     ['W1', 'W2', 'W3', 'W4'].forEach(function(wKey){
       var wAgg = kh_weekAgg(fPer, wKey, sites);
       var v = kh_val(m, wAgg);
       var plan = v.plan;
       if (isPct && !(plan > 0)) plan = null;
-      futureWeeksCols.push({ code: 'T' + fM + '_' + wKey, label: wKey, month: fM, week: wKey, plan: plan, act: null, hasAct: false });
+      var wItem = { code: 'T' + fM + '_' + wKey, label: wKey, month: fM, week: wKey, plan: plan, act: null, hasAct: false };
+      futureWeeksCols.push(wItem);
+      futureWeeksByMonth[fM].push(wItem);
     });
   }
 
@@ -12731,6 +12735,27 @@ function kh7ComparisonTableHtml(m, sites, periods){
   curWeeksCols.forEach(computeL3AndDiff);
   futureWeeksCols.forEach(computeL3AndDiff);
 
+  // Dữ liệu tháng hiện tại và tương lai khi thu gọn (collapse)
+  var curMPerAgg = kh_periodAgg(curMonthPer, sites);
+  var curMV = kh_val(m, curMPerAgg);
+  var curMPlan = curMV.plan;
+  if (isPct && !(curMPlan > 0)) curMPlan = null;
+  var curMAct = countCurWeeksClosed > 0 ? sumActCurWeeks : null;
+  var curML3 = isPct ? (countCurWeeksClosed === 4 ? curMAct : curMPlan) : curWeeksCols.reduce(function(acc, c){ return acc + (c.l3 || 0); }, 0);
+  var curMDiff = (curML3 !== null && curMPlan !== null && curMPlan !== undefined) ? (curML3 - curMPlan) : null;
+
+  var futureMonthSummary = {};
+  futureMonthList.forEach(function(fm){
+    var fPer = getPer(fm);
+    var fAgg = kh_periodAgg(fPer, sites);
+    var fV = kh_val(m, fAgg);
+    var fPlan = fV.plan;
+    if (isPct && !(fPlan > 0)) fPlan = null;
+    var fL3 = isPct ? fPlan : (fPlan !== null && fPlan !== undefined ? fPlan * heSo : null);
+    var fDiff = (fL3 !== null && fPlan !== null && fPlan !== undefined) ? (fL3 - fPlan) : null;
+    futureMonthSummary[fm] = { plan: fPlan, act: null, l3: fL3, diff: fDiff };
+  });
+
   ytm1Col.l3 = ytm1Col.act;
   ytm1Col.badge = 'TT';
   ytm1Col.diff = (ytm1Col.act !== null && ytm1Col.plan !== null) ? (ytm1Col.act - ytm1Col.plan) : null;
@@ -12755,15 +12780,42 @@ function kh7ComparisonTableHtml(m, sites, periods){
 
   var diffCurMonth = sumActCurWeeks - sumPlanCurWeeks;
 
+  var expMap = KHUI.kh7ExpandedMonths || {};
+  var isCurExpanded = !!expMap[curM];
+
   var h = '<table class="kh7-table kh-cmp-table"><thead>';
   h += '<tr class="kh-grp-row">';
   h += '<th class="kh7-c-name" rowspan="2">Chỉ tiêu / đơn vị ('+esc(U)+')</th>';
   h += '<th colspan="'+closedCols.length+'" class="kh-grp-th kh-grp-closed">Các tháng đã chốt (T1–T'+(curM-1)+')</th>';
   h += '<th colspan="1" class="kh-grp-th kh-grp-ytm">YTM-1</th>';
-  h += '<th colspan="4" class="kh-grp-th kh-grp-cur">Tháng '+curM+' (hiện tại) theo tuần</th>';
+
+  if (isCurExpanded) {
+    h += '<th colspan="4" class="kh-grp-th kh-grp-cur kh-expandable-th expanded" data-m="'+curM+'" title="( Click để thu gọn theo tháng )">'+
+      '<div class="kh-exp-hd-wrap"><span>Tháng '+curM+' (hiện tại)</span><span class="kh-exp-badge">▾ Thu gọn</span></div>'+
+      '<div class="kh-exp-tooltip">( Click để thu gọn theo tháng )</div>'+
+    '</th>';
+  } else {
+    h += '<th colspan="1" class="kh-grp-th kh-grp-cur kh-expandable-th" data-m="'+curM+'" title="( Click vào để xem chi tiết theo tuần )">'+
+      '<div class="kh-exp-hd-wrap"><span>Tháng '+curM+'</span><span class="kh-exp-badge">4 tuần ▸</span></div>'+
+      '<div class="kh-exp-tooltip">( Click vào để xem chi tiết theo tuần )</div>'+
+    '</th>';
+  }
+
   futureMonthList.forEach(function(fm){
-    h += '<th colspan="4" class="kh-grp-th kh-grp-fut">Tháng '+fm+' theo tuần</th>';
+    var isFmExp = !!expMap[fm];
+    if (isFmExp) {
+      h += '<th colspan="4" class="kh-grp-th kh-grp-fut kh-expandable-th expanded" data-m="'+fm+'" title="( Click để thu gọn theo tháng )">'+
+        '<div class="kh-exp-hd-wrap"><span>Tháng '+fm+'</span><span class="kh-exp-badge">▾ Thu gọn</span></div>'+
+        '<div class="kh-exp-tooltip">( Click để thu gọn theo tháng )</div>'+
+      '</th>';
+    } else {
+      h += '<th colspan="1" class="kh-grp-th kh-grp-fut kh-expandable-th" data-m="'+fm+'" title="( Click vào để xem chi tiết theo tuần )">'+
+        '<div class="kh-exp-hd-wrap"><span>Tháng '+fm+'</span><span class="kh-exp-badge">4 tuần ▸</span></div>'+
+        '<div class="kh-exp-tooltip">( Click vào để xem chi tiết theo tuần )</div>'+
+      '</th>';
+    }
   });
+
   h += '<th colspan="1" class="kh-grp-th kh-grp-fy">FY</th>';
   h += '<th class="kh-grp-th kh-grp-desc" rowspan="2">Diễn giải</th>';
   h += '</tr>';
@@ -12771,8 +12823,19 @@ function kh7ComparisonTableHtml(m, sites, periods){
   h += '<tr class="kh-sub-row">';
   closedCols.forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
   h += '<th class="kh-col-ytm-hd">'+esc(ytm1Col.label)+'</th>';
-  curWeeksCols.forEach(function(c){ h += '<th class="kh-col-cur-hd">'+esc(c.label)+'</th>'; });
-  futureWeeksCols.forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
+  if (isCurExpanded) {
+    curWeeksCols.forEach(function(c){ h += '<th class="kh-col-cur-hd">'+esc(c.label)+'</th>'; });
+  } else {
+    h += '<th class="kh-col-cur-hd kh-expandable-th" data-m="'+curM+'" title="( Click vào để xem chi tiết theo tuần )">T'+curM+' <span class="kh-exp-badge-sm">▸</span></th>';
+  }
+  futureMonthList.forEach(function(fm){
+    var isFmExp = !!expMap[fm];
+    if (isFmExp) {
+      (futureWeeksByMonth[fm] || []).forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
+    } else {
+      h += '<th class="kh-expandable-th" data-m="'+fm+'" title="( Click vào để xem chi tiết theo tuần )">T'+fm+' <span class="kh-exp-badge-sm">▸</span></th>';
+    }
+  });
   h += '<th class="kh-col-fy-hd">'+esc(fyCol.label)+'</th>';
   h += '</tr></thead><tbody>';
 
@@ -12780,8 +12843,20 @@ function kh7ComparisonTableHtml(m, sites, periods){
   h += '<tr class="kh7-r1"><td class="kh7-c-name">1. Kế hoạch (KH Target)</td>';
   closedCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
   h += '<td class="kh-col-ytm">'+(ytm1Col.plan!==null&&ytm1Col.plan!==undefined?f(ytm1Col.plan):dash)+'</td>';
-  curWeeksCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
-  futureWeeksCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+  if (isCurExpanded) {
+    curWeeksCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+  } else {
+    h += '<td class="kh-col-cur">'+(curMPlan!==null&&curMPlan!==undefined?f(curMPlan):dash)+'</td>';
+  }
+  futureMonthList.forEach(function(fm){
+    var isFmExp = !!expMap[fm];
+    if (isFmExp) {
+      (futureWeeksByMonth[fm] || []).forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+    } else {
+      var sm = futureMonthSummary[fm];
+      h += '<td class="kh-col-fut">'+(sm&&sm.plan!==null&&sm.plan!==undefined?f(sm.plan):dash)+'</td>';
+    }
+  });
   h += '<td class="kh-col-fy">'+(fyCol.plan!==null&&fyCol.plan!==undefined?f(fyCol.plan):dash)+'</td>';
   h += '<td class="kh-col-desc">'+esc(descLines[0])+'</td></tr>';
 
@@ -12789,8 +12864,19 @@ function kh7ComparisonTableHtml(m, sites, periods){
   h += '<tr class="kh7-r2"><td class="kh7-c-name">2. Thực tế (TT)</td>';
   closedCols.forEach(function(c){ h += '<td>'+(c.act!==null&&c.act!==undefined?f(c.act):dash)+'</td>'; });
   h += '<td class="kh-col-ytm">'+(ytm1Col.act!==null&&ytm1Col.act!==undefined?f(ytm1Col.act):dash)+'</td>';
-  curWeeksCols.forEach(function(c){ h += '<td>'+(c.hasAct?f(c.act):dash)+'</td>'; });
-  futureWeeksCols.forEach(function(c){ h += '<td>'+dash+'</td>'; });
+  if (isCurExpanded) {
+    curWeeksCols.forEach(function(c){ h += '<td>'+(c.hasAct?f(c.act):dash)+'</td>'; });
+  } else {
+    h += '<td class="kh-col-cur">'+(curMAct!==null&&curMAct!==undefined?f(curMAct):dash)+'</td>';
+  }
+  futureMonthList.forEach(function(fm){
+    var isFmExp = !!expMap[fm];
+    if (isFmExp) {
+      (futureWeeksByMonth[fm] || []).forEach(function(c){ h += '<td>'+dash+'</td>'; });
+    } else {
+      h += '<td class="kh-col-fut">'+dash+'</td>';
+    }
+  });
   h += '<td class="kh-col-fy">'+(fyCol.act!==null&&fyCol.act!==undefined?f(fyCol.act):dash)+'</td>';
   h += '<td class="kh-col-desc">'+esc(descLines[1])+'</td></tr>';
 
@@ -12800,15 +12886,29 @@ function kh7ComparisonTableHtml(m, sites, periods){
     h += '<td>'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge tt">TT</span></td>';
   });
   h += '<td class="kh-col-ytm">'+(ytm1Col.l3!==null&&ytm1Col.l3!==undefined?f(ytm1Col.l3):dash)+(ytm1Col.act!==null?'<span class="kh7-badge tt">TT</span>':'')+'</td>';
-  curWeeksCols.forEach(function(c){
-    if (c.hasAct){
-      h += '<td>'+f(c.l3)+'<span class="kh7-badge tt">TT</span></td>';
+  if (isCurExpanded) {
+    curWeeksCols.forEach(function(c){
+      if (c.hasAct){
+        h += '<td>'+f(c.l3)+'<span class="kh7-badge tt">TT</span></td>';
+      } else {
+        h += '<td class="kh7-ytg-cell">'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
+      }
+    });
+  } else {
+    var curBadge = countCurWeeksClosed === 4 ? 'tt' : 'ytg';
+    var isYtgCur = countCurWeeksClosed < 4;
+    h += '<td class="kh-col-cur '+(isYtgCur?'kh7-ytg-cell':'')+'">'+(curML3!==null&&curML3!==undefined?f(curML3):dash)+'<span class="kh7-badge '+curBadge+'">'+curBadge.toUpperCase()+'</span></td>';
+  }
+  futureMonthList.forEach(function(fm){
+    var isFmExp = !!expMap[fm];
+    if (isFmExp) {
+      (futureWeeksByMonth[fm] || []).forEach(function(c){
+        h += '<td class="kh7-ytg-cell">'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
+      });
     } else {
-      h += '<td class="kh7-ytg-cell">'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
+      var sm = futureMonthSummary[fm];
+      h += '<td class="kh-col-fut kh7-ytg-cell">'+(sm&&sm.l3!==null&&sm.l3!==undefined?f(sm.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
     }
-  });
-  futureWeeksCols.forEach(function(c){
-    h += '<td class="kh7-ytg-cell">'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge ytg">YTG</span></td>';
   });
   h += '<td class="kh-col-fy">'+(fyCol.l3!==null&&fyCol.l3!==undefined?f(fyCol.l3):dash)+'</td>';
   h += '<td class="kh-col-desc">'+esc(descLines[2])+'</td></tr>';
@@ -12819,62 +12919,31 @@ function kh7ComparisonTableHtml(m, sites, periods){
     h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
   });
   h += '<td class="kh-col-ytm" style="'+kh7DiffStyle(m, ytm1Col.diff, ytm1Col.hasAct)+'">'+(ytm1Col.diff!==null&&ytm1Col.diff!==undefined?kh7sgn(m, ytm1Col.diff):dash)+'</td>';
-  curWeeksCols.forEach(function(c){
-    h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
-  });
-  futureWeeksCols.forEach(function(c){
-    h += '<td style="'+kh7DiffStyle(m, c.diff, false)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+  if (isCurExpanded) {
+    curWeeksCols.forEach(function(c){
+      h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+    });
+  } else {
+    h += '<td class="kh-col-cur" style="'+kh7DiffStyle(m, curMDiff, countCurWeeksClosed>0)+'">'+(curMDiff!==null&&curMDiff!==undefined?kh7sgn(m, curMDiff):dash)+'</td>';
+  }
+  futureMonthList.forEach(function(fm){
+    var isFmExp = !!expMap[fm];
+    if (isFmExp) {
+      (futureWeeksByMonth[fm] || []).forEach(function(c){
+        h += '<td style="'+kh7DiffStyle(m, c.diff, false)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+      });
+    } else {
+      var sm = futureMonthSummary[fm];
+      h += '<td class="kh-col-fut" style="'+kh7DiffStyle(m, sm?sm.diff:null, false)+'">'+(sm&&sm.diff!==null&&sm.diff!==undefined?kh7sgn(m, sm.diff):dash)+'</td>';
+    }
   });
   h += '<td class="kh-col-fy" style="background:#F3F4F6;color:#6B7280;font-weight:700">0</td>';
   h += '<td class="kh-col-desc">'+esc(descLines[3])+'</td></tr>';
 
   h += '</tbody></table>';
 
-  // 2 Khối Cards tóm tắt tính toán phía dưới bảng
+  // Khối Card tóm tắt: giữ Đọc nhanh tháng hiện tại, bỏ Cách tính mức cần đạt YTG theo yêu cầu người dùng
   h += '<div class="kh-ytg-summary-section">';
-  // Khối 1: Cách tính mức cần đạt (YTG)
-  h += '<div class="card kh-ytg-card">'+
-    '<div class="kh-ytg-title">'+
-      '<span class="kh-ytg-icon">'+svg(IC.calc||IC.wallet, 16, '#1E7A4A')+'</span>'+
-      '<span>Cách tính mức cần đạt (YTG)</span>'+
-      '<span class="kh-ytg-sub">Phần còn thiếu để cả năm chạm KH, chia theo tỷ trọng KH các kỳ còn lại</span>'+
-    '</div>'+
-    '<div class="grid g6 kh-ytg-grid">'+
-      '<div class="kh-ytg-item">'+
-        '<div class="kh-ytg-item-lbl">KH cả năm</div>'+
-        '<div class="kh-ytg-item-val font-mono">'+(fyPlan!==null?f(fyPlan):dash)+'</div>'+
-        '<div class="kh-ytg-item-desc">Tổng KH 12 tháng</div>'+
-      '</div>'+
-      '<div class="kh-ytg-item">'+
-        '<div class="kh-ytg-item-lbl">Thực tế đã có</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:#2563EB">'+(fyActGot!==null?f(fyActGot):dash)+'</div>'+
-        '<div class="kh-ytg-item-desc">YTM-1 + các tuần đã chốt</div>'+
-      '</div>'+
-      '<div class="kh-ytg-item">'+
-        '<div class="kh-ytg-item-lbl">Còn thiếu để chạm KH cả năm</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:'+((remainNeed||0)>0?'#C0342C':'#15803D')+'">'+(remainNeed!==null?f(remainNeed):dash)+'</div>'+
-        '<div class="kh-ytg-item-desc">Phần phải làm thêm các kỳ tới</div>'+
-      '</div>'+
-      '<div class="kh-ytg-item">'+
-        '<div class="kh-ytg-item-lbl">KH các kỳ chưa có thực tế</div>'+
-        '<div class="kh-ytg-item-val font-mono">'+f(planRemaining)+'</div>'+
-        '<div class="kh-ytg-item-desc">Cộng KH các tuần &amp; tháng chưa có số</div>'+
-      '</div>'+
-      '<div class="kh-ytg-item highlight-amber">'+
-        '<div class="kh-ytg-item-lbl">Hệ số cần đạt (% KH mỗi kỳ)</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:#92400E">'+(isPct?'100.00%':((heSo*100).toFixed(2)+'%'))+'</div>'+
-        '<div class="kh-ytg-item-desc">Mỗi kỳ còn lại phải đạt tỷ lệ này</div>'+
-      '</div>'+
-      '<div class="kh-ytg-item" style="background:'+((heSo-1)>0?'#FDECEC':'#E7F6EC')+'">'+
-        '<div class="kh-ytg-item-lbl">Mức vượt / thấp hơn so KH</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:'+((heSo-1)>0?'#C0342C':'#15803D')+'">'+
-          (isPct ? '0.00%' : (((heSo-1)>=0?'+':'')+((heSo-1)*100).toFixed(2)+'%'))+
-        '</div>'+
-        '<div class="kh-ytg-item-desc">'+((heSo-1)>0?'Phải chạy vượt kế hoạch':'Đã đạt tốt hơn kế hoạch')+'</div>'+
-      '</div>'+
-    '</div></div>';
-
-  // Khối 2: Đọc nhanh tháng hiện tại
   h += '<div class="card kh-ytg-card">'+
     '<div class="kh-ytg-title">'+
       '<span class="kh-ytg-icon">'+svg(IC.clock||IC.meal, 16, '#2563EB')+'</span>'+
@@ -12884,24 +12953,24 @@ function kh7ComparisonTableHtml(m, sites, periods){
     '<div class="grid g4 kh-ytg-grid">'+
       '<div class="kh-ytg-item">'+
         '<div class="kh-ytg-item-lbl">Thực tế các tuần đã chốt</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:#2563EB">'+(countCurWeeksClosed>0?f(sumActCurWeeks):dash)+'</div>'+
+        '<div class="kh-ytg-item-val" style="color:#2563EB">'+(countCurWeeksClosed>0?f(sumActCurWeeks):dash)+'</div>'+
         '<div class="kh-ytg-item-desc">Đã chốt '+countCurWeeksClosed+'/4 tuần</div>'+
       '</div>'+
       '<div class="kh-ytg-item">'+
         '<div class="kh-ytg-item-lbl">KH cùng kỳ</div>'+
-        '<div class="kh-ytg-item-val font-mono">'+(countCurWeeksClosed>0?f(sumPlanCurWeeks):dash)+'</div>'+
+        '<div class="kh-ytg-item-val">'+(countCurWeeksClosed>0?f(sumPlanCurWeeks):dash)+'</div>'+
         '<div class="kh-ytg-item-desc">Kế hoạch tương ứng các tuần đã qua</div>'+
       '</div>'+
       '<div class="kh-ytg-item" style="background:'+(diffCurMonth>=0?'#E7F6EC':'#FDECEC')+'">'+
         '<div class="kh-ytg-item-lbl">Chênh lệch so với KH cùng kỳ</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:'+(diffCurMonth>=0?'#15803D':'#C0342C')+'">'+
+        '<div class="kh-ytg-item-val" style="color:'+(diffCurMonth>=0?'#15803D':'#C0342C')+'">'+
           (countCurWeeksClosed>0?((diffCurMonth>=0?'+':'')+f(diffCurMonth)):dash)+
         '</div>'+
         '<div class="kh-ytg-item-desc">'+(diffCurMonth>=0?'Vượt KH cùng kỳ':'Hụt so với KH cùng kỳ')+'</div>'+
       '</div>'+
       '<div class="kh-ytg-item highlight-amber">'+
         '<div class="kh-ytg-item-lbl">Các tuần còn lại phải đạt (% KH tuần)</div>'+
-        '<div class="kh-ytg-item-val font-mono" style="color:#92400E">'+(isPct?'100.00%':((heSo*100).toFixed(2)+'%'))+'</div>'+
+        '<div class="kh-ytg-item-val" style="color:#92400E">'+(isPct?'100.00%':((heSo*100).toFixed(2)+'%'))+'</div>'+
         '<div class="kh-ytg-item-desc">Mục tiêu chạy chỉ tiêu mỗi tuần tới</div>'+
       '</div>'+
     '</div></div>';
@@ -13191,13 +13260,23 @@ function bindKehoachEvents(){
     thamSoToggle.style.marginBottom = KHUI.thamSoOpen ? '11px' : '0';
   };
 
-  // Pill chọn chỉ tiêu: gắn trên #kh7Body (phần tử cố định) vì nội dung bên
-  // trong được vẽ lại mỗi lần đổi chỉ tiêu.
+  // Pill chọn chỉ tiêu & toggle mở rộng/thu gọn tuần các tháng trên bảng so sánh: gắn trên #kh7Body
   var kh7Body = document.getElementById('kh7Body');
   if (kh7Body) kh7Body.onclick = function(e){
-    var b = e.target.closest('#kh7Pills button'); if (!b) return;
-    KHUI.metric = b.dataset.k;
-    kh7Refresh();
+    var b = e.target.closest('#kh7Pills button');
+    if (b) {
+      KHUI.metric = b.dataset.k;
+      kh7Refresh();
+      return;
+    }
+    var th = e.target.closest('.kh-expandable-th');
+    if (th && th.dataset && th.dataset.m) {
+      var mNum = parseInt(th.dataset.m, 10);
+      KHUI.kh7ExpandedMonths = KHUI.kh7ExpandedMonths || {};
+      KHUI.kh7ExpandedMonths[mNum] = !KHUI.kh7ExpandedMonths[mNum];
+      kh7Refresh();
+      return;
+    }
   };
 
   // Toggle "Theo từng tháng" | "Lũy kế cộng dồn (YTD từng tháng)"
