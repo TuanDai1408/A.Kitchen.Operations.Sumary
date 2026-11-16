@@ -12283,7 +12283,7 @@ function drawKehoach(){
   if (KHUI.kh7Mode === 'ytd') {
     safe('kh7', drawKh7Chart);
   } else {
-    bindKhAopCutEvents();
+    bindKhAopChartEvents();
   }
   bindKehoachEvents();
 }
@@ -12634,10 +12634,11 @@ function kh7ComparisonTableHtml(m, sites, periods){
     return pMap[k] || { key: k, label: 'Tháng ' + (monthNum < 10 ? '0' + monthNum : monthNum) + '/' + year, bySite: {} };
   };
 
-  // 1. Thu thập dữ liệu các tháng đã chốt (T1 đến T[curM-1])
+  // 1. Thu thập dữ liệu các tháng đã chốt (từ T3 khi năm 2026, hoặc T1 khi năm khác đến T[curM-1])
+  var startM = (year === '2026' ? 3 : 1);
   var closedCols = [];
   var sumPlanClosed = 0, sumActClosed = 0, countPlanClosed = 0, countActClosed = 0;
-  for (var mIdx = 1; mIdx < curM; mIdx++) {
+  for (var mIdx = startM; mIdx < curM; mIdx++) {
     var p = getPer(mIdx);
     var agg = kh_periodAgg(p, sites);
     var v = kh_val(m, agg);
@@ -12649,12 +12650,12 @@ function kh7ComparisonTableHtml(m, sites, periods){
     if (act !== null && act !== undefined) { sumActClosed += act; countActClosed++; }
   }
 
-  // Cột YTM-1 (LK T1–T[curM-1])
+  // Cột YTM-1 (LK T[startM]–T[curM-1])
   var ytm1Plan = isPct ? (countPlanClosed ? sumPlanClosed / countPlanClosed : null) : sumPlanClosed;
   var ytm1Act = isPct ? (countActClosed ? sumActClosed / countActClosed : null) : (countActClosed ? sumActClosed : null);
   var ytm1Col = {
     code: 'ytm1',
-    label: 'LK T1–T' + (curM - 1),
+    label: 'LK T' + startM + '–T' + (curM - 1),
     plan: ytm1Plan,
     act: ytm1Act,
     hasAct: ytm1Act !== null
@@ -12798,7 +12799,7 @@ function kh7ComparisonTableHtml(m, sites, periods){
   var h = '<table class="kh7-table kh-cmp-table"><thead>';
   h += '<tr class="kh-grp-row">';
   h += '<th class="kh7-c-name" rowspan="2">Chỉ tiêu / đơn vị ('+esc(U)+')</th>';
-  h += '<th colspan="'+closedCols.length+'" class="kh-grp-th kh-grp-closed">Các tháng đã chốt (T1–T'+(curM-1)+')</th>';
+  h += '<th colspan="'+closedCols.length+'" class="kh-grp-th kh-grp-closed">Các tháng đã chốt (T'+startM+'–T'+(curM-1)+')</th>';
   h += '<th colspan="1" class="kh-grp-th kh-grp-ytm">YTM-1</th>';
 
   if (isCurExpanded) {
@@ -13048,20 +13049,16 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     KHUI.khAopCut = cut;
   }
 
-  // Lọc các tháng đã chốt và các tháng thiếu dữ liệu trong khoảng 1..cut
+  // Lọc các tháng đã chốt và các tháng thiếu dữ liệu từ tháng có giao dịch (T3 khi năm 2026) đến cut
+  var startMonth = (year === '2026' ? 3 : 1);
   var closedMonths = [];
   var missingMonths = [];
-  for (var i = 0; i < cut; i++) {
+  for (var i = startMonth - 1; i < cut; i++) {
     var item = allMonthsData[i];
     if (item.hasAct && item.act !== null) {
       closedMonths.push(item);
     } else {
-      // Năm 2026: T1 và T2 là trước thời điểm phát sinh giao dịch nên không coi là thiếu số liệu
-      if (year === '2026' && item.month < 3) {
-        // bỏ qua T1, T2
-      } else {
-        missingMonths.push(item.label);
-      }
+      missingMonths.push(item.label);
     }
   }
 
@@ -13090,6 +13087,14 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     item.diffUnit = diffUnit;
     item.cumPct = cumPct;
   });
+
+  // Lưu trữ dữ liệu để phục vụ tooltip hover
+  KHUI._aopData = {
+    closedMonths: closedMonths,
+    unit: unit,
+    scale: scale,
+    m: m
+  };
 
   var fmtVN1 = function(n){
     if (n === null || n === undefined || isNaN(n)) return '0,0';
@@ -13132,7 +13137,7 @@ function kh7AopVarianceChartHtml(m, sites, periods){
 
   if (!closedMonths.length) {
     h += '<div style="padding:40px 20px;text-align:center;color:var(--muted);font-size:13px;">' +
-      'Chưa có dữ liệu thực tế cho các tháng từ T1 đến T' + cut + '.' +
+      'Chưa có dữ liệu thực tế cho các tháng từ T' + startMonth + ' đến T' + cut + '.' +
     '</div></div>';
     return h;
   }
@@ -13177,7 +13182,7 @@ function kh7AopVarianceChartHtml(m, sites, periods){
   // Vạch chuẩn 100% (AOP) ở dải trên
   if (y100 >= yPctTop && y100 <= yPctBottom) {
     svgContent += '<line x1="' + padLeft + '" y1="' + y100 + '" x2="' + (padLeft + chartW) + '" y2="' + y100 + '" stroke="#CBD5E1" stroke-dasharray="4,4" stroke-width="1.2"/>' +
-      '<text x="' + (padLeft + chartW + 6) + '" y="' + (y100 + 3.5) + '" font-size="10.5" font-family="Be Vietnam Pro, sans-serif" font-weight="600" fill="#64748B">100%</text>';
+      '<text x="' + (padLeft + chartW + 6) + '" y="' + (y100 + 3.5) + '" font-size="10.5" font-family="Roboto, sans-serif" font-weight="600" fill="#64748B">100%</text>';
   }
 
   // Đường phân cách giữa dải % và dải Cột
@@ -13185,14 +13190,14 @@ function kh7AopVarianceChartHtml(m, sites, periods){
 
   // Đường số 0 ở dải Cột
   svgContent += '<line x1="' + padLeft + '" y1="' + yZero + '" x2="' + (padLeft + chartW) + '" y2="' + yZero + '" stroke="#94A3B8" stroke-width="1.5"/>' +
-    '<text x="' + (padLeft - 10) + '" y="' + (yZero + 4) + '" font-size="11" font-family="Be Vietnam Pro, sans-serif" font-weight="700" text-anchor="end" fill="#64748B">0</text>';
+    '<text x="' + (padLeft - 10) + '" y="' + (yZero + 4) + '" font-size="11" font-family="Roboto, sans-serif" font-weight="700" text-anchor="end" fill="#64748B">0</text>';
 
   // Vẽ các cột chênh lệch và tính điểm tọa độ cho đường %
   var points = [];
   closedMonths.forEach(function(item, idx){
     var xi = padLeft + stepX * idx + stepX / 2;
     var yiPct = calcYPct(item.cumPct);
-    points.push({ x: xi, y: yiPct, pct: item.cumPct });
+    points.push({ x: xi, y: yiPct, pct: item.cumPct, idx: idx });
 
     // Cột chênh lệch
     var isOver = item.diffUnit >= 0;
@@ -13205,11 +13210,11 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     var valStr = sign + fmtVN1(Math.abs(item.diffUnit));
     var yText = isOver ? (yBar - 6) : (yZero + barH + 13);
 
-    svgContent += '<rect x="' + (xi - barW / 2) + '" y="' + yBar + '" width="' + barW + '" height="' + barH + '" rx="3" fill="' + barColor + '"/>' +
-      '<text x="' + xi + '" y="' + yText + '" text-anchor="middle" font-size="11" font-family="Be Vietnam Pro, sans-serif" font-weight="700" fill="' + textFill + '">' + esc(valStr) + '</text>';
+    svgContent += '<rect class="kh-aop-bar-rect" data-idx="' + idx + '" x="' + (xi - barW / 2) + '" y="' + yBar + '" width="' + barW + '" height="' + barH + '" rx="3" fill="' + barColor + '"/>' +
+      '<text x="' + xi + '" y="' + yText + '" text-anchor="middle" font-size="11" font-family="Roboto, sans-serif" font-weight="700" fill="' + textFill + '">' + esc(valStr) + '</text>';
 
-    // Nhãn trục X (T1..Ti)
-    svgContent += '<text x="' + xi + '" y="358" text-anchor="middle" font-size="12" font-family="Be Vietnam Pro, sans-serif" font-weight="700" fill="#334155">' + esc(item.label) + '</text>';
+    // Nhãn trục X (T3..Ti)
+    svgContent += '<text x="' + xi + '" y="358" text-anchor="middle" font-size="12" font-family="Roboto, sans-serif" font-weight="700" fill="#334155">' + esc(item.label) + '</text>';
   });
 
   // Vẽ đường nối % lũy kế
@@ -13223,13 +13228,19 @@ function kh7AopVarianceChartHtml(m, sites, periods){
 
   // Vẽ các điểm tròn và text nhãn % trên từng điểm
   points.forEach(function(pt){
-    svgContent += '<circle cx="' + pt.x + '" cy="' + pt.y + '" r="4.5" fill="#1E3A8A" stroke="#FFFFFF" stroke-width="2"/>' +
-      '<text x="' + pt.x + '" y="' + (pt.y - 9) + '" text-anchor="middle" font-size="11" font-family="Be Vietnam Pro, sans-serif" font-weight="700" fill="#0F172A">' + esc(fmtVNPct(pt.pct)) + '</text>';
+    svgContent += '<circle class="kh-aop-point-dot" data-idx="' + pt.idx + '" cx="' + pt.x + '" cy="' + pt.y + '" r="4.5" fill="#1E3A8A" stroke="#FFFFFF" stroke-width="2"/>' +
+      '<text x="' + pt.x + '" y="' + (pt.y - 9) + '" text-anchor="middle" font-size="11" font-family="Roboto, sans-serif" font-weight="700" fill="#0F172A">' + esc(fmtVNPct(pt.pct)) + '</text>';
+  });
+
+  // Vẽ các vùng cảm ứng hover (hover zones) trên toàn bộ chiều cao của chart
+  closedMonths.forEach(function(item, idx){
+    var xi = padLeft + stepX * idx + stepX / 2;
+    svgContent += '<rect class="kh-aop-hover-zone" data-idx="' + idx + '" x="' + (xi - stepX / 2) + '" y="0" width="' + stepX + '" height="' + svgH + '" fill="transparent"/>';
   });
 
   svgContent += '</svg>';
 
-  h += '<div class="kh-aop-svg-wrap">' + svgContent + '</div>';
+  h += '<div class="kh-aop-svg-wrap" id="khAopSvgWrap">' + svgContent + '<div id="khAopTooltip" class="kh-aop-tooltip" style="display:none;"></div></div>';
 
   // Dựng Khung Insight dưới Chart (2 đến 3 câu tự sinh từ số liệu)
   var lastItem = closedMonths[closedMonths.length - 1];
@@ -13256,7 +13267,8 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     var diffSignR = avgRecent >= 0 ? '+' : '';
     var diffSignE = avgEarly >= 0 ? '+' : '';
 
-    cau3 = 'So sánh chênh lệch bình quân 3 tháng gần nhất (' + diffSignR + fmtVN1(avgRecent) + ' ' + unit + ') với 3 tháng đầu năm (' + diffSignE + fmtVN1(avgEarly) + ' ' + unit + '): ' +
+    var earlyLabel = year === '2026' ? '3 tháng đầu kỳ (' + early3[0].label + '–' + early3[2].label + ')' : '3 tháng đầu năm';
+    cau3 = 'So sánh chênh lệch bình quân 3 tháng gần nhất (' + diffSignR + fmtVN1(avgRecent) + ' ' + unit + ') với ' + earlyLabel + ' (' + diffSignE + fmtVN1(avgEarly) + ' ' + unit + '): ' +
       (isImproving ? '<strong>khoảng cách đang thu hẹp, xu hướng tích cực</strong>.' : '<strong>khoảng cách đang xấu đi, cần xem lại nguyên nhân</strong>.');
   } else {
     cau3 = 'Hiện đã ghi nhận ' + closedMonths.length + ' tháng thực tế, tiếp tục theo dõi thêm các tháng tới để đánh giá xu hướng 3 tháng.';
@@ -13270,7 +13282,7 @@ function kh7AopVarianceChartHtml(m, sites, periods){
   h += '<div class="kh-aop-insight-box">' +
     '<div class="kh-aop-insight-title">' +
       svg(IC.calc || IC.wallet, 15, '#166534') +
-      '<span>Nhận định &amp; Phân tích xu hướng AOP (T1–' + lastItem.label + ')</span>' +
+      '<span>Nhận định &amp; Phân tích xu hướng AOP (T' + startMonth + '–' + lastItem.label + ')</span>' +
     '</div>' +
     '<p class="kh-aop-insight-text">' + cau1 + ' ' + cau2 + ' ' + cau3 + '</p>' +
     missingNote +
@@ -13288,6 +13300,129 @@ function bindKhAopCutEvents(){
       kh7Refresh();
     };
   }
+}
+
+// Bắt sự kiện hover trên biểu đồ AOP để hiển thị tooltip thông tin chi tiết
+function bindKhAopTooltipEvents(){
+  var data = KHUI._aopData;
+  if (!data || !data.closedMonths || !data.closedMonths.length) return;
+  var closedMonths = data.closedMonths;
+  var unit = data.unit;
+  var wrap = document.getElementById('khAopSvgWrap');
+  var tip = document.getElementById('khAopTooltip');
+  if (!wrap || !tip) return;
+
+  var fmtVN1 = function(n){
+    if (n === null || n === undefined || isNaN(n)) return '0,0';
+    return Number(n).toFixed(1).replace('.', ',');
+  };
+  var fmtVNPct = function(n){
+    if (n === null || n === undefined || isNaN(n)) return '0,0%';
+    return Number(n).toFixed(1).replace('.', ',') + '%';
+  };
+
+  var zones = wrap.querySelectorAll('.kh-aop-hover-zone');
+  var bars = wrap.querySelectorAll('.kh-aop-bar-rect');
+  var dots = wrap.querySelectorAll('.kh-aop-point-dot');
+
+  var runningAop = 0, runningAct = 0;
+  var cumData = closedMonths.map(function(item){
+    runningAop += item.aopUnit;
+    runningAct += item.actUnit;
+    return {
+      cumAop: runningAop,
+      cumAct: runningAct
+    };
+  });
+
+  var activeIdx = -1;
+
+  var hideTip = function(){
+    tip.style.display = 'none';
+    if (activeIdx >= 0) {
+      if (bars[activeIdx]) {
+        bars[activeIdx].style.opacity = '1';
+        bars[activeIdx].style.filter = 'none';
+      }
+      if (dots[activeIdx]) {
+        dots[activeIdx].setAttribute('r', '4.5');
+        dots[activeIdx].setAttribute('stroke-width', '2');
+      }
+      activeIdx = -1;
+    }
+  };
+
+  zones.forEach(function(zone){
+    zone.addEventListener('mouseenter', function(e){
+      var idx = parseInt(this.getAttribute('data-idx'), 10);
+      var item = closedMonths[idx];
+      if (!item) return;
+
+      if (activeIdx >= 0 && activeIdx !== idx) {
+        if (bars[activeIdx]) { bars[activeIdx].style.opacity = '1'; bars[activeIdx].style.filter = 'none'; }
+        if (dots[activeIdx]) { dots[activeIdx].setAttribute('r', '4.5'); dots[activeIdx].setAttribute('stroke-width', '2'); }
+      }
+      activeIdx = idx;
+
+      if (bars[idx]) {
+        bars[idx].style.opacity = '0.85';
+        bars[idx].style.filter = 'drop-shadow(0 2px 6px rgba(0,0,0,0.3))';
+      }
+      if (dots[idx]) {
+        dots[idx].setAttribute('r', '7');
+        dots[idx].setAttribute('stroke-width', '3');
+      }
+
+      var isOver = item.diffUnit >= 0;
+      var sign = isOver ? '+' : '-';
+      var badgeCls = isOver ? 'ok' : 'bad';
+      var badgeTxt = isOver ? 'VƯỢT AOP' : 'HỤT AOP';
+      var cum = cumData[idx] || { cumAop: 0, cumAct: 0 };
+
+      var h = '<div class="kh-tip-header">' +
+        '<span class="kh-tip-title">Tháng ' + item.month + (PF.year ? '/' + PF.year : '') + ' (' + item.label + ')</span>' +
+        '<span class="kh-tip-badge ' + badgeCls + '">' + badgeTxt + '</span>' +
+      '</div>' +
+      '<div class="kh-tip-divider"></div>' +
+      '<div class="kh-tip-section-lbl">Số liệu trong tháng (' + esc(unit) + ')</div>' +
+      '<div class="kh-tip-row"><span>Thực tế tháng:</span><span class="kh-tip-val">' + fmtVN1(item.actUnit) + '</span></div>' +
+      '<div class="kh-tip-row"><span>Kế hoạch AOP:</span><span class="kh-tip-val">' + fmtVN1(item.aopUnit) + '</span></div>' +
+      '<div class="kh-tip-row kh-tip-highlight"><span>Chênh lệch tháng:</span><span class="kh-tip-val" style="color:' + (isOver ? '#34D399' : '#F87171') + '">' + sign + fmtVN1(Math.abs(item.diffUnit)) + ' ' + esc(unit) + '</span></div>' +
+      '<div class="kh-tip-divider"></div>' +
+      '<div class="kh-tip-section-lbl">Lũy kế đầu kỳ đến tháng ' + item.label + '</div>' +
+      '<div class="kh-tip-row"><span>Thực tế lũy kế:</span><span class="kh-tip-val">' + fmtVN1(cum.cumAct) + ' ' + esc(unit) + '</span></div>' +
+      '<div class="kh-tip-row"><span>Kế hoạch lũy kế:</span><span class="kh-tip-val">' + fmtVN1(cum.cumAop) + ' ' + esc(unit) + '</span></div>' +
+      '<div class="kh-tip-row kh-tip-highlight"><span>% Đạt AOP lũy kế:</span><span class="kh-tip-val" style="color:#60A5FA;font-size:13px">' + fmtVNPct(item.cumPct) + '</span></div>';
+
+      tip.innerHTML = h;
+      tip.style.display = 'block';
+    });
+
+    zone.addEventListener('mousemove', function(e){
+      var rect = wrap.getBoundingClientRect();
+      var x = e.clientX - rect.left + 15;
+      var y = e.clientY - rect.top - 20;
+
+      if (x + 240 > wrap.clientWidth) {
+        x = e.clientX - rect.left - 245;
+      }
+      if (y < 10) y = 10;
+
+      tip.style.left = Math.max(10, x) + 'px';
+      tip.style.top = y + 'px';
+    });
+
+    zone.addEventListener('mouseleave', function(){
+      hideTip();
+    });
+  });
+
+  wrap.addEventListener('mouseleave', hideTip);
+}
+
+function bindKhAopChartEvents(){
+  bindKhAopCutEvents();
+  bindKhAopTooltipEvents();
 }
 
 function kh7BodyHtml(sites, periods){
@@ -13328,7 +13463,7 @@ function drawKehoach7(sites, periods){
   return '<div class="card" id="kh7Card">'+
     '<div class="card-t kh7-head">'+
       '<div class="kh7-hl">'+
-        '<h3>'+svg(IC.table,15,C.brand)+'Theo dõi 7 chỉ tiêu theo tháng (T1–T12) &amp; Lũy kế cuối năm</h3>'+
+        '<h3>'+svg(IC.table,15,C.brand)+'Theo dõi 7 chỉ tiêu theo tháng ('+(String(PF.year)==='2026'||!PF.year?'T3–T12':'T1–T12')+') &amp; Lũy kế cuối năm</h3>'+
         '<div class="kh7-hint">'+kh7Hint(m)+'</div>'+
       '</div>'+
       '<div class="kh7-hr"><span class="kh7-tgl-lb">Bảng:</span>'+
@@ -13353,7 +13488,7 @@ function kh7Refresh(){
     try { drawKh7Chart(); } catch(e){ console.error('Lỗi vẽ kh7 chart:', e); }
   } else {
     destroyChart('chKh7');
-    bindKhAopCutEvents();
+    bindKhAopChartEvents();
   }
 }
 

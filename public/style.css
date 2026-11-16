@@ -3511,6 +3511,11 @@ tfoot tr td {
    TAB SO SÁNH KẾ HOẠCH — KHỐI "7 CHỈ TIÊU THEO THÁNG & LŨY KẾ CUỐI NĂM"
    Xếp dọc thuần (flex/grid), không position:absolute, không margin âm.
    ========================================================================= */
+#tab-kehoach,
+#tab-kehoach * {
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+}
+
 #tab-kehoach .kh7-head {
   flex-wrap: wrap;
   gap: 10px;
@@ -3771,17 +3776,17 @@ tfoot tr td {
 
 /* Bảng so sánh nâng cao: YTM-1, Tuần tháng hiện tại & Cả năm */
 #tab-kehoach table.kh-cmp-table {
-  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   width: 100%;
 }
 #tab-kehoach table.kh-cmp-table td,
 #tab-kehoach table.kh-cmp-table th {
-  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   font-variant-numeric: tabular-nums;
   font-feature-settings: 'tnum' 1;
 }
 #tab-kehoach table.kh-cmp-table .kh7-c-name {
-  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   min-width: 250px;
   width: 250px;
   max-width: 250px;
@@ -3872,7 +3877,7 @@ tfoot tr td {
   border-right: 1px solid #CBD5E1;
 }
 #tab-kehoach table.kh-cmp-table td.kh-col-desc {
-  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   font-size: 11.5px;
   color: #64748B;
   font-weight: 400;
@@ -3956,7 +3961,7 @@ tfoot tr td {
   transform: translateX(-50%);
   background: #0F172A;
   color: #F8FAFC;
-  font-family: 'Be Vietnam Pro', sans-serif !important;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
   font-size: 11px;
   font-weight: 500;
   padding: 5px 10px;
@@ -4104,7 +4109,7 @@ tfoot tr td {
   border-radius: var(--radius, 14px);
   padding: 18px 22px;
   box-shadow: var(--shadow-sm, 0 1px 3px rgba(0,0,0,0.04));
-  font-family: 'Be Vietnam Pro', sans-serif;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .kh-aop-chart-header {
   display: flex;
@@ -4147,7 +4152,7 @@ tfoot tr td {
   border: 1px solid var(--line, #CBD5E1);
   background: var(--bg, #F8FAFC);
   color: var(--text, #0F172A);
-  font-family: 'Be Vietnam Pro', sans-serif;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   font-size: 12px;
   font-weight: 600;
   cursor: pointer;
@@ -4188,6 +4193,7 @@ tfoot tr td {
 }
 .kh-aop-svg-wrap {
   width: 100%;
+  position: relative;
   overflow-x: auto;
   margin: 10px 0 16px;
 }
@@ -4199,12 +4205,102 @@ tfoot tr td {
   display: block;
   margin: 0 auto;
 }
+.kh-aop-hover-zone {
+  cursor: pointer;
+}
+.kh-aop-bar-rect {
+  transition: opacity 0.15s ease, filter 0.15s ease;
+}
+.kh-aop-point-dot {
+  transition: r 0.15s ease, stroke-width 0.15s ease;
+}
+
+/* Tooltip hiển thị chi tiết khi hover trên biểu đồ AOP */
+.kh-aop-tooltip {
+  position: absolute;
+  pointer-events: none;
+  background: #0F172A;
+  color: #F8FAFC;
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+  font-size: 12px;
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.4), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+  border: 1px solid #334155;
+  z-index: 1000;
+  white-space: nowrap;
+  transition: opacity 0.15s ease;
+  min-width: 220px;
+}
+.kh-aop-tooltip .kh-tip-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.kh-aop-tooltip .kh-tip-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #FFFFFF;
+}
+.kh-aop-tooltip .kh-tip-badge {
+  font-size: 10px;
+  font-weight: 700;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.kh-aop-tooltip .kh-tip-badge.ok {
+  background: #064E3B;
+  color: #34D399;
+  border: 1px solid #059669;
+}
+.kh-aop-tooltip .kh-tip-badge.bad {
+  background: #450A0A;
+  color: #F87171;
+  border: 1px solid #DC2626;
+}
+.kh-aop-tooltip .kh-tip-divider {
+  height: 1px;
+  background: #334155;
+  margin: 6px 0;
+}
+.kh-aop-tooltip .kh-tip-section-lbl {
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #94A3B8;
+  margin: 5px 0 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+.kh-aop-tooltip .kh-tip-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: #CBD5E1;
+}
+.kh-aop-tooltip .kh-tip-val {
+  font-weight: 700;
+  color: #FFFFFF;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum' 1;
+}
+.kh-aop-tooltip .kh-tip-highlight {
+  margin-top: 4px;
+  padding-top: 4px;
+  border-top: 1px dashed #334155;
+}
+
 .kh-aop-insight-box {
   background: #F0FDF4;
   border: 1px solid #BBF7D0;
   border-radius: 10px;
   padding: 14px 18px;
   margin-top: 12px;
+  font-family: 'Roboto', system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .kh-aop-insight-title {
   display: flex;

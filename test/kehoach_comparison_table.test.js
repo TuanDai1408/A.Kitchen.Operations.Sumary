@@ -66,13 +66,13 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   const sPub = fs.readFileSync('public/script.js', 'utf8');
 
   // Verify functions exist in both files
-  ['kh_weekAgg', 'kh7ComparisonTableHtml', 'kh7TableHtml', 'kh7BodyHtml', 'kh7AopVarianceChartHtml', 'bindKhAopCutEvents'].forEach(fn => {
+  ['kh_weekAgg', 'kh7ComparisonTableHtml', 'kh7TableHtml', 'kh7BodyHtml', 'kh7AopVarianceChartHtml', 'bindKhAopCutEvents', 'bindKhAopTooltipEvents', 'bindKhAopChartEvents'].forEach(fn => {
     assert.ok(sRoot.includes(`function ${fn}`), `script.js must contain function ${fn}`);
     assert.ok(sPub.includes(`function ${fn}`), `public/script.js must contain function ${fn}`);
   });
 
   // Verify header labels, expandable columns and cards
-  assert.ok(sRoot.includes('Các tháng đã chốt (T1–T'), 'script.js must contain closed months header');
+  assert.ok(sRoot.includes("Các tháng đã chốt (T'+startM+'–T"), 'script.js must contain closed months header starting from startM');
   assert.ok(sRoot.includes('YTM-1'), 'script.js must contain YTM-1 header');
   assert.ok(sRoot.includes('kh-expandable-th'), 'script.js must contain expandable month th');
   assert.ok(sRoot.includes('( Click vào để xem chi tiết theo tuần )'), 'script.js must contain hover note for collapsed month');
@@ -82,17 +82,20 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   assert.ok(sRoot.includes('kh7-badge ytg'), 'script.js must contain YTG badge');
   assert.ok(sRoot.includes('kh7-ytg-cell'), 'script.js must contain YTG cell class');
 
-  // Verify AOP Variance & Cum % chart
+  // Verify AOP Variance & Cum % chart, tooltip and hover zones
   assert.ok(sRoot.includes('Biểu đồ chênh lệch AOP từng tháng &amp; % Đạt AOP lũy kế'), 'script.js must contain AOP variance chart title');
   assert.ok(sRoot.includes('Cột là chênh lệch thực tế so với AOP của tháng. Đường phía trên là % đạt AOP lũy kế.'), 'script.js must contain AOP variance sub-title');
   assert.ok(sRoot.includes('id="khAopCutSelect"'), 'script.js must contain cut month selector');
   assert.ok(sRoot.includes('kh-aop-insight-box'), 'script.js must contain insight box');
+  assert.ok(sRoot.includes('kh-aop-hover-zone'), 'script.js must contain hover zone for tooltip');
+  assert.ok(sRoot.includes('kh-aop-tooltip'), 'script.js must contain tooltip element');
+  assert.ok(sRoot.includes('font-family="Roboto, sans-serif"'), 'script.js SVG text must use Roboto font');
 
   // Verify time filter from 03/2026 for both charts
   assert.ok(sRoot.includes("p.key >= '2026-03'"), 'script.js must filter periods from 03/2026');
   assert.ok(sPub.includes("p.key >= '2026-03'"), 'public/script.js must filter periods from 03/2026');
 
-  assert.ok(sPub.includes('Các tháng đã chốt (T1–T'), 'public/script.js must contain closed months header');
+  assert.ok(sPub.includes("Các tháng đã chốt (T'+startM+'–T"), 'public/script.js must contain closed months header starting from startM');
   assert.ok(sPub.includes('YTM-1'), 'public/script.js must contain YTM-1 header');
   assert.ok(sPub.includes('kh-expandable-th'), 'public/script.js must contain expandable month th');
   assert.ok(sPub.includes('( Click vào để xem chi tiết theo tuần )'), 'public/script.js must contain hover note for collapsed month');
@@ -106,6 +109,9 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   assert.ok(sPub.includes('Cột là chênh lệch thực tế so với AOP của tháng. Đường phía trên là % đạt AOP lũy kế.'), 'public/script.js must contain AOP variance sub-title');
   assert.ok(sPub.includes('id="khAopCutSelect"'), 'public/script.js must contain cut month selector');
   assert.ok(sPub.includes('kh-aop-insight-box'), 'public/script.js must contain insight box');
+  assert.ok(sPub.includes('kh-aop-hover-zone'), 'public/script.js must contain hover zone for tooltip');
+  assert.ok(sPub.includes('kh-aop-tooltip'), 'public/script.js must contain tooltip element');
+  assert.ok(sPub.includes('font-family="Roboto, sans-serif"'), 'public/script.js SVG text must use Roboto font');
 });
 
 test('Ke Hoach Comparison Table - CSS styles in style.css and public/style.css', () => {
@@ -123,9 +129,10 @@ test('Ke Hoach Comparison Table - CSS styles in style.css and public/style.css',
     assert.ok(css.includes('.kh7-badge.ytg'), 'CSS must include .kh7-badge.ytg');
     assert.ok(css.includes('.kh-expandable-th'), 'CSS must include .kh-expandable-th');
     assert.ok(css.includes('.kh-exp-tooltip'), 'CSS must include .kh-exp-tooltip');
-    assert.ok(css.includes("font-family: 'Be Vietnam Pro'"), 'CSS must use Be Vietnam Pro font');
+    assert.ok(css.includes("font-family: 'Roboto'"), 'CSS must use Roboto font');
     assert.ok(css.includes('.kh-aop-chart-card'), 'CSS must include .kh-aop-chart-card');
     assert.ok(css.includes('.kh-aop-svg'), 'CSS must include .kh-aop-svg');
+    assert.ok(css.includes('.kh-aop-tooltip'), 'CSS must include .kh-aop-tooltip');
     assert.ok(css.includes('.kh-aop-insight-box'), 'CSS must include .kh-aop-insight-box');
   });
 });
