@@ -15523,9 +15523,10 @@ var QLK = (function(){
     var it=F.items, tx=F.tx, stockVal=0, oos=0, dead=0, mis=0;
     var stockBeginVal = 0, recVal = 0, issVal = 0;
     it.forEach(function(x){
-      stockBeginVal += (x.stock_begin_value !== undefined ? x.stock_begin_value : 0);
-      recVal += (x.receipts_value !== undefined ? x.receipts_value : 0);
-      issVal += (x.issues_value !== undefined ? x.issues_value : 0);
+      // Rule cũ cho KPI cards: loại trừ lệnh sản xuất (261, 262) và chuyển kho để không bị duplicate giá trị
+      stockBeginVal += (x.kpi_stock_begin_value !== undefined ? x.kpi_stock_begin_value : (x.stock_begin_value || 0));
+      recVal += (x.kpi_receipts_value !== undefined ? x.kpi_receipts_value : (x.receipts_value || 0));
+      issVal += (x.kpi_issues_value !== undefined ? x.kpi_issues_value : (x.issues_value || 0));
       if(x.status==='het_hang') oos++;
       if(x.status==='ton_dong') dead++;
       if(x.has_mismatch) mis++;
@@ -15610,7 +15611,7 @@ var QLK = (function(){
   // value = giá trị XUẤT (tiêu thụ) theo nhóm hàng. Kho BTP thường tồn cuối = 0 nên
   // dùng giá trị xuất mới phản ánh được nhóm nào tiêu tốn nhiều vốn nhất.
   function groupCat(items){ var map={}; items.forEach(function(x){ var key=x.category||'(Chưa phân loại)';
-    if(!map[key])map[key]={category:key,value:0,count:0}; map[key].value+=(x.issues_value||0);map[key].count++; });
+    if(!map[key])map[key]={category:key,value:0,count:0}; map[key].value+=(x.kpi_issues_value !== undefined ? x.kpi_issues_value : (x.issues_value||0));map[key].count++; });
     return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return b.value-a.value;}); }
 
   var baseOpt={ responsive:true, maintainAspectRatio:false,
@@ -15788,8 +15789,8 @@ var QLK = (function(){
       else iss[t.article]=(iss[t.article]||0)+Math.abs(t.value);
     });
     function arr(map){ return Object.keys(map).map(function(a){ return {code:a, name:nameOf[a]||a, value:map[a]}; }); }
-    // Top tồn kho lấy từ items (Header không có chiều SLoc) - đã lọc theo mã có GD ở SLoc chọn.
-    var ton=items.map(function(x){ return {code:x.code, name:x.name, value:x.stock_end_value}; });
+    // Top tồn kho lấy từ items (Header không có chiều SLoc) - dùng kpi_stock_end_value để loại trừ duplicate
+    var ton=items.map(function(x){ return {code:x.code, name:x.name, value: (x.kpi_stock_end_value !== undefined ? x.kpi_stock_end_value : x.stock_end_value)}; });
     document.getElementById('qlkTop').innerHTML=
       miniTop(svg(IC.up)+' Top 10 nhập (giá trị)', arr(recv), 'value', '#046A38')+
       miniTop(svg(IC.down)+' Top 10 xuất (giá trị)', arr(iss), 'value', '#FF6720')+

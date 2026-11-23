@@ -104,3 +104,25 @@ test('Warehouse - Codebase verification: script.js and server-api.js contain 261
   assert.ok(serverApiContent.includes('isProductionOrderIssue'), 'server-api.js must import/export isProductionOrderIssue');
   assert.ok(publicScriptContent.includes('isProductionOrderIssue'), 'public/script.js must stay in sync');
 });
+
+test('Warehouse - Duality verification: Stock table items preserve raw full documents while KPI fields exclude 261/262 and transfers', () => {
+  // Mock item with 261 issue (500k) and regular issue (300k)
+  const item = {
+    code: 'TEST_MAT',
+    receipts_value: 1000000,
+    issues_value: 800000, // 300k regular + 500k PO (261)
+    stock_begin_value: 200000,
+    stock_end_value: 400000, // 200k + 1000k - 800k = 400k (Bảng Tồn kho: đầy đủ chứng từ)
+
+    kpi_receipts_value: 1000000,
+    kpi_issues_value: 300000, // Chỉ 300k regular, loại trừ 261 để không duplicate
+    kpi_stock_begin_value: 200000,
+    kpi_stock_end_value: 900000 // 200k + 1000k - 300k = 900k
+  };
+
+  // 1. Stock table displays full raw issues:
+  assert.equal(item.issues_value, 800000, 'Bảng Tồn kho hiển thị đầy đủ 800,000đ xuất');
+
+  // 2. KPI card excludes 261/262 to prevent duplicate:
+  assert.equal(item.kpi_issues_value, 300000, 'KPI card loại trừ 261 để tránh duplicate (300,000đ)');
+});

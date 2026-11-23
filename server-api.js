@@ -2070,6 +2070,8 @@ export async function getWarehouseDashboardData(filtersParam) {
 
   const stockBeginMap = {};
   const stockBeginValueMap = {};
+  const kpiStockBeginMap = {};
+  const kpiStockBeginValueMap = {};
   const priceMap = {};
   const matDescMap = {};
   const matUomMap = {};
@@ -2113,8 +2115,15 @@ export async function getWarehouseDashboardData(filtersParam) {
     }
 
     const key = (r.site || "") + "|" + artKey;
+    // Bảng Tồn kho & giao dịch theo mã NVL: tính toàn bộ chứng từ không loại bỏ
     stockBeginMap[key] = (stockBeginMap[key] || 0) + q;
     stockBeginValueMap[key] = (stockBeginValueMap[key] || 0) + amt;
+
+    // Rule cũ cho KPI cards & charts: loại trừ 261, 262 và chuyển kho nội bộ
+    if (!isProductionOrderIssue(cleanMvt) && !isTransferMovement(cleanMvt)) {
+      kpiStockBeginMap[key] = (kpiStockBeginMap[key] || 0) + q;
+      kpiStockBeginValueMap[key] = (kpiStockBeginValueMap[key] || 0) + amt;
+    }
   });
 
   const slocSet = new Set(), catSet = new Set(), siteNameSet = new Set();
@@ -2161,6 +2170,13 @@ export async function getWarehouseDashboardData(filtersParam) {
         issues_abs: 0,
         receipts_val: 0,
         issues_val: 0,
+        kpi_stock_begin: kpiStockBeginMap[itemKey] || 0,
+        kpi_stock_begin_val: kpiStockBeginValueMap[itemKey] || 0,
+        kpi_receipts: 0,
+        kpi_issues: 0,
+        kpi_issues_abs: 0,
+        kpi_receipts_val: 0,
+        kpi_issues_val: 0,
         doc_count: 0,
         site_name: t.site_name,
         site: t.site
@@ -2180,7 +2196,7 @@ export async function getWarehouseDashboardData(filtersParam) {
     }
     itemsMap[itemKey].doc_count = (itemsMap[itemKey].doc_count || 0) + 1;
 
-    // Đối với bảng Tồn kho & giao dịch theo mã NVL: quy tắc không loại bỏ bất kỳ chứng từ nào
+    // 1. Dành riêng cho bảng Tồn kho & giao dịch theo mã NVL: quy tắc không loại bỏ bất kỳ chứng từ nào
     if (t.qty >= 0) {
       itemsMap[itemKey].receipts += t.qty;
       itemsMap[itemKey].receipts_val += Math.abs(t.value || 0);
@@ -2188,6 +2204,20 @@ export async function getWarehouseDashboardData(filtersParam) {
       itemsMap[itemKey].issues += t.qty;
       itemsMap[itemKey].issues_abs += Math.abs(t.qty);
       itemsMap[itemKey].issues_val += Math.abs(t.value || 0);
+    }
+
+    // 2. Dành cho KPI cards và Charts: rule cũ loại trừ lệnh sản xuất (261, 262) và chuyển kho (351, 352, 301, 311...)
+    const isProdOrder = isProductionOrderIssue(t.mov_type || t.mvt);
+    const isTransfer = isTransferMovement(t.mov_type || t.mvt);
+    if (!isProdOrder && !isTransfer) {
+      if (t.qty >= 0) {
+        itemsMap[itemKey].kpi_receipts += t.qty;
+        itemsMap[itemKey].kpi_receipts_val += Math.abs(t.value || 0);
+      } else {
+        itemsMap[itemKey].kpi_issues += t.qty;
+        itemsMap[itemKey].kpi_issues_abs += Math.abs(t.qty);
+        itemsMap[itemKey].kpi_issues_val += Math.abs(t.value || 0);
+      }
     }
   });
 
@@ -2213,6 +2243,13 @@ export async function getWarehouseDashboardData(filtersParam) {
           issues_abs: 0,
           receipts_val: 0,
           issues_val: 0,
+          kpi_stock_begin: kpiStockBeginMap[key] || 0,
+          kpi_stock_begin_val: kpiStockBeginValueMap[key] || 0,
+          kpi_receipts: 0,
+          kpi_issues: 0,
+          kpi_issues_abs: 0,
+          kpi_receipts_val: 0,
+          kpi_issues_val: 0,
           doc_count: 0,
           site_name: site,
           site
@@ -2280,6 +2317,17 @@ export async function getWarehouseDashboardData(filtersParam) {
     const stockEnd = stockBegin + it.receipts - it.issues_abs;
     // BẢO TOÀN GIÁ TRỊ: GT_cuoi = GT_dau + GT_nhap - GT_xuat
     const stockEndValue = stockBeginValue + receiptsValue - issuesValue;
+
+    // Rule cũ cho KPI cards & Charts: loại trừ lệnh sản xuất (261, 262) và chuyển kho (351, 352, 301...)
+    const kpiStockBegin = it.kpi_stock_begin !== undefined ? it.kpi_stock_begin : stockBegin;
+    const kpiStockBeginValue = (it.kpi_stock_begin_val !== undefined && it.kpi_stock_begin_val !== 0)
+      ? it.kpi_stock_begin_val
+      : Math.round(kpiStockBegin * price);
+    const kpiReceiptsValue = it.kpi_receipts_val !== undefined ? it.kpi_receipts_val : 0;
+    const kpiIssuesValue = it.kpi_issues_val !== undefined ? it.kpi_issues_val : 0;
+    const kpiStockEnd = kpiStockBegin + (it.kpi_receipts || 0) - (it.kpi_issues_abs || 0);
+    const kpiStockEndValue = kpiStockBeginValue + kpiReceiptsValue - kpiIssuesValue;
+
     const consumptionPerDay = it.issues_abs > 0 ? it.issues_abs / daysInPeriod : 0;
     let daysOfStock = null;
     if (consumptionPerDay > 0) {
@@ -2310,6 +2358,15 @@ export async function getWarehouseDashboardData(filtersParam) {
       stock_end_value: stockEndValue,
       receipts_value: receiptsValue,
       issues_value: issuesValue,
+      kpi_receipts: it.kpi_receipts || 0,
+      kpi_receipts_value: kpiReceiptsValue,
+      kpi_issues: it.kpi_issues || 0,
+      kpi_issues_abs: it.kpi_issues_abs || 0,
+      kpi_issues_value: kpiIssuesValue,
+      kpi_stock_begin: kpiStockBegin,
+      kpi_stock_begin_value: kpiStockBeginValue,
+      kpi_stock_end: kpiStockEnd,
+      kpi_stock_end_value: kpiStockEndValue,
       consumption_per_day: consumptionPerDay,
       days_of_stock: daysOfStock,
       status,
