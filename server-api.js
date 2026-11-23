@@ -119,6 +119,9 @@ async function fetchAllRows(table, select = "*", orderCol = null, fromDate = nul
     if (count <= step) {
       let q = supabase.from(table).select(select).range(0, count - 1);
       if (orderCol) q = q.order(orderCol, { ascending: true });
+      if (table === "mb51_material_docs") {
+        q = q.order("mat_doc", { ascending: true }).order("doc_item", { ascending: true });
+      }
       if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
       if (toDate && dateCol) q = q.lte(dateCol, toDate);
       const { data, error: qErr } = await q;
@@ -137,6 +140,9 @@ async function fetchAllRows(table, select = "*", orderCol = null, fromDate = nul
         const to = Math.min(from + step - 1, count - 1);
         let q = supabase.from(table).select(select).range(from, to);
         if (orderCol) q = q.order(orderCol, { ascending: true });
+        if (table === "mb51_material_docs") {
+          q = q.order("mat_doc", { ascending: true }).order("doc_item", { ascending: true });
+        }
         if (fromDate && dateCol) q = q.gte(dateCol, fromDate);
         if (toDate && dateCol) q = q.lte(dateCol, toDate);
         chunkPromises.push(q);
@@ -2030,9 +2036,10 @@ export async function getWarehouseDashboardData(filtersParam) {
 
   function getDayBefore(dStr) {
     if (!dStr) return "";
-    const d = new Date(dStr + "T00:00:00");
-    d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+    const [y, m, d] = dStr.split("-").map(Number);
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() - 1);
+    return dt.toISOString().slice(0, 10);
   }
 
   const defaultTo = dMax;
