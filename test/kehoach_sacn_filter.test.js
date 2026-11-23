@@ -60,8 +60,8 @@ test('Ke Hoach SACN Filter - Frontend markup and script logic', () => {
     assert.ok(s.includes("scope:'all'"), `${file} must initialize PF.scope to 'all'`);
     assert.ok(s.includes('scope: PF.scope || \'all\''), `${file} must pass scope in loadKeHoach payload`);
     assert.ok(s.includes('sacn: (PF.scope === \'sacn\')'), `${file} must pass sacn flag in loadKeHoach payload`);
-    assert.ok(s.includes('function kh_maxActualPeriodKey'), `${file} must define kh_maxActualPeriodKey`);
-    assert.ok(s.includes('var maxActKey = kh_maxActualPeriodKey'), `${file} must use kh_maxActualPeriodKey`);
+    assert.ok(s.includes('function kh_firstActualPeriodKey'), `${file} must define kh_firstActualPeriodKey`);
+    assert.ok(s.includes('kh_firstActualPeriodKey'), `${file} must use kh_firstActualPeriodKey`);
     assert.ok(s.includes("'pfScope'"), `${file} must bind event listener for #pfScope`);
   });
 });

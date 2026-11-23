@@ -12356,6 +12356,18 @@ function kh_weekAgg(per, weekKey, sites){
   return o;
 }
 
+// Tìm kỳ đầu tiên thực sự có số liệu thực tế / doanh thu (để loại bỏ các tháng không có doanh thu trở về trước)
+function kh_firstActualPeriodKey(periods, sites){
+  var minKey = '';
+  (periods || []).forEach(function(p){
+    var agg = kh_periodAgg(p, sites);
+    if (agg.hasActual && (agg.DoanhThu.actual > 0 || (agg.SanLuong && agg.SanLuong.actual > 0))) {
+      if (!minKey || p.key < minKey) minKey = p.key;
+    }
+  });
+  return minKey;
+}
+
 // Tìm kỳ lớn nhất thực sự có số liệu thực tế / doanh thu
 function kh_maxActualPeriodKey(periods, sites){
   var maxKey = '';
@@ -12789,12 +12801,15 @@ function drawKehoach(){
     }
   }
 
-  // Chỉ hiển thị tới tháng có dữ liệu thực tế / doanh thu
-  var maxActKey = kh_maxActualPeriodKey(periods, sites);
-  var activePeriods = maxActKey ? periods.filter(function(p){ return p.key <= maxActKey; }) : periods;
+  // Loại bỏ các tháng không có doanh thu trở về trước (nhưng giữ nguyên các tháng kế hoạch đến hết năm)
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var validPeriods = periods.filter(function(p){
+    if (firstActKey && p.key < firstActKey) return false;
+    return true;
+  });
 
   // KPI 6 chỉ tiêu
-  html += drawKehoachKPI(sites, activePeriods);
+  html += drawKehoachKPI(sites, validPeriods);
 
   // Chart % đạt kế hoạch - tất cả chỉ tiêu cùng lúc
   html += '<div class="card">'+cardHead(IC.bars,'Tỷ lệ đạt kế hoạch (%) theo kỳ — tất cả chỉ tiêu','')+
@@ -12806,7 +12821,7 @@ function drawKehoach(){
     '</div></div>';
 
   // Khối "Theo dõi 7 chỉ tiêu theo tháng & lũy kế cuối năm"
-  html += drawKehoach7(sites, periods);
+  html += drawKehoach7(sites, validPeriods);
 
   // Bảng chi tiết từng kỳ - mặc định thu gọn theo nhóm chỉ tiêu, bấm dòng tiêu đề để mở
   html += '<div class="card">'+cardHead(IC.grid,'Bảng chi tiết Thực tế / Kế hoạch từng kỳ',
@@ -12815,7 +12830,7 @@ function drawKehoach(){
         '<button class="btn btn-out" id="khBtnToggleAll">⇕ Mở tất cả</button>'+
         '<button class="btn btn-fill" id="khBtnXlsx">↓ Excel</button>'+
       '</div>')+
-    '<div class="tw" id="khDetailWrap">'+kehoachTableHtml(sites, activePeriods)+'</div></div>';
+    '<div class="tw" id="khDetailWrap">'+kehoachTableHtml(sites, validPeriods)+'</div></div>';
 
   if (!PF.site){
     html += '<div style="margin-top:9px;font-size:11px;color:#A8A8A8">'+
@@ -13235,16 +13250,11 @@ function kh7ComparisonTableHtml(m, sites, periods){
     }
   });
 
-  // 3. Tuần của các tháng tiếp theo (chỉ lấy các tháng có dữ liệu thực tế / doanh thu)
+  // 3. Tuần của các tháng kế hoạch tiếp theo (ví dụ Tháng 12: W1..W4)
   var futureWeeksCols = [];
   var futureMonthList = [];
   var futureWeeksByMonth = {};
   for (var fM = curM + 1; fM <= 12; fM++) {
-    var fPerTest = getPer(fM);
-    var fAggTest = kh_periodAgg(fPerTest, sites);
-    if (!fAggTest.hasActual || !(fAggTest.DoanhThu.actual > 0 || (fAggTest.SanLuong && fAggTest.SanLuong.actual > 0))) {
-      continue;
-    }
     futureMonthList.push(fM);
     futureWeeksByMonth[fM] = [];
     var fPer = getPer(fM);
@@ -13987,10 +13997,14 @@ function bindKhAopChartEvents(){
 }
 
 function kh7BodyHtml(sites, periods){
-  var maxActKey = kh_maxActualPeriodKey(periods, sites);
-  var activePeriods = maxActKey ? (periods || []).filter(function(p){ return p.key <= maxActKey; }) : (periods || []);
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var validPeriods = (periods || []).filter(function(p){
+    // Loại bỏ các tháng không có doanh thu trở về trước
+    if (firstActKey && p.key < firstActKey) return false;
+    return true;
+  });
   var m = kh_metricByKey(KHUI.metric);
-  var S = kh_buildSeries(m, sites, activePeriods);
+  var S = kh_buildSeries(m, sites, validPeriods);
   var perWord = (PF.gran==='quarter')?'quý':(PF.gran==='year'?'năm':'tháng');
   var h = '<div class="kh7-pills" id="kh7Pills">';
   METRICS_KH.forEach(function(x){
@@ -13999,23 +14013,16 @@ function kh7BodyHtml(sites, periods){
   });
   h += '</div>';
   h += '<div class="grid g4 kh7-cards">'+kh7CardsHtml(m, S)+'</div>';
-  h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S, sites, activePeriods)+'</div>';
+  h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S, sites, validPeriods)+'</div>';
 
   if (KHUI.kh7Mode === 'ytd') {
-    // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026) tới tháng có dữ liệu
-    var chartPeriods = activePeriods.filter(function(p){
-      if (PF.year === 2026 || !PF.year) {
-        return p.key >= '2026-03';
-      }
-      return true;
-    });
-    var chartS = kh_buildSeries(m, sites, chartPeriods);
+    var chartS = kh_buildSeries(m, sites, validPeriods);
     h += '<div class="kh7-chart-t">'+svg(IC.line,14,C.brand)+'Biểu đồ so sánh &amp; đường lũy kế tới cuối năm</div>'+
          '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+' (từ 03/'+PF.year+')'+
          ' · Cột: '+chartS.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
          '<div class="cbox kh7-chart"><canvas id="chKh7"></canvas></div>';
   } else {
-    h += kh7AopVarianceChartHtml(m, sites, activePeriods);
+    h += kh7AopVarianceChartHtml(m, sites, validPeriods);
   }
   return h;
 }
@@ -14023,9 +14030,9 @@ function kh7BodyHtml(sites, periods){
 function drawKehoach7(sites, periods){
   var mode = KHUI.kh7Mode === 'ytd' ? 'ytd' : 'month';
   var m = kh_metricByKey(KHUI.metric);
-  var maxActKey = kh_maxActualPeriodKey(periods, sites);
-  var curM = maxActKey ? parseInt(maxActKey.slice(5, 7), 10) : 11;
-  var titleRange = (String(PF.year)==='2026'||!PF.year) ? ('T3–T' + curM) : ('T1–T' + curM);
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var startM = firstActKey ? parseInt(firstActKey.slice(5, 7), 10) : (String(PF.year)==='2026'||!PF.year ? 3 : 1);
+  var titleRange = 'T' + startM + '–T12';
   return '<div class="card" id="kh7Card">'+
     '<div class="card-t kh7-head">'+
       '<div class="kh7-hl">'+
@@ -14064,13 +14071,9 @@ function drawKh7Chart(){
   var m = kh_metricByKey(KHUI.metric);
   var allPeriods = (KH && KH.periods) || [];
   var sites = kh_selSites();
-  var maxActKey = kh_maxActualPeriodKey(allPeriods, sites);
-  var activePeriods = maxActKey ? allPeriods.filter(function(p){ return p.key <= maxActKey; }) : allPeriods;
-  // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
-  var filteredPeriods = activePeriods.filter(function(p){
-    if (PF.year === 2026 || !PF.year) {
-      return p.key >= '2026-03';
-    }
+  var firstActKey = kh_firstActualPeriodKey(allPeriods, sites);
+  var filteredPeriods = allPeriods.filter(function(p){
+    if (firstActKey && p.key < firstActKey) return false;
     return true;
   });
   var S = kh_buildSeries(m, sites, filteredPeriods);
@@ -14163,8 +14166,12 @@ function kh_rowCalc(m, sites, per){
 }
 
 function kehoachTableHtml(sites, periods){
-  var maxActKey = kh_maxActualPeriodKey(periods, sites);
-  var validPeriods = maxActKey ? (periods || []).filter(function(p){ return p.key <= maxActKey; }) : (periods || []);
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var validPeriods = (periods || []).filter(function(p){
+    // Loại bỏ các tháng không có doanh thu trở về trước
+    if (firstActKey && p.key < firstActKey) return false;
+    return true;
+  });
   var h = '<table><thead><tr><th></th><th>Chỉ tiêu</th><th>Kỳ</th><th class="num">Thực tế</th>'+
     '<th class="num">Kế hoạch</th><th class="num">Chênh lệch</th><th class="ctr">% đạt KH</th></tr></thead><tbody>';
   METRICS_KH.forEach(function(m){
@@ -14199,8 +14206,12 @@ function kehoachTableHtml(sites, periods){
 // Gom TOÀN BỘ bảng chi tiết (không phụ thuộc nhóm nào đang mở/đóng trên màn hình)
 // thành mảng phẳng để gửi lên backend xuất Excel.
 function kh_flattenForExport(sites, periods){
-  var maxActKey = kh_maxActualPeriodKey(periods, sites);
-  var validPeriods = maxActKey ? (periods || []).filter(function(p){ return p.key <= maxActKey; }) : (periods || []);
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var validPeriods = (periods || []).filter(function(p){
+    // Loại bỏ các tháng không có doanh thu trở về trước
+    if (firstActKey && p.key < firstActKey) return false;
+    return true;
+  });
   var rows = [];
   METRICS_KH.forEach(function(m){
     validPeriods.forEach(function(per){
