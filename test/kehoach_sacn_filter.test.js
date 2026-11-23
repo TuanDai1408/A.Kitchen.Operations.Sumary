@@ -10,11 +10,16 @@ test('Ke Hoach SACN Filter - Backend scope separation and site exclusions', asyn
   assert.ok(allData && allData.ok, 'getKeHoachData(all) should succeed');
   assert.ok(sacnData && sacnData.ok, 'getKeHoachData(sacn) should succeed');
 
-  // Verify K003 and Megafarm are present in ALL but excluded in SACN
+  // Verify K003 is excluded in SACN, but Megafarm is KEPT
   const hasMienNamAll = allData.sites.some(s => /miền nam/i.test(s));
   const hasMienNamSacn = sacnData.sites.some(s => /miền nam/i.test(s));
   assert.strictEqual(hasMienNamAll, true, 'K003 (Miền Nam) must be in ALL sites');
   assert.strictEqual(hasMienNamSacn, false, 'K003 (Miền Nam) must be excluded in SACN sites');
+
+  const hasMegafarmAll = allData.sites.some(s => /megafar/i.test(s));
+  const hasMegafarmSacn = sacnData.sites.some(s => /megafar/i.test(s));
+  assert.strictEqual(hasMegafarmAll, true, 'Megafarm must be in ALL sites');
+  assert.strictEqual(hasMegafarmSacn, true, 'Megafarm must NOT be excluded in SACN sites');
 
   // Verify R515 has data before 2026-09-18 in ALL, but in SACN it only starts from 2026-09-18
   const sepAll = allData.periods.find(p => p.key === '2026-09');

@@ -1518,11 +1518,11 @@ export async function getKeHoachData(filtersParam) {
   let repRows = repRowsRaw || [];
 
   if (isSacn) {
-    const SACN_EXCLUDE = new Set(["K502", "K003", "K800", "D007"]);
+    const SACN_EXCLUDE = new Set(["K502", "K003", "K800"]);
     txRows = txRows.filter(t => {
       if (SACN_EXCLUDE.has(t.ma_cua_hang)) return false;
       const s = t.ten_cua_hang || "";
-      if (/megafar/i.test(s) || /miền nam/i.test(s)) return false;
+      if (/miền nam/i.test(s)) return false;
       if (t.ma_cua_hang === "R515" || /g[\s\-_–—]*group/i.test(s)) {
         const d = String(t.billing_date || "");
         if (d < "2026-09-18") return false;
@@ -1532,7 +1532,7 @@ export async function getKeHoachData(filtersParam) {
 
     repRows = repRows.filter(r => {
       const s = r.ten_site || "";
-      if (/megafar/i.test(s) || /miền nam/i.test(s)) return false;
+      if (/miền nam/i.test(s)) return false;
       if (/g[\s\-_–—]*group/i.test(s)) {
         const d = String(r.ngay_bao_cao || "");
         if (d < "2026-09-18") return false;
@@ -1613,7 +1613,7 @@ export async function getKeHoachData(filtersParam) {
   siteSet.add(SITE_TONG);
   if (isSacn) {
     for (const s of Array.from(siteSet)) {
-      if (/miền nam/i.test(s) || /megafar/i.test(s)) {
+      if (/miền nam/i.test(s)) {
         siteSet.delete(s);
       }
     }
