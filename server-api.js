@@ -3393,6 +3393,28 @@ export async function getBomDetail(params = {}) {
   return result;
 }
 
+export function removeVietnameseTones(str) {
+  if (!str) return "";
+  str = String(str);
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+  str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+  str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+  str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+  str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+  str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+  str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+  str = str.replace(/đ/g, "d");
+  str = str.replace(/Đ/g, "D");
+  str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  str = str.replace(/[^a-zA-Z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+  return str;
+}
+
 export async function exportSiteDailyPivotExcel(params = {}) {
   let site = params.site || "";
   let fromDate = params.from || "";
@@ -4013,7 +4035,9 @@ export async function exportSiteDailyPivotExcel(params = {}) {
 
   const buffer = await wb.xlsx.writeBuffer();
   const base64Data = Buffer.from(buffer).toString("base64");
-  const siteStr = site && site !== "all" ? site.replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]/g, "_").slice(0, 30) : "ALL_SITES";
+  const siteStr = (site && site !== "all" && site !== "ALL")
+    ? removeVietnameseTones(site).slice(0, 35)
+    : "Tat_ca_cac_site";
   const dateStr = (fromDate || "all") + "_" + (toDate || "now");
   const filename = `Bao_cao_suat_an_pivot_${siteStr}_${dateStr}.xlsx`;
 

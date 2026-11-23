@@ -41,6 +41,14 @@ test("Site Đa Phúc converts suat_luu_mau to suatLuuMauTruong while other sites
   assert.ok(res.data && res.data.length > 0);
   assert.equal(res.rowCount, 2);
 
+  // Test removeVietnameseTones and accent-free filename
+  assert.equal(api.removeVietnameseTones("MB A.Kitchen - Hub Đa Phúc"), "MB_A_Kitchen_Hub_Da_Phuc");
+  assert.equal(api.removeVietnameseTones("Bếp Tân Long"), "Bep_Tan_Long");
+
+  const resDaPhuc = await api.exportSiteDailyPivotExcel({ site: "MB A.Kitchen - Hub Đa Phúc", rows: mockRows });
+  assert.ok(resDaPhuc.name.includes("Hub_Da_Phuc"), "Filename must be accent-free: Hub_Da_Phuc");
+  assert.ok(!/[àáạảãâầấậẩẫăằắặẳẵèéẹẻẽêềếệểễìíịỉĩòóọỏõôồốộổỗơờớợởỡùúụủũưừứựửữỳýỵỷỹđĐ]/.test(resDaPhuc.name), "Filename must not contain any accented characters");
+
   // Parse Excel buffer back with ExcelJS to inspect cells
   const buffer = Buffer.from(res.data, "base64");
   const wb = new ExcelJS.Workbook();

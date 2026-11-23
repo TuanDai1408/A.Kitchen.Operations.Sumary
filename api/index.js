@@ -104,10 +104,15 @@ export default async function handler(req, res) {
           mimeType: "application/json"
         };
         break;
+      case "exportSiteDailyPivot": {
+        const exportParams = payload?.site !== undefined || payload?.rows !== undefined ? payload : (req.body?.payload || req.body || req.query);
+        data = await api.exportSiteDailyPivotExcel(exportParams);
+        break;
+      }
       default:
         return res.status(404).json({ status: "error", message: `Unknown action: ${action}` });
     }
-    if (action === "exportIncidents" || action === "exportKeHoach") {
+    if (action === "exportIncidents" || action === "exportKeHoach" || action === "exportSiteDailyPivot") {
       res.setHeader("Cache-Control", "no-store");
     } else {
       res.setHeader("Cache-Control", "public, s-maxage=120, stale-while-revalidate=300");

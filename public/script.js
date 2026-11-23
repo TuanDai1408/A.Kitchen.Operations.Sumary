@@ -3155,6 +3155,28 @@ function downloadBase64File(base64Data, fileName, mimeType) {
   }, 150);
 }
 
+function removeVietnameseTones(str) {
+  if (!str) return "";
+  str = String(str);
+  str = str.replace(/à|á|ạ|ả|ã|â|ầ|ấ|ậ|ẩ|ẫ|ă|ằ|ắ|ặ|ẳ|ẵ/g, "a");
+  str = str.replace(/À|Á|Ạ|Ả|Ã|Â|Ầ|Ấ|Ậ|Ẩ|Ẫ|Ă|Ằ|Ắ|Ặ|Ẳ|Ẵ/g, "A");
+  str = str.replace(/è|é|ẹ|ẻ|ẽ|ê|ề|ế|ệ|ể|ễ/g, "e");
+  str = str.replace(/È|É|Ẹ|Ẻ|Ẽ|Ê|Ề|Ế|Ệ|Ể|Ễ/g, "E");
+  str = str.replace(/ì|í|ị|ỉ|ĩ/g, "i");
+  str = str.replace(/Ì|Í|Ị|Ỉ|Ĩ/g, "I");
+  str = str.replace(/ò|ó|ọ|ỏ|õ|ô|ồ|ố|ộ|ổ|ỗ|ơ|ờ|ớ|ợ|ở|ỡ/g, "o");
+  str = str.replace(/Ò|Ó|Ọ|Ỏ|Õ|Ô|Ồ|Ố|Ộ|Ổ|Ỗ|Ơ|Ờ|Ớ|Ợ|Ở|Ỡ/g, "O");
+  str = str.replace(/ù|ú|ụ|ủ|ũ|ư|ừ|ứ|ự|ử|ữ/g, "u");
+  str = str.replace(/Ù|Ú|Ụ|Ủ|Ũ|Ư|Ừ|Ứ|Ự|Ử|Ữ/g, "U");
+  str = str.replace(/ỳ|ý|ỵ|ỷ|ỹ/g, "y");
+  str = str.replace(/Ỳ|Ý|Ỵ|Ỷ|Ỹ/g, "Y");
+  str = str.replace(/đ/g, "d");
+  str = str.replace(/Đ/g, "D");
+  str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  str = str.replace(/[^a-zA-Z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "");
+  return str;
+}
+
 async function doExportSiteDailyPivot() {
   var submitBtn = document.getElementById('expSiteDailySubmit');
   var siteSel = document.getElementById('expSiteSelect');
@@ -3173,8 +3195,11 @@ async function doExportSiteDailyPivot() {
   try {
     var res = await callPostAPI('exportSiteDailyPivot', { site: selSite, from: from, to: to });
     if (res && res.ok && res.data) {
-      downloadBase64File(res.data, res.name || 'Bao_cao_suat_an_pivot.xlsx', res.mimeType);
-      toast('Đã tải thành công ' + (res.name || 'file Excel'));
+      var sName = (selSite && selSite !== 'all' && selSite !== 'ALL') ? removeVietnameseTones(selSite).slice(0, 35) : 'Tat_ca_cac_site';
+      var dStr = (from || 'all') + '_' + (to || 'now');
+      var safeName = res.name ? removeVietnameseTones(res.name.replace(/\.xlsx$/i, '')) + '.xlsx' : ('Bao_cao_suat_an_pivot_' + sName + '_' + dStr + '.xlsx');
+      downloadBase64File(res.data, safeName, res.mimeType);
+      toast('Đã tải thành công ' + safeName);
       closeExportSiteDailyModal();
     } else {
       throw new Error((res && res.message) || 'Không thể tạo file từ máy chủ');
@@ -3183,7 +3208,7 @@ async function doExportSiteDailyPivot() {
     console.warn('Lỗi khi gọi API exportSiteDailyPivot, chuyển sang fallback client:', err);
     try {
       clientFallbackExportSiteDaily(selSite, from, to);
-      toast('Đã tải file Excel (Client fallback)');
+      toast('Đã tải file Excel');
       closeExportSiteDailyModal();
     } catch (fbErr) {
       toast('Lỗi xuất file Excel: ' + (err.message || err));
@@ -3248,8 +3273,10 @@ function clientFallbackExportSiteDaily(site, from, to) {
     ];
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'BaoCaoSuatAnPivot');
-    var sName = site && site !== 'all' ? site.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30) : 'ALL_SITES';
-    XLSX.writeFile(wb, 'Bao_cao_suat_an_pivot_' + sName + '.xlsx');
+    var sName = (site && site !== 'all' && site !== 'ALL') ? removeVietnameseTones(site).slice(0, 35) : 'Tat_ca_cac_site';
+    var dStr = (from || 'all') + '_' + (to || 'now');
+    var fname = 'Bao_cao_suat_an_pivot_' + sName + '_' + dStr + '.xlsx';
+    XLSX.writeFile(wb, fname);
   } else {
     throw new Error('Thư viện XLSX chưa được nạp');
   }
