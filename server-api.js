@@ -3455,7 +3455,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   // SHEET 1: BÁO CÁO CHI TIẾT & PIVOT SUẤT ĂN (BaoCaoSuatAnPivot)
   // =========================================================================
   const ws = wb.addWorksheet("BaoCaoSuatAnPivot", {
-    views: [{ state: "frozen", ySplit: 6, showGridLines: true }]
+    views: [{ state: "frozen", ySplit: 5, showGridLines: true }]
   });
 
   // Thiết lập độ rộng chuẩn cho 15 cột
@@ -3520,77 +3520,67 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   const exportTimeLabel = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
   // -------------------------------------------------------------------------
-  // ROW 1: TÊN ĐƠN VỊ / TẬP ĐOÀN
+  // ROW 1: TIÊU ĐỀ BÁO CÁO CHÍNH
   // -------------------------------------------------------------------------
   ws.mergeCells("A1:O1");
   const r1 = ws.getCell("A1");
-  r1.value = "HỆ THỐNG BẾP ĂN A.KITCHEN — TẬP ĐOÀN TÂN LONG (TAN LONG GROUP)";
-  r1.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF595959" } };
+  r1.value = "BÁO CÁO PIVOT CHI TIẾT SUẤT ĂN THEO SITE - NGÀY - KHÁCH HÀNG";
+  r1.font = { name: "Aptos", size: 15, bold: true, color: { argb: "FF1F4E79" } };
   r1.alignment = { vertical: "middle", horizontal: "left" };
-  ws.getRow(1).height = 18;
+  ws.getRow(1).height = 28;
 
   // -------------------------------------------------------------------------
-  // ROW 2: TIÊU ĐỀ BÁO CÁO CHÍNH
+  // ROW 2: METADATA BÁO CÁO (Phạm vi, Kỳ báo cáo, Ngày giờ xuất, ĐVT)
   // -------------------------------------------------------------------------
   ws.mergeCells("A2:O2");
   const r2 = ws.getCell("A2");
-  r2.value = "BÁO CÁO PIVOT CHI TIẾT SUẤT ĂN THEO SITE - NGÀY - KHÁCH HÀNG";
-  r2.font = { name: "Aptos", size: 15, bold: true, color: { argb: "FF1F4E79" } };
+  r2.value = `Phạm vi: ${siteLabel}   |   Kỳ dữ liệu: ${dateRangeLabel}   |   Thời điểm xuất: ${exportTimeLabel}   |   Đơn vị tính: Suất ăn`;
+  r2.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF595959" } };
   r2.alignment = { vertical: "middle", horizontal: "left" };
-  ws.getRow(2).height = 28;
+  ws.getRow(2).height = 19;
 
   // -------------------------------------------------------------------------
-  // ROW 3: METADATA BÁO CÁO (Phạm vi, Kỳ báo cáo, Ngày giờ xuất, ĐVT)
+  // ROW 3: DÃY THẺ EXECUTIVE SUMMARY KPI BANNER (5 Khối Thống kê Trực quan)
   // -------------------------------------------------------------------------
-  ws.mergeCells("A3:O3");
-  const r3 = ws.getCell("A3");
-  r3.value = `Phạm vi: ${siteLabel}   |   Kỳ dữ liệu: ${dateRangeLabel}   |   Thời điểm xuất: ${exportTimeLabel}   |   Đơn vị tính: Suất ăn`;
-  r3.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF595959" } };
-  r3.alignment = { vertical: "middle", horizontal: "left" };
-  ws.getRow(3).height = 19;
-
-  // -------------------------------------------------------------------------
-  // ROW 4: DÃY THẺ EXECUTIVE SUMMARY KPI BANNER (5 Khối Thống kê Trực quan)
-  // -------------------------------------------------------------------------
-  // Khối 1: Tổng suất (A4:C4)
-  ws.mergeCells("A4:C4");
-  const kpi1 = ws.getCell("A4");
+  // Khối 1: Tổng suất (A3:C3)
+  ws.mergeCells("A3:C3");
+  const kpi1 = ws.getCell("A3");
   kpi1.value = `TỔNG CỘNG: ${sumTong.toLocaleString("en-US")} suất (${reportRows.length} dòng)`;
   kpi1.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
   kpi1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9EEF4" } };
   kpi1.alignment = { vertical: "middle", horizontal: "center" };
   kpi1.border = { top: { style: "thin", color: { argb: "FFB0C4DE" } }, bottom: { style: "thin", color: { argb: "FFB0C4DE" } }, left: { style: "thin", color: { argb: "FFB0C4DE" } }, right: { style: "thin", color: { argb: "FFB0C4DE" } } };
 
-  // Khối 2: Suất chính (D4:F4)
-  ws.mergeCells("D4:F4");
-  const kpi2 = ws.getCell("D4");
+  // Khối 2: Suất chính (D3:F3)
+  ws.mergeCells("D3:F3");
+  const kpi2 = ws.getCell("D3");
   kpi2.value = `Suất chính: ${(sumSang + sumTrua + sumChieu).toLocaleString("en-US")} (S: ${sumSang.toLocaleString("en-US")} | T: ${sumTrua.toLocaleString("en-US")} | C: ${sumChieu.toLocaleString("en-US")})`;
   kpi2.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF046A38" } };
   kpi2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2F0D9" } };
   kpi2.alignment = { vertical: "middle", horizontal: "center" };
   kpi2.border = { top: { style: "thin", color: { argb: "FFA9D18E" } }, bottom: { style: "thin", color: { argb: "FFA9D18E" } }, left: { style: "thin", color: { argb: "FFA9D18E" } }, right: { style: "thin", color: { argb: "FFA9D18E" } } };
 
-  // Khối 3: Nhân viên & Hủy (G4:H4)
-  ws.mergeCells("G4:H4");
-  const kpi3 = ws.getCell("G4");
+  // Khối 3: Nhân viên & Hủy (G3:H3)
+  ws.mergeCells("G3:H3");
+  const kpi3 = ws.getCell("G3");
   kpi3.value = `NV: ${sumNV.toLocaleString("en-US")} | Hủy: ${sumHuy.toLocaleString("en-US")}`;
   kpi3.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFC00000" } };
   kpi3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCE4D6" } };
   kpi3.alignment = { vertical: "middle", horizontal: "center" };
   kpi3.border = { top: { style: "thin", color: { argb: "FFF4B084" } }, bottom: { style: "thin", color: { argb: "FFF4B084" } }, left: { style: "thin", color: { argb: "FFF4B084" } }, right: { style: "thin", color: { argb: "FFF4B084" } } };
 
-  // Khối 4: Lưu mẫu & Giáo viên (I4:K4)
-  ws.mergeCells("I4:K4");
-  const kpi4 = ws.getCell("I4");
+  // Khối 4: Lưu mẫu & Giáo viên (I3:K3)
+  ws.mergeCells("I3:K3");
+  const kpi4 = ws.getCell("I3");
   kpi4.value = `LM Trường: ${sumLMTruong.toLocaleString("en-US")} | LM Site: ${sumLMSite.toLocaleString("en-US")} | GV: ${sumGV.toLocaleString("en-US")}`;
   kpi4.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF7030A0" } };
   kpi4.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEDEDF7" } };
   kpi4.alignment = { vertical: "middle", horizontal: "center" };
   kpi4.border = { top: { style: "thin", color: { argb: "FFB4A7D6" } }, bottom: { style: "thin", color: { argb: "FFB4A7D6" } }, left: { style: "thin", color: { argb: "FFB4A7D6" } }, right: { style: "thin", color: { argb: "FFB4A7D6" } } };
 
-  // Khối 5: Thất thoát & Giao hàng (L4:O4)
-  ws.mergeCells("L4:O4");
-  const kpi5 = ws.getCell("L4");
+  // Khối 5: Thất thoát & Giao hàng (L3:O3)
+  ws.mergeCells("L3:O3");
+  const kpi5 = ws.getCell("L3");
   const onTimePct = reportRows.length > 0 ? ((onTimeCount / reportRows.length) * 100).toFixed(1) : "100.0";
   kpi5.value = `Thất thoát: ${sumThatThoat.toLocaleString("en-US")} | Đúng giờ: ${onTimePct}% (${onTimeCount}/${reportRows.length})`;
   kpi5.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF333333" } };
@@ -3598,15 +3588,15 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   kpi5.alignment = { vertical: "middle", horizontal: "center" };
   kpi5.border = { top: { style: "thin", color: { argb: "FFD9D9D9" } }, bottom: { style: "thin", color: { argb: "FFD9D9D9" } }, left: { style: "thin", color: { argb: "FFD9D9D9" } }, right: { style: "thin", color: { argb: "FFD9D9D9" } } };
 
-  ws.getRow(4).height = 25;
+  ws.getRow(3).height = 25;
 
   // -------------------------------------------------------------------------
-  // ROW 5: DÒNG PHÂN CÁCH TRỐNG
+  // ROW 4: DÒNG PHÂN CÁCH TRỐNG
   // -------------------------------------------------------------------------
-  ws.getRow(5).height = 9;
+  ws.getRow(4).height = 9;
 
   // -------------------------------------------------------------------------
-  // ROW 6: TIÊU ĐỀ CÁC CỘT (TABLE HEADER)
+  // ROW 5: TIÊU ĐỀ CÁC CỘT (TABLE HEADER)
   // Quy chuẩn: Font Aptos, Size 11, Bold, Màu Navy #1F4E79, Chữ Trắng
   // -------------------------------------------------------------------------
   const headerTitles = [
@@ -3627,7 +3617,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
     "Ghi chú / Đề xuất"
   ];
 
-  const headerRow = ws.getRow(6);
+  const headerRow = ws.getRow(5);
   headerRow.values = headerTitles;
   headerRow.height = 29;
   headerRow.eachCell((cell, colNumber) => {
@@ -3647,10 +3637,10 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   });
 
   // -------------------------------------------------------------------------
-  // ROWS 7+: DỮ LIỆU CHI TIẾT (DATA ROWS)
+  // ROWS 6+: DỮ LIỆU CHI TIẾT (DATA ROWS)
   // Quy chuẩn: Font Aptos, Size 11, Regular, Zebra Striping, Căn lề chuẩn
   // -------------------------------------------------------------------------
-  const startDataRow = 7;
+  const startDataRow = 6;
   reportRows.forEach((r, idx) => {
     const currentRowNumber = startDataRow + idx;
     const row = ws.getRow(currentRowNumber);
@@ -3795,9 +3785,9 @@ export async function exportSiteDailyPivotExcel(params = {}) {
     }
   });
 
-  // Kích hoạt AutoFilter cho toàn bộ bảng dữ liệu (từ Row 6 đến hết dòng dữ liệu)
+  // Kích hoạt AutoFilter cho toàn bộ bảng dữ liệu (từ Row 5 đến hết dòng dữ liệu)
   ws.autoFilter = {
-    from: { row: 6, column: 1 },
+    from: { row: 5, column: 1 },
     to: { row: endDataRow, column: 15 }
   };
 
@@ -3808,7 +3798,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   const summaryKey = (site && site !== "all" && site !== "ALL") ? "KhachHang" : "Site";
   const ws2Title = summaryKey === "Site" ? "TongHopTheoSite" : "TongHopTheoKhachHang";
   const ws2 = wb.addWorksheet(ws2Title, {
-    views: [{ state: "frozen", ySplit: 5, showGridLines: true }]
+    views: [{ state: "frozen", ySplit: 4, showGridLines: true }]
   });
 
   ws2.columns = [
@@ -3830,28 +3820,21 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   // Header banner sheet 2
   ws2.mergeCells("A1:M1");
   const s2r1 = ws2.getCell("A1");
-  s2r1.value = "HỆ THỐNG BẾP ĂN A.KITCHEN — TẬP ĐOÀN TÂN LONG";
-  s2r1.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF595959" } };
+  s2r1.value = summaryKey === "Site"
+    ? "BẢNG TỔNG HỢP SUẤT ĂN PIVOT THEO TỪNG SITE / HUB"
+    : `BẢNG TỔNG HỢP SUẤT ĂN PIVOT THEO TỪNG KHÁCH HÀNG — ${siteLabel.toUpperCase()}`;
+  s2r1.font = { name: "Aptos", size: 14, bold: true, color: { argb: "FF1F4E79" } };
   s2r1.alignment = { vertical: "middle", horizontal: "left" };
-  ws2.getRow(1).height = 18;
+  ws2.getRow(1).height = 26;
 
   ws2.mergeCells("A2:M2");
   const s2r2 = ws2.getCell("A2");
-  s2r2.value = summaryKey === "Site"
-    ? "BẢNG TỔNG HỢP SUẤT ĂN PIVOT THEO TỪNG SITE / HUB"
-    : `BẢNG TỔNG HỢP SUẤT ĂN PIVOT THEO TỪNG KHÁCH HÀNG — ${siteLabel.toUpperCase()}`;
-  s2r2.font = { name: "Aptos", size: 14, bold: true, color: { argb: "FF1F4E79" } };
+  s2r2.value = `Kỳ dữ liệu: ${dateRangeLabel}   |   Thời điểm xuất: ${exportTimeLabel}   |   Đơn vị tính: Suất ăn`;
+  s2r2.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF595959" } };
   s2r2.alignment = { vertical: "middle", horizontal: "left" };
-  ws2.getRow(2).height = 26;
+  ws2.getRow(2).height = 18;
 
-  ws2.mergeCells("A3:M3");
-  const s2r3 = ws2.getCell("A3");
-  s2r3.value = `Kỳ dữ liệu: ${dateRangeLabel}   |   Thời điểm xuất: ${exportTimeLabel}   |   Đơn vị tính: Suất ăn`;
-  s2r3.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF595959" } };
-  s2r3.alignment = { vertical: "middle", horizontal: "left" };
-  ws2.getRow(3).height = 18;
-
-  ws2.getRow(4).height = 8; // Blank separator
+  ws2.getRow(3).height = 8; // Blank separator
 
   // Group data for sheet 2
   const groupMap = {};
@@ -3894,7 +3877,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
 
   const groupList = Object.values(groupMap).sort((a, b) => b.tong - a.tong); // Sắp xếp giảm dần theo sản lượng
 
-  // Header sheet 2 (Row 5)
+  // Header sheet 2 (Row 4)
   const s2Headers = [
     summaryKey === "Site" ? "Site / Hub bếp ăn" : "Khách hàng / Điểm ăn",
     "Số lượt báo cáo",
@@ -3911,7 +3894,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
     "Thất thoát"
   ];
 
-  const s2HeaderRow = ws2.getRow(5);
+  const s2HeaderRow = ws2.getRow(4);
   s2HeaderRow.values = s2Headers;
   s2HeaderRow.height = 28;
   s2HeaderRow.eachCell((cell, colNumber) => {
@@ -3930,7 +3913,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
     };
   });
 
-  const s2StartRow = 6;
+  const s2StartRow = 5;
   groupList.forEach((g, idx) => {
     const rowNum = s2StartRow + idx;
     const row = ws2.getRow(rowNum);
@@ -4029,7 +4012,7 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   });
 
   ws2.autoFilter = {
-    from: { row: 5, column: 1 },
+    from: { row: 4, column: 1 },
     to: { row: s2EndRow, column: 13 }
   };
 

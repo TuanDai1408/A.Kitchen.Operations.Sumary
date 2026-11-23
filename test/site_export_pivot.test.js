@@ -61,21 +61,17 @@ test("Site Đa Phúc converts suat_luu_mau to suatLuuMauTruong while other sites
   const ws2 = wb.getWorksheet("TongHopTheoSite") || wb.getWorksheet("TongHopTheoKhachHang");
   assert.ok(ws2, "Summary sheet 2 must exist");
 
-  // Check Executive Banner & Metadata (Rows 1-4)
+  // Check Executive Banner & Metadata (Rows 1-3)
   const r1 = ws.getCell("A1");
-  assert.ok(r1.value.includes("TÂN LONG"), "Row 1 must have company header");
+  assert.ok(r1.value.includes("BÁO CÁO PIVOT"), "Row 1 must have report title");
   assert.equal(r1.font.name, "Aptos");
+  assert.equal(r1.font.bold, true);
 
-  const r2 = ws.getCell("A2");
-  assert.ok(r2.value.includes("BÁO CÁO PIVOT"), "Row 2 must have report title");
-  assert.equal(r2.font.name, "Aptos");
-  assert.equal(r2.font.bold, true);
+  const kpiRow = ws.getRow(3);
+  assert.ok(kpiRow.getCell(1).value.includes("TỔNG CỘNG"), "Row 3 must have KPI summary banner");
 
-  const kpiRow = ws.getRow(4);
-  assert.ok(kpiRow.getCell(1).value.includes("TỔNG CỘNG"), "Row 4 must have KPI summary banner");
-
-  // Check columns headers (Row 6)
-  const headerRow = ws.getRow(6);
+  // Check columns headers (Row 5)
+  const headerRow = ws.getRow(5);
   assert.equal(headerRow.getCell(1).value, "Ngày báo cáo");
   assert.equal(headerRow.getCell(2).value, "Site / Bếp");
   assert.equal(headerRow.getCell(3).value, "Khách hàng / Điểm ăn");
@@ -88,11 +84,11 @@ test("Site Đa Phúc converts suat_luu_mau to suatLuuMauTruong while other sites
   assert.equal(headerRow.getCell(1).font.bold, true);
   assert.equal(headerRow.getCell(1).fill.fgColor.argb, "FF1F4E79");
 
-  // Data rows start at Row 7
+  // Data rows start at Row 6
   let daPhucRow = null;
   let tanLongRow = null;
   ws.eachRow((row, rowNumber) => {
-    if (rowNumber <= 6) return;
+    if (rowNumber <= 5) return;
     const siteVal = row.getCell(2).value;
     if (siteVal && siteVal.includes("Đa Phúc")) daPhucRow = row;
     if (siteVal && siteVal.includes("Tân Long")) tanLongRow = row;
@@ -115,12 +111,21 @@ test("Site Đa Phúc converts suat_luu_mau to suatLuuMauTruong while other sites
   assert.equal(daPhucRow.getCell(9).font.name, "Aptos");
   assert.equal(daPhucRow.getCell(9).font.size, 11);
 
-  // Total row at bottom (Row 9)
-  const totalRow = ws.getRow(9);
+  // Total row at bottom (Row 8)
+  const totalRow = ws.getRow(8);
   assert.equal(totalRow.getCell(1).value, "TỔNG CỘNG");
   assert.equal(totalRow.getCell(1).font.name, "Aptos");
   assert.equal(totalRow.getCell(1).font.size, 11);
   assert.equal(totalRow.getCell(1).font.bold, true);
   assert.equal(totalRow.getCell(9).value.result, 5, "Total LM trường formula result = 5");
   assert.equal(totalRow.getCell(10).value.result, 4, "Total LM site formula result = 4");
+
+  // Sheet 2: Check Row 1 title and Row 4 header
+  const s2r1 = ws2.getCell("A1");
+  assert.ok(s2r1.value.includes("BẢNG TỔNG HỢP"), "Sheet 2 Row 1 must have title");
+  assert.equal(s2r1.font.name, "Aptos");
+  const s2HeaderRow = ws2.getRow(4);
+  assert.equal(s2HeaderRow.getCell(1).value, "Site / Hub bếp ăn");
+  assert.equal(s2HeaderRow.getCell(1).font.name, "Aptos");
+  assert.equal(s2HeaderRow.getCell(1).font.size, 11);
 });
