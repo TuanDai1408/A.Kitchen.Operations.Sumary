@@ -2087,7 +2087,7 @@ table {
 
 /* Sticky columns for Site Daily Table */
 .table-site-daily th:nth-child(1),
-.table-site-daily td:nth-child(1) {
+.table-site-daily tr:not(.detail-row) td:nth-child(1) {
   position: sticky;
   left: 0;
   z-index: 2;
@@ -2099,7 +2099,7 @@ table {
   background: #FAFBFB;
 }
 .table-site-daily th:nth-child(2),
-.table-site-daily td:nth-child(2) {
+.table-site-daily tr:not(.detail-row) td:nth-child(2) {
   position: sticky;
   left: 32px;
   z-index: 2;
@@ -2111,9 +2111,16 @@ table {
   z-index: 4;
   background: #FAFBFB;
 }
-.table-site-daily tr:hover td:nth-child(1),
-.table-site-daily tr:hover td:nth-child(2) {
+.table-site-daily tr.hov:hover td:nth-child(1),
+.table-site-daily tr.hov:hover td:nth-child(2) {
   background: #F6FBF8;
+}
+.table-site-daily tr.row-expanded td {
+  background-color: #F0FDF4 !important;
+}
+.table-site-daily tr.row-expanded td:nth-child(1),
+.table-site-daily tr.row-expanded td:nth-child(2) {
+  background-color: #F0FDF4 !important;
 }
 
 thead th {
@@ -2192,10 +2199,43 @@ tfoot tr td {
 }
 
 /* Expanded Detail Row */
+.table-site-daily tr.detail-row td,
 .detail-row td {
-  background: #F8FAF9 !important;
-  padding: 16px 22px !important;
-  border-bottom: 2px solid var(--line);
+  position: static !important;
+  left: auto !important;
+  width: auto !important;
+  max-width: none !important;
+  z-index: 1 !important;
+  background: #F8FAFC !important;
+  padding: 0 !important;
+  border-bottom: 2px solid #CBD5E1 !important;
+  box-sizing: border-box !important;
+}
+
+.table-site-sub {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+  background: #FFFFFF;
+}
+.table-site-sub th {
+  background: #E2ECF6 !important;
+  color: #1F4E79 !important;
+  font-weight: 700 !important;
+  font-size: 11px !important;
+  text-transform: uppercase !important;
+  padding: 7px 10px !important;
+  border-bottom: 1px solid #CBD5E1 !important;
+  position: static !important;
+}
+.table-site-sub td {
+  padding: 7px 10px !important;
+  border-bottom: 1px solid #F1F5F9 !important;
+  font-size: 12px !important;
+  position: static !important;
+}
+.table-site-sub tr:hover td {
+  background: #F8FAFC !important;
 }
 
 .detail-grid {
