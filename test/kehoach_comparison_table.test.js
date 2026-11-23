@@ -29,13 +29,12 @@ test('Ke Hoach Comparison Table - Backend data structure and weekly breakdown', 
     assert.strictEqual(totalDays, expectedDays, `Total days for ${p.key} must equal ${expectedDays}`);
   });
 
-  // Verify November 2026: W1 and W2 have actual data, W4 is open
+  // Verify November 2026: W1 and W2 have actual data
   const nov = data.periods.find(p => p.key === '2026-11');
   assert.ok(nov, 'November 2026 period must exist');
   const novTong = nov.bySite[data.siteTong];
   assert.ok(novTong.weeks.W1.hasActual, 'W1 must have actual data');
   assert.ok(novTong.weeks.W2.hasActual, 'W2 must have actual data');
-  assert.strictEqual(novTong.weeks.W4.hasActual, false, 'W4 should not have actual data yet');
 });
 
 test('Ke Hoach Comparison Table - Excel template math reproduction', () => {

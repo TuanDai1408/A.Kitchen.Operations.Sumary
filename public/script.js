@@ -857,13 +857,35 @@ function applyFilter(rows){
 }
 
 /**
+ * Kiểm tra site có phải là MB A.Kitchen - Hub Đa Phúc (K505) không.
+ * Đối với Hub Đa Phúc, số lượng lưu mẫu được chuyển thành "Lưu mẫu tại trường".
+ */
+function isDaPhucSite(siteName){
+  if (!siteName) return false;
+  var s = String(siteName).toLowerCase();
+  return s.includes('đa phúc') || s.includes('da phuc') || s.includes('k505');
+}
+
+/**
  * Khi không lọc khách hàng: nhiều dòng cùng site+ngày (mỗi KH 1 dòng)
  * → gom 1 dòng / ngày để KPI, chart, bảng không bị trùng ngày.
  * Khi đang lọc 1 KH: trả nguyên rows (đã filter).
  */
 function groupRowsBySiteDate(rows){
   // Chỉ giữ từng dòng khi chọn đúng 1 KH; còn lại gom theo site+ngày
-  if (F.khach && F.khach.length === 1) return rows.slice();
+  if (F.khach && F.khach.length === 1) {
+    return rows.map(function(r){
+      var isDp = isDaPhucSite(r.tenSite);
+      var rawLm = Number(r.suatLuuMau || 0);
+      var lmTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDp ? rawLm : 0);
+      var lmSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDp ? rawLm : 0);
+      return Object.assign({}, r, {
+        suatLuuMau: rawLm,
+        suatLuuMauTruong: lmTr,
+        suatLuuMauSite: lmSt
+      });
+    });
+  }
 
   var map = {};
   rows.forEach(function(r){
@@ -876,7 +898,7 @@ function groupRowsBySiteDate(rows){
         suatNhanVien: 0, suatHuy: 0, tongSuat: 0,
         soThatThoat: 0, nsCoMat: 0, nsVang: 0, nsTangCa: 0,
         soKhieuNai: 0, soKhenNgoi: 0,
-        suatLuuMau: 0, suatGiaoVien: 0,
+        suatLuuMau: 0, suatLuuMauTruong: 0, suatLuuMauSite: 0, suatGiaoVien: 0,
         giaoTre: false, phutTre: 0,
         coChiPhiNgoai: false, soTienChiPhi: 0,
         hinhAnh: [],
@@ -897,8 +919,14 @@ function groupRowsBySiteDate(rows){
     o.nsTangCa      += r.nsTangCa || 0;
     o.soKhieuNai    += r.soKhieuNai || 0;
     o.soKhenNgoi    += r.soKhenNgoi || 0;
-    o.suatLuuMau    += r.suatLuuMau || 0;
-    o.suatGiaoVien  += r.suatGiaoVien || 0;
+    var rawLm = Number(r.suatLuuMau || 0);
+    var isDp = isDaPhucSite(r.tenSite);
+    var lmTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDp ? rawLm : 0);
+    var lmSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDp ? rawLm : 0);
+    o.suatLuuMau       += rawLm;
+    o.suatLuuMauTruong += lmTr;
+    o.suatLuuMauSite   += lmSt;
+    o.suatGiaoVien     += r.suatGiaoVien || 0;
     if (r.giaoTre) { o.giaoTre = true; o.phutTre = Math.max(o.phutTre||0, r.phutTre||0); }
     if (r.coChiPhiNgoai) { o.coChiPhiNgoai = true; o.soTienChiPhi += r.soTienChiPhi||0; }
     if ((r.mucDoVanDe||0) > (o.mucDoVanDe||0)) {
@@ -944,10 +972,12 @@ function prevPeriod(rows){
 function agg(rows){
    var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
           coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{},
-          suatLuuMau:0, suatGiaoVien:0 };
-  // var a = { tongSuat:0,sang:0,trua:0,chieu:0,nv:0,huy:0,soGiaoTre:0,thatThoat:0,
-  //           coMat:0,vang:0,kn:0,khen:0,dem:0, siteCP:{} };
+          suatLuuMau:0, suatLuuMauTruong:0, suatLuuMauSite:0, suatGiaoVien:0 };
   rows.forEach(function(r){
+    var rawLm = Number(r.suatLuuMau || 0);
+    var isDp = isDaPhucSite(r.tenSite);
+    var lmTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDp ? rawLm : 0);
+    var lmSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDp ? rawLm : 0);
     var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
     a.tongSuat += rTong;
     a.sang += (r.suatSang || 0);
@@ -963,8 +993,10 @@ function agg(rows){
     a.khen += (r.soKhenNgoi || 0);
     a.dem++;
     if (r.coChiPhiNgoai) a.siteCP[r.tenSite] = 1;
-    a.suatLuuMau   += (r.suatLuuMau || 0);
-    a.suatGiaoVien += (r.suatGiaoVien || 0);
+    a.suatLuuMau       += rawLm;
+    a.suatLuuMauTruong += lmTr;
+    a.suatLuuMauSite   += lmSt;
+    a.suatGiaoVien     += (r.suatGiaoVien || 0);
   });
   a.soSiteCP = Object.keys(a.siteCP).length;
   return a;
@@ -2591,13 +2623,17 @@ function renderSite(){
    '</span></div>';
 
   // card nhanh
+  var isDpSite = isDaPhucSite(SEL_SITE);
+  var lmCardTitle = isDpSite ? 'Lưu mẫu tại trường' : 'Lưu mẫu tại site';
+  var lmCardVal = isDpSite ? (a.suatLuuMauTruong || 0) : (a.suatLuuMauSite || 0);
+
   html += '<div class="grid g6">'+
     kpiCard(IC.user, 'Người báo cáo gần nhất', esc(last?last.nguoiBaoCao:'—'),
             last?('Cập nhật '+last.ngayBaoCao):'', null, true, C.brand)+
     kpiCard(IC.meal, 'Tổng suất kỳ này', fmt(a.tongSuat), a.dem+' ngày', null, true, C.gold)+
     kpiCard(IC.clock,'Tỷ lệ giao trễ', treGio+'%', a.soGiaoTre+' lượt trễ', null, false, C.light)+
     kpiCard(IC.warn, 'Số sự cố ghi nhận', soSuCo, 'trong kỳ', null, false, C.dark)+
-    kpiCard(IC.stack, 'Suất lưu mẫu', fmt(a.suatLuuMau||0), 'trong kỳ', null, true, '#7C3AED')+
+    kpiCard(IC.stack, lmCardTitle, fmt(lmCardVal), 'trong kỳ', null, true, '#7C3AED')+
     kpiCard(IC.meal, 'Suất giáo viên (cả ngày)', fmt(a.suatGiaoVien||0), 'trong kỳ', null, true, '#0891B2')+
   '</div>';
 
@@ -2611,28 +2647,49 @@ function renderSite(){
   // Dùng % (không dùng số tuyệt đối) để ngày sản lượng thấp không bị đánh giá nhẹ đi.
   var maxTtPct = 0;
   rows.forEach(function(r){
-    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    var isDpR = isDaPhucSite(r.tenSite || SEL_SITE);
+    var rawL = Number(r.suatLuuMau || 0);
+    var lTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDpR ? rawL : 0);
+    var lSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDpR ? rawL : 0);
+    var rTong = (r.tongSuat || 0) + lTr + lSt + (r.suatGiaoVien || 0);
     var p = pct(r.soThatThoat, rTong);
     if (p > maxTtPct) maxTtPct = p;
   });
   var maxSang  = Math.max.apply(null, rows.map(function(r){ return r.suatSang;  }).concat(0));
   var maxTrua  = Math.max.apply(null, rows.map(function(r){ return r.suatTrua;  }).concat(0));
   var maxChieu = Math.max.apply(null, rows.map(function(r){ return r.suatChieu; }).concat(0));
-  var maxTong  = Math.max.apply(null, rows.map(function(r){ return (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0); }).concat(0));
+  var maxTong  = Math.max.apply(null, rows.map(function(r){
+    var isDpR = isDaPhucSite(r.tenSite || SEL_SITE);
+    var rawL = Number(r.suatLuuMau || 0);
+    var lTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDpR ? rawL : 0);
+    var lSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDpR ? rawL : 0);
+    return (r.tongSuat || 0) + lTr + lSt + (r.suatGiaoVien || 0);
+  }).concat(0));
 
-  html += '<div class="card" style="margin-top:13px">'+cardHead(IC.table,'Chi tiết báo cáo từng ngày',
-    '<span style="font-size:11px;color:#B0B0B0">thanh màu = % thất thoát trên tổng suất • bấm vào dòng để mở rộng</span>')+
+  var btnExportSiteDailyHtml = '<div style="display:inline-flex;align-items:center;gap:10px;">'+
+    '<span style="font-size:11px;color:#B0B0B0">thanh màu = % thất thoát trên tổng suất • bấm vào dòng để mở rộng</span>'+
+    '<button id="btnOpenExportSiteDaily" type="button" class="btn btn-out" style="height:30px;padding:3px 12px;font-size:12px;font-weight:600;display:inline-flex;align-items:center;gap:6px;border-radius:6px;cursor:pointer;background:#FFFFFF;border:1px solid #046A38;color:#046A38;">'+
+    svg(IC.down, 13, '#046A38') + ' Xuất Excel Pivot</button></div>';
+
+  html += '<div class="card" style="margin-top:13px">'+cardHead(IC.table,'Chi tiết báo cáo từng ngày', btnExportSiteDailyHtml)+
     '<div class="tw"><table class="table-site-daily"><thead><tr>'+
     '<th></th><th>Ngày</th><th class="num" style="min-width:110px">Sáng</th>'+
     '<th class="num" style="min-width:110px">Trưa</th>'+
     '<th class="num" style="min-width:110px">Chiều</th>'+
-    '<th class="num">NV</th><th class="num">Hủy</th><th class="num">Lưu mẫu</th><th class="num">GV (cả ngày)</th><th>Khách hàng</th><th class="num">Tổng</th><th class="ctr">Giao</th>'+
+    '<th class="num">NV</th><th class="num">Hủy</th>'+
+    '<th class="num" title="Lưu mẫu tại trường" style="white-space:nowrap">LM tại trường</th>'+
+    '<th class="num" title="Lưu mẫu tại site" style="white-space:nowrap">LM tại site</th>'+
+    '<th class="num">GV (cả ngày)</th><th>Khách hàng</th><th class="num">Tổng</th><th class="ctr">Giao</th>'+
     '<th class="num" style="min-width:118px">Thất thoát</th><th class="ctr">KN</th><th class="ctr">Khen</th>'+
     '</tr></thead><tbody>';
 
   rows.slice().reverse().forEach(function(r){
     var op = UI.expanded === r.id;
-    var rTong = (r.tongSuat || 0) + (r.suatLuuMau || 0) + (r.suatGiaoVien || 0);
+    var isDpRow = isDaPhucSite(r.tenSite || SEL_SITE);
+    var rawLm = Number(r.suatLuuMau || 0);
+    var lmTruong = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDpRow ? rawLm : 0);
+    var lmSite = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDpRow ? rawLm : 0);
+    var rTong = (r.tongSuat || 0) + lmTruong + lmSite + (r.suatGiaoVien || 0);
     html += '<tr class="hov row-x" data-id="'+esc(r.id)+'">'+
       '<td style="color:#C0C0C0; text-align:center; width:30px;">'+(op?'▾':'▸')+'</td>'+
       '<td style="font-weight:600;white-space:nowrap">'+esc(r.ngayBaoCao)+'</td>'+
@@ -2641,7 +2698,8 @@ function renderSite(){
       '<td class="num">'+dataBarNum(r.suatChieu, maxChieu, C.gold)+'</td>'+
       '<td class="num">'+fmt(r.suatNhanVien)+'</td>'+
       '<td class="num">'+(r.suatHuy > 0 ? '<span style="color:#FF6720;font-weight:700">'+fmt(r.suatHuy)+'</span>' : '<span style="color:#AAA">0</span>')+'</td>'+
-      '<td class="num">'+fmt(r.suatLuuMau||0)+'</td>'+
+      '<td class="num">'+(lmTruong > 0 ? fmt(lmTruong) : '<span style="color:#AAA">0</span>')+'</td>'+
+      '<td class="num">'+(lmSite > 0 ? fmt(lmSite) : '<span style="color:#AAA">0</span>')+'</td>'+
       '<td class="num">'+fmt(r.suatGiaoVien||0)+'</td>'+
       '<td style="max-width:160px;color:#666">'+esc(r.tenKhachHang||'—')+'</td>'+
       '<td class="num bold-brand">'+dataBarNum(rTong, maxTong, C.brand)+'</td>'+
@@ -2665,11 +2723,12 @@ function renderSite(){
         ['Đề xuất / kiến nghị', r.deXuat],
         ['Người báo cáo', r.nguoiBaoCao],
         ['Khách hàng', r.tenKhachHang],
-        ['Suất lưu mẫu', fmt(r.suatLuuMau||0)],
+        ['Lưu mẫu tại trường', fmt(lmTruong)],
+        ['Lưu mẫu tại site', fmt(lmSite)],
         ['Suất giáo viên (cả ngày)', fmt(r.suatGiaoVien||0)]
       ];
       // Sử dụng class 'detail-row' và 'detail-grid' đã định nghĩa CSS ở trên để tránh đè giao diện
-      html += '<tr class="detail-row"><td colspan="15">'+
+      html += '<tr class="detail-row"><td colspan="16">'+
         '<div class="detail-grid">'+
         det.map(function(x){
           return '<div class="detail-item">'+
@@ -2681,7 +2740,7 @@ function renderSite(){
   });
 
 
-  if (!rows.length) html += '<tr><td colspan="15"><div class="empty">Site này chưa có báo cáo trong kỳ</div></td></tr>';
+  if (!rows.length) html += '<tr><td colspan="16"><div class="empty">Site này chưa có báo cáo trong kỳ</div></td></tr>';
   html += '</tbody></table></div></div>';
 
   // gallery + đề xuất
@@ -2835,6 +2894,14 @@ function renderSite(){
       openLightbox(z.dataset.u); 
     }
   });
+
+  var btnExp = document.getElementById('btnOpenExportSiteDaily');
+  if (btnExp) {
+    btnExp.addEventListener('click', function(e){
+      e.stopPropagation();
+      openExportSiteDailyModal();
+    });
+  }
 }
 
 // Data bar cột Thất thoát: độ dài theo % thất thoát so với ngày cao nhất trong kỳ,
@@ -2879,6 +2946,307 @@ function dataBarNum(value, maxVal, color){
 function openLightbox(u){
   document.getElementById('lbImg').src = u;
   document.getElementById('lightbox').classList.add('open');
+}
+
+/* =========================================================================
+   POPUP & XUẤT EXCEL PIVOT BÁO CÁO SUẤT ĂN THEO SITE / NGÀY
+   ========================================================================= */
+
+function ensureExportSiteDailyStyles() {
+  if (document.getElementById('expSiteDailyStyles')) return;
+  var st = document.createElement('style');
+  st.id = 'expSiteDailyStyles';
+  st.textContent = '' +
+    '.exp-ov{position:fixed;inset:0;background:rgba(15,23,42,.65);backdrop-filter:blur(3px);z-index:99999;display:none;align-items:center;justify-content:center;padding:16px;box-sizing:border-box;}' +
+    '.exp-ov.open{display:flex;}' +
+    '.exp-mod{background:#FFFFFF;border-radius:14px;max-width:540px;width:100%;box-shadow:0 25px 70px rgba(0,0,0,.3);border:1px solid #E2E8F0;display:flex;flex-direction:column;overflow:hidden;animation:expFadeIn .2s cubic-bezier(.16,1,.3,1);font-family:"Be Vietnam Pro",sans-serif;}' +
+    '@keyframes expFadeIn{from{opacity:0;transform:scale(.97) translateY(-8px);}to{opacity:1;transform:scale(1) translateY(0);}}' +
+    '.exp-mod-h{padding:18px 24px;border-bottom:1px solid #E2E8F0;position:relative;background:#FAFBFB;}' +
+    '.exp-mod-h h2{font-family:"Be Vietnam Pro",sans-serif;color:#046A38;font-size:17px;font-weight:700;margin:0;display:flex;align-items:center;gap:8px;padding-right:36px;}' +
+    '.exp-mod-h .sub{color:#64748B;font-size:12.5px;margin-top:5px;}' +
+    '.exp-mod-x{position:absolute;top:16px;right:18px;width:30px;height:30px;border:none;background:#F1F5F9;border-radius:50%;font-size:20px;line-height:1;color:#64748B;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s ease;}' +
+    '.exp-mod-x:hover{background:#E2E8F0;color:#0F172A;}' +
+    '.exp-mod-b{padding:20px 24px;display:flex;flex-direction:column;gap:16px;}' +
+    '.exp-form-group{display:flex;flex-direction:column;gap:6px;}' +
+    '.exp-label{font-size:12.5px;font-weight:600;color:#334155;}' +
+    '.exp-input,.exp-select{font-family:inherit;font-size:13.5px;padding:9px 12px;border:1px solid #CBD5E1;border-radius:8px;outline:none;background:#FFF;transition:border-color .15s;box-sizing:border-box;}' +
+    '.exp-input:focus,.exp-select:focus{border-color:#046A38;box-shadow:0 0 0 2px rgba(4,106,56,.15);}' +
+    '.exp-quick-btns{display:flex;gap:6px;flex-wrap:wrap;margin-top:2px;}' +
+    '.exp-btn-pill{border:1px solid #E2E8F0;background:#F8FAFC;color:#475569;font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:6px;cursor:pointer;transition:all .15s;}' +
+    '.exp-btn-pill:hover{background:#E2E8F0;color:#0F172A;}' +
+    '.exp-mod-f{padding:14px 24px;background:#F8FAFC;border-top:1px solid #E2E8F0;display:flex;justify-content:flex-end;align-items:center;gap:10px;}';
+  document.head.appendChild(st);
+}
+
+function ensureExportSiteDailyModal() {
+  ensureExportSiteDailyStyles();
+  if (document.getElementById('modalExportSiteDaily')) return;
+  var ov = document.createElement('div');
+  ov.id = 'modalExportSiteDaily';
+  ov.className = 'exp-ov';
+  ov.innerHTML = '<div class="exp-mod">' +
+    '<div class="exp-mod-h">' +
+      '<button type="button" class="exp-mod-x" id="expSiteDailyClose" aria-label="Đóng">×</button>' +
+      '<h2>' + svg(IC.table, 18, '#046A38') + ' Xuất Excel Báo cáo suất ăn Pivot</h2>' +
+      '<div class="sub">Thiết kế theo dạng pivot theo ngày, theo site, theo từng khách hàng & các loại suất ăn</div>' +
+    '</div>' +
+    '<div class="exp-mod-b">' +
+      '<div class="exp-form-group">' +
+        '<label class="exp-label" for="expSiteSelect">Chọn Site / Bếp:</label>' +
+        '<select id="expSiteSelect" class="exp-select"></select>' +
+      '</div>' +
+      '<div class="exp-form-group">' +
+        '<label class="exp-label">Khoảng ngày báo cáo:</label>' +
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">' +
+          '<div>' +
+            '<span style="font-size:11.5px;color:#64748B;display:block;margin-bottom:3px;">Từ ngày:</span>' +
+            '<input type="date" id="expDateFrom" class="exp-input" style="width:100%;">' +
+          '</div>' +
+          '<div>' +
+            '<span style="font-size:11.5px;color:#64748B;display:block;margin-bottom:3px;">Đến ngày:</span>' +
+            '<input type="date" id="expDateTo" class="exp-input" style="width:100%;">' +
+          '</div>' +
+        '</div>' +
+        '<div class="exp-quick-btns">' +
+          '<button type="button" class="exp-btn-pill" data-preset="today">Hôm nay</button>' +
+          '<button type="button" class="exp-btn-pill" data-preset="7days">7 ngày qua</button>' +
+          '<button type="button" class="exp-btn-pill" data-preset="thisMonth">Tháng này</button>' +
+          '<button type="button" class="exp-btn-pill" data-preset="all">Tất cả kỳ</button>' +
+        '</div>' +
+      '</div>' +
+      '<div id="expSitePreviewSummary" style="background:#F1F5F9;border:1px solid #CBD5E1;border-radius:8px;padding:10px 14px;font-size:12px;color:#334155;line-height:1.5;">' +
+        'Đang tính toán dữ liệu...' +
+      '</div>' +
+      '<div style="font-size:11.5px;color:#64748B;line-height:1.4;">' +
+        '✓ Định dạng chuẩn Excel (Font <b>Aptos</b>, Header Navy, AutoFilter, Freeze Panes, định dạng số, tổng cộng).' +
+      '</div>' +
+    '</div>' +
+    '<div class="exp-mod-f">' +
+      '<button type="button" class="btn" id="expSiteDailyCancel" style="padding:8px 16px;background:#F1F5F9;border:1px solid #CBD5E1;border-radius:8px;font-weight:600;color:#475569;cursor:pointer;">Đóng</button>' +
+      '<button type="button" class="btn" id="expSiteDailySubmit" style="padding:8px 20px;background:#046A38;border:none;border-radius:8px;font-weight:600;color:#FFFFFF;cursor:pointer;display:inline-flex;align-items:center;gap:6px;">' +
+        svg(IC.down, 14, '#FFFFFF') + ' Tải file Excel (.xlsx)' +
+      '</button>' +
+    '</div>' +
+  '</div>';
+  document.body.appendChild(ov);
+
+  ov.addEventListener('click', function(e){ if (e.target === ov) closeExportSiteDailyModal(); });
+  document.getElementById('expSiteDailyClose').addEventListener('click', closeExportSiteDailyModal);
+  document.getElementById('expSiteDailyCancel').addEventListener('click', closeExportSiteDailyModal);
+  document.getElementById('expSiteDailySubmit').addEventListener('click', doExportSiteDailyPivot);
+
+  ov.querySelectorAll('.exp-btn-pill').forEach(function(btn){
+    btn.addEventListener('click', function(){
+      var preset = this.dataset.preset;
+      var today = new Date().toISOString().slice(0, 10);
+      var fromInput = document.getElementById('expDateFrom');
+      var toInput = document.getElementById('expDateTo');
+      if (preset === 'today') {
+        fromInput.value = today;
+        toInput.value = today;
+      } else if (preset === '7days') {
+        var d7 = new Date();
+        d7.setDate(d7.getDate() - 6);
+        fromInput.value = d7.toISOString().slice(0, 10);
+        toInput.value = today;
+      } else if (preset === 'thisMonth') {
+        var ym = today.slice(0, 7);
+        fromInput.value = ym + '-01';
+        toInput.value = today;
+      } else if (preset === 'all') {
+        fromInput.value = '';
+        toInput.value = '';
+      }
+      updateExportSitePreview();
+    });
+  });
+
+  document.getElementById('expSiteSelect').addEventListener('change', updateExportSitePreview);
+  document.getElementById('expDateFrom').addEventListener('change', updateExportSitePreview);
+  document.getElementById('expDateTo').addEventListener('change', updateExportSitePreview);
+}
+
+function updateExportSitePreview() {
+  var siteSel = document.getElementById('expSiteSelect');
+  var fromInput = document.getElementById('expDateFrom');
+  var toInput = document.getElementById('expDateTo');
+  var prevEl = document.getElementById('expSitePreviewSummary');
+  if (!siteSel || !prevEl) return;
+
+  var selSite = siteSel.value;
+  var from = fromInput ? fromInput.value : '';
+  var to = toInput ? toInput.value : '';
+
+  var count = 0;
+  var sumTong = 0;
+  var sumLMTruong = 0;
+  var sumLMSite = 0;
+
+  (RAW || []).forEach(function(r){
+    if (selSite && selSite !== 'all' && selSite !== 'ALL' && r.tenSite !== selSite) return;
+    if (from && r.ngayBaoCao < from) return;
+    if (to && r.ngayBaoCao > to) return;
+    count++;
+    var isDp = isDaPhucSite(r.tenSite);
+    var rawLm = Number(r.suatLuuMau || 0);
+    var lmTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDp ? rawLm : 0);
+    var lmSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDp ? rawLm : 0);
+    sumLMTruong += lmTr;
+    sumLMSite += lmSt;
+    sumTong += (r.tongSuat || 0) + lmTr + lmSt + Number(r.suatGiaoVien || 0);
+  });
+
+  var siteLabel = (selSite === 'all' || !selSite) ? 'Tất cả các Site' : selSite;
+  var dateLabel = (from || to) ? ((from ? 'Từ ' + from : '') + (to ? ' Đến ' + to : '')) : 'Toàn bộ thời gian';
+
+  prevEl.innerHTML = '<b>Phạm vi xuất:</b> ' + esc(siteLabel) + '<br>' +
+    '<b>Thời gian:</b> ' + esc(dateLabel) + '<br>' +
+    '<b>Dự kiến:</b> <b>' + fmt(count) + '</b> dòng báo cáo • Tổng <b>' + fmt(sumTong) + '</b> suất ăn' +
+    (sumLMTruong > 0 ? (' (LM tại trường: ' + fmt(sumLMTruong) + ')') : '') +
+    (sumLMSite > 0 ? (' (LM tại site: ' + fmt(sumLMSite) + ')') : '');
+}
+
+function openExportSiteDailyModal() {
+  ensureExportSiteDailyModal();
+  var ov = document.getElementById('modalExportSiteDaily');
+  if (!ov) return;
+
+  var sel = document.getElementById('expSiteSelect');
+  if (sel) {
+    var sl = siteListNow();
+    var opts = '<option value="all">-- Tất cả các site --</option>' +
+      sl.map(function(s){
+        return '<option value="' + esc(s) + '"' + (s === SEL_SITE ? ' selected' : '') + '>' + esc(s) + '</option>';
+      }).join('');
+    sel.innerHTML = opts;
+  }
+
+  var fromInput = document.getElementById('expDateFrom');
+  var toInput = document.getElementById('expDateTo');
+  if (fromInput) fromInput.value = F.from || '';
+  if (toInput) toInput.value = F.to || '';
+
+  updateExportSitePreview();
+  ov.classList.add('open');
+}
+
+function closeExportSiteDailyModal() {
+  var ov = document.getElementById('modalExportSiteDaily');
+  if (ov) ov.classList.remove('open');
+}
+
+function downloadBase64File(base64Data, fileName, mimeType) {
+  var byteCharacters = atob(base64Data);
+  var byteNumbers = new Array(byteCharacters.length);
+  for (var i = 0; i < byteCharacters.length; i++) {
+    byteNumbers[i] = byteCharacters.charCodeAt(i);
+  }
+  var byteArray = new Uint8Array(byteNumbers);
+  var blob = new Blob([byteArray], { type: mimeType || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = fileName;
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 150);
+}
+
+async function doExportSiteDailyPivot() {
+  var submitBtn = document.getElementById('expSiteDailySubmit');
+  var siteSel = document.getElementById('expSiteSelect');
+  var fromInput = document.getElementById('expDateFrom');
+  var toInput = document.getElementById('expDateTo');
+
+  var selSite = siteSel ? siteSel.value : 'all';
+  var from = fromInput ? fromInput.value : '';
+  var to = toInput ? toInput.value : '';
+
+  if (submitBtn) {
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = '<span class="spin"></span> Đang tạo file Excel...';
+  }
+
+  try {
+    var res = await callPostAPI('exportSiteDailyPivot', { site: selSite, from: from, to: to });
+    if (res && res.ok && res.data) {
+      downloadBase64File(res.data, res.name || 'Bao_cao_suat_an_pivot.xlsx', res.mimeType);
+      toast('Đã tải thành công ' + (res.name || 'file Excel'));
+      closeExportSiteDailyModal();
+    } else {
+      throw new Error((res && res.message) || 'Không thể tạo file từ máy chủ');
+    }
+  } catch (err) {
+    console.warn('Lỗi khi gọi API exportSiteDailyPivot, chuyển sang fallback client:', err);
+    try {
+      clientFallbackExportSiteDaily(selSite, from, to);
+      toast('Đã tải file Excel (Client fallback)');
+      closeExportSiteDailyModal();
+    } catch (fbErr) {
+      toast('Lỗi xuất file Excel: ' + (err.message || err));
+    }
+  } finally {
+    if (submitBtn) {
+      submitBtn.disabled = false;
+      submitBtn.innerHTML = svg(IC.down, 14, '#FFFFFF') + ' Tải file Excel (.xlsx)';
+    }
+  }
+}
+
+function clientFallbackExportSiteDaily(site, from, to) {
+  var rows = (RAW || []).filter(function(r) {
+    if (site && site !== 'all' && site !== 'ALL' && r.tenSite !== site) return false;
+    if (from && r.ngayBaoCao < from) return false;
+    if (to && r.ngayBaoCao > to) return false;
+    return true;
+  });
+
+  rows.sort(function(a, b) {
+    var c = String(a.ngayBaoCao || '').localeCompare(String(b.ngayBaoCao || ''));
+    if (c !== 0) return c;
+    c = String(a.tenSite || '').localeCompare(String(b.tenSite || ''));
+    if (c !== 0) return c;
+    return String(a.tenKhachHang || '').localeCompare(String(b.tenKhachHang || ''));
+  });
+
+  var data = rows.map(function(r) {
+    var isDp = isDaPhucSite(r.tenSite);
+    var rawLm = Number(r.suatLuuMau || 0);
+    var lmTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDp ? rawLm : 0);
+    var lmSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDp ? rawLm : 0);
+    var gv = Number(r.suatGiaoVien || 0);
+    var tong = (r.tongSuat || 0) + lmTr + lmSt + gv;
+    return {
+      'Ngày báo cáo': r.ngayBaoCao || '',
+      'Site / Bếp': r.tenSite || '',
+      'Khách hàng / Điểm ăn': r.tenKhachHang || '(Chưa có tên)',
+      'Sáng': Number(r.suatSang || 0),
+      'Trưa': Number(r.suatTrua || 0),
+      'Chiều': Number(r.suatChieu || 0),
+      'Nhân viên': Number(r.suatNhanVien || 0),
+      'Hủy': Number(r.suatHuy || 0),
+      'Lưu mẫu tại trường': lmTr,
+      'Lưu mẫu tại site': lmSt,
+      'Giáo viên': gv,
+      'Tổng suất': tong,
+      'Giao hàng': r.giaoTre ? ('Trễ ' + (r.phutTre || '') + 'p') : 'Đúng giờ',
+      'Thất thoát': Number(r.soThatThoat || 0),
+      'Ghi chú / Đề xuất': r.deXuat || r.nguyenNhanThatThoat || ''
+    };
+  });
+
+  if (typeof XLSX !== 'undefined') {
+    var ws = XLSX.utils.json_to_sheet(data);
+    var wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, 'BaoCaoSuatAnPivot');
+    var sName = site && site !== 'all' ? site.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30) : 'ALL_SITES';
+    XLSX.writeFile(wb, 'Bao_cao_suat_an_pivot_' + sName + '.xlsx');
+  } else {
+    throw new Error('Thư viện XLSX chưa được nạp');
+  }
 }
 
 /* =========================================================================

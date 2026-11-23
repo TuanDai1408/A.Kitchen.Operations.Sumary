@@ -4,6 +4,7 @@
 // =========================================================================
 
 import { createClient } from "@supabase/supabase-js";
+import ExcelJS from "exceljs";
 import {
   SLOC_GROUPS,
   SLOC_MAP,
@@ -363,6 +364,13 @@ function mapReportRow(r, nguong = DEFAULT_NGUONG) {
     chiTietYKien, phanLoaiKN
   }, nguong);
 
+  const rawLuuMau = Number(r.suat_luu_mau || 0);
+  const isDaPhuc = (r.ten_site || "").toLowerCase().includes("đa phúc") ||
+                   (r.ten_site || "").toLowerCase().includes("da phuc") ||
+                   String(r.site || "").toUpperCase() === "K505";
+  const suatLuuMauTruong = isDaPhuc ? rawLuuMau : 0;
+  const suatLuuMauSite = isDaPhuc ? 0 : rawLuuMau;
+
   return {
     id: r.id ? String(r.id) : `${r.ten_site}|${formatDate(r.ngay_bao_cao)}`,
     dauThoiGian: r.dau_thoi_gian ? String(r.dau_thoi_gian) : "",
@@ -372,7 +380,9 @@ function mapReportRow(r, nguong = DEFAULT_NGUONG) {
     suatSang, suatTrua, suatChieu, suatNhanVien, suatHuy,
     tongSuat,
     tenKhachHang: r.ten_khach_hang || "",
-    suatLuuMau: Number(r.suat_luu_mau || 0),
+    suatLuuMau: rawLuuMau,
+    suatLuuMauTruong,
+    suatLuuMauSite,
     suatGiaoVien: Number(r.suat_giao_vien || 0),
     gioGiaoRaw, giaoTre, phutTre, lyDoTre,
     tinhTrangNVL, nvlBatThuong,
@@ -481,8 +491,9 @@ export async function getDataVersion() {
 
 export const TX_SELECT_COLS = "billing_date,ten_cua_hang,ma_cua_hang,ten_kh,so_luong,dvt,thanh_tien_truoc_thue,ck_truoc_thue,gia_von,nhom_sp,nganh_hang,kenh_ban_hang,ten_kenh_ban_hang,nv_kinh_doanh,ten_sp,ma_sp,so_hoa_don,so_billing_goc,ly_do_tra_hang,vung_mien,loai_cua_hang";
 
+export const REPORT_COLS = "id,dau_thoi_gian,ten_site,ngay_bao_cao,nguoi_bao_cao,suat_sang,suat_trua,suat_chieu,suat_nhan_vien,suat_huy,tong_suat,gio_giao,ly_do_tre,tinh_trang_nvl,su_co_thiet_bi,so_that_thoat,nguyen_nhan_that_thoat,ns_co_mat,ns_vang,ns_tang_ca,su_co_nhan_su,so_khieu_nai,so_khen_ngoi,phan_loai_kn,muc_do_nghiem_trong,chi_tiet_y_kien,co_chi_phi_ngoai,so_tien_ly_do_chi_phi,hinh_anh,de_xuat,suat_luu_mau,suat_giao_vien,ten_khach_hang";
+
 async function _getDashboardData() {
-  const REPORT_COLS = "id,dau_thoi_gian,ten_site,ngay_bao_cao,nguoi_bao_cao,suat_sang,suat_trua,suat_chieu,suat_nhan_vien,suat_huy,tong_suat,gio_giao,ly_do_tre,tinh_trang_nvl,su_co_thiet_bi,so_that_thoat,nguyen_nhan_that_thoat,ns_co_mat,ns_vang,ns_tang_ca,su_co_nhan_su,so_khieu_nai,so_khen_ngoi,phan_loai_kn,muc_do_nghiem_trong,chi_tiet_y_kien,co_chi_phi_ngoai,so_tien_ly_do_chi_phi,hinh_anh,de_xuat,suat_luu_mau,suat_giao_vien,ten_khach_hang";
   const [versionRes, reportRes, revMonthlyRes] = await Promise.all([
     supabase.from("data_version").select("version, updated_at").order("updated_at", { ascending: false }).limit(1).maybeSingle(),
     supabase.from("report").select(REPORT_COLS).order("ngay_bao_cao", { ascending: true }).limit(5000),
@@ -3380,6 +3391,213 @@ export async function getBomDetail(params = {}) {
 
   BOM_CACHE.set(cacheKey, { time: now, data: result });
   return result;
+}
+
+export async function exportSiteDailyPivotExcel(params = {}) {
+  let site = params.site || "";
+  let fromDate = params.from || "";
+  let toDate = params.to || "";
+  let clientRows = Array.isArray(params.rows) ? params.rows : null;
+
+  let reportRows = [];
+  if (clientRows && clientRows.length > 0) {
+    reportRows = clientRows;
+  } else {
+    let query = supabase.from("report").select(REPORT_COLS).order("ngay_bao_cao", { ascending: true });
+    if (site && site !== "all" && site !== "ALL") {
+      query = query.eq("ten_site", site);
+    }
+    if (fromDate) query = query.gte("ngay_bao_cao", fromDate);
+    if (toDate) query = query.lte("ngay_bao_cao", toDate);
+    const { data, error } = await query;
+    if (error) throw error;
+    reportRows = (data || []).map(r => mapReportRow(r, DEFAULT_NGUONG));
+  }
+
+  // Sắp xếp theo ngày tăng dần, sau đó theo Site, sau đó theo Khách hàng
+  reportRows.sort((a, b) => {
+    const dComp = String(a.ngayBaoCao || "").localeCompare(String(b.ngayBaoCao || ""));
+    if (dComp !== 0) return dComp;
+    const sComp = String(a.tenSite || "").localeCompare(String(b.tenSite || ""));
+    if (sComp !== 0) return sComp;
+    return String(a.tenKhachHang || "").localeCompare(String(b.tenKhachHang || ""));
+  });
+
+  const wb = new ExcelJS.Workbook();
+  wb.creator = "A.Kitchen Operations Dashboard";
+  wb.lastModifiedBy = "A.Kitchen Dashboard";
+  wb.created = new Date();
+  wb.modified = new Date();
+
+  const ws = wb.addWorksheet("BaoCaoSuatAnPivot", {
+    views: [{ state: "frozen", ySplit: 1 }]
+  });
+
+  // Quy chuẩn: Font Aptos, Size 11
+  // Header: Navy #1F4E79, Chữ trắng, Bold
+  // Căn lề: Số căn phải, Ngày tháng căn giữa, Văn bản căn trái.
+  // Luôn bật: Freeze panes và AutoFilter.
+
+  ws.columns = [
+    { header: "Ngày báo cáo", key: "ngay", width: 15 },
+    { header: "Site / Bếp", key: "site", width: 30 },
+    { header: "Khách hàng / Điểm ăn", key: "khach", width: 32 },
+    { header: "Sáng", key: "sang", width: 12 },
+    { header: "Trưa", key: "trua", width: 12 },
+    { header: "Chiều", key: "chieu", width: 12 },
+    { header: "Nhân viên", key: "nv", width: 12 },
+    { header: "Hủy", key: "huy", width: 12 },
+    { header: "Lưu mẫu tại trường", key: "lm_truong", width: 20 },
+    { header: "Lưu mẫu tại site", key: "lm_site", width: 18 },
+    { header: "Giáo viên", key: "gv", width: 12 },
+    { header: "Tổng suất", key: "tong", width: 14 },
+    { header: "Giao hàng", key: "giao", width: 14 },
+    { header: "Thất thoát", key: "that_thoat", width: 13 },
+    { header: "Ghi chú / Đề xuất", key: "ghi_chu", width: 38 }
+  ];
+
+  // Format header row (Row 1)
+  const headerRow = ws.getRow(1);
+  headerRow.height = 28;
+  headerRow.eachCell((cell) => {
+    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E79" } };
+    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF0F2D4A" } },
+      left: { style: "thin", color: { argb: "FF0F2D4A" } },
+      bottom: { style: "medium", color: { argb: "FF0F2D4A" } },
+      right: { style: "thin", color: { argb: "FF0F2D4A" } }
+    };
+  });
+
+  let sumSang = 0, sumTrua = 0, sumChieu = 0, sumNV = 0, sumHuy = 0;
+  let sumLMTruong = 0, sumLMSite = 0, sumGV = 0, sumTong = 0, sumThatThoat = 0;
+
+  reportRows.forEach((r, idx) => {
+    const siteName = String(r.tenSite || r.ten_site || "");
+    const siteCode = String(r.site || "");
+    const isDaPhuc = siteName.toLowerCase().includes("đa phúc") || 
+                     siteName.toLowerCase().includes("da phuc") ||
+                     siteCode.toUpperCase() === "K505";
+    const lmTruong = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDaPhuc ? Number(r.suatLuuMau || 0) : 0);
+    const lmSite = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDaPhuc ? Number(r.suatLuuMau || 0) : 0);
+    const sang = Number(r.suatSang || 0);
+    const trua = Number(r.suatTrua || 0);
+    const chieu = Number(r.suatChieu || 0);
+    const nv = Number(r.suatNhanVien || 0);
+    const huy = Number(r.suatHuy || 0);
+    const gv = Number(r.suatGiaoVien || 0);
+    const tong = (r.tongSuat || 0) + lmTruong + lmSite + gv;
+    const thatThoat = Number(r.soThatThoat || 0);
+
+    sumSang += sang;
+    sumTrua += trua;
+    sumChieu += chieu;
+    sumNV += nv;
+    sumHuy += huy;
+    sumLMTruong += lmTruong;
+    sumLMSite += lmSite;
+    sumGV += gv;
+    sumTong += tong;
+    sumThatThoat += thatThoat;
+
+    const row = ws.addRow({
+      ngay: r.ngayBaoCao || "",
+      site: r.tenSite || "",
+      khach: r.tenKhachHang || "(Chưa có tên)",
+      sang, trua, chieu, nv, huy,
+      lm_truong: lmTruong,
+      lm_site: lmSite,
+      gv,
+      tong,
+      giao: r.giaoTre ? `Trễ ${r.phutTre || ""}p` : "Đúng giờ",
+      that_thoat: thatThoat,
+      ghi_chu: r.deXuat || r.nguyenNhanThatThoat || ""
+    });
+
+    row.height = 20;
+
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: "Aptos", size: 11, bold: false };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE0E0E0" } },
+        left: { style: "thin", color: { argb: "FFE0E0E0" } },
+        bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
+        right: { style: "thin", color: { argb: "FFE0E0E0" } }
+      };
+
+      if (colNumber === 1 || colNumber === 13) {
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+      } else if (colNumber === 2 || colNumber === 3 || colNumber === 15) {
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+      } else {
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+        cell.numFmt = "#,##0";
+      }
+
+      if (idx % 2 === 1) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF9FAFB" } };
+      }
+    });
+  });
+
+  const totalRow = ws.addRow({
+    ngay: "TỔNG CỘNG",
+    site: "",
+    khach: `${reportRows.length} dòng báo cáo`,
+    sang: sumSang,
+    trua: sumTrua,
+    chieu: sumChieu,
+    nv: sumNV,
+    huy: sumHuy,
+    lm_truong: sumLMTruong,
+    lm_site: sumLMSite,
+    gv: sumGV,
+    tong: sumTong,
+    giao: "",
+    that_thoat: sumThatThoat,
+    ghi_chu: ""
+  });
+
+  totalRow.height = 24;
+  totalRow.eachCell((cell, colNumber) => {
+    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F4F8" } };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF1F4E79" } },
+      left: { style: "thin", color: { argb: "FFE0E0E0" } },
+      bottom: { style: "double", color: { argb: "FF1F4E79" } },
+      right: { style: "thin", color: { argb: "FFE0E0E0" } }
+    };
+    if (colNumber === 1) {
+      cell.alignment = { vertical: "middle", horizontal: "center" };
+    } else if (colNumber === 2 || colNumber === 3 || colNumber === 15) {
+      cell.alignment = { vertical: "middle", horizontal: "left" };
+    } else {
+      cell.alignment = { vertical: "middle", horizontal: "right" };
+      cell.numFmt = "#,##0";
+    }
+  });
+
+  ws.autoFilter = {
+    from: { row: 1, column: 1 },
+    to: { row: reportRows.length + 1, column: 15 }
+  };
+
+  const buffer = await wb.xlsx.writeBuffer();
+  const base64Data = Buffer.from(buffer).toString("base64");
+  const siteStr = site && site !== "all" ? site.replace(/[^a-zA-Z0-9_\u00C0-\u024F\u1E00-\u1EFF-]/g, "_").slice(0, 30) : "ALL_SITES";
+  const dateStr = (fromDate || "all") + "_" + (toDate || "now");
+  const filename = `Bao_cao_suat_an_pivot_${siteStr}_${dateStr}.xlsx`;
+
+  return {
+    ok: true,
+    name: filename,
+    data: base64Data,
+    mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    rowCount: reportRows.length
+  };
 }
 
 
