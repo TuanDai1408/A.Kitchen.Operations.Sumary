@@ -71,7 +71,7 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   });
 
   // Verify header labels, expandable columns and cards
-  assert.ok(sRoot.includes("Các tháng đã chốt (T'+startM+'–T"), 'script.js must contain closed months header starting from startM');
+  assert.ok(sRoot.includes("Các tháng đã chốt ('+closedRangeStr+')"), 'script.js must contain closed months header with dynamic range');
   assert.ok(sRoot.includes('YTM-1'), 'script.js must contain YTM-1 header');
   assert.ok(sRoot.includes('kh-expandable-th'), 'script.js must contain expandable month th');
   assert.ok(sRoot.includes('( Click vào để xem chi tiết theo tuần )'), 'script.js must contain hover note for collapsed month');
@@ -90,11 +90,11 @@ test('Ke Hoach Comparison Table - Client script.js and public/script.js parity',
   assert.ok(sRoot.includes('kh-aop-tooltip'), 'script.js must contain tooltip element');
   assert.ok(sRoot.includes('font-family="Roboto, sans-serif"'), 'script.js SVG text must use Roboto font');
 
-  // Verify time filter from 03/2026 for both charts
-  assert.ok(sRoot.includes("p.key >= '2026-03'"), 'script.js must filter periods from 03/2026');
-  assert.ok(sPub.includes("p.key >= '2026-03'"), 'public/script.js must filter periods from 03/2026');
+  // Verify dynamic time filter using first actual period key
+  assert.ok(sRoot.includes("firstActKey && p.key < firstActKey"), 'script.js must dynamically filter periods before first actual period');
+  assert.ok(sPub.includes("firstActKey && p.key < firstActKey"), 'public/script.js must dynamically filter periods before first actual period');
 
-  assert.ok(sPub.includes("Các tháng đã chốt (T'+startM+'–T"), 'public/script.js must contain closed months header starting from startM');
+  assert.ok(sPub.includes("Các tháng đã chốt ('+closedRangeStr+')"), 'public/script.js must contain closed months header with dynamic range');
   assert.ok(sPub.includes('YTM-1'), 'public/script.js must contain YTM-1 header');
   assert.ok(sPub.includes('kh-expandable-th'), 'public/script.js must contain expandable month th');
   assert.ok(sPub.includes('( Click vào để xem chi tiết theo tuần )'), 'public/script.js must contain hover note for collapsed month');

@@ -63,5 +63,63 @@ test('Ke Hoach SACN Filter - Frontend markup and script logic', () => {
     assert.ok(s.includes('function kh_firstActualPeriodKey'), `${file} must define kh_firstActualPeriodKey`);
     assert.ok(s.includes('kh_firstActualPeriodKey'), `${file} must use kh_firstActualPeriodKey`);
     assert.ok(s.includes("'pfScope'"), `${file} must bind event listener for #pfScope`);
+    assert.ok(s.includes("closedRangeStr = 'T' + startM + (startM === curM - 1 ? '' : '–T' + (curM - 1))"), `${file} must calculate dynamic closedRangeStr starting from startM`);
   });
+});
+
+test('Ke Hoach SACN Filter - Comparison table and chart start month logic excludes past months without revenue', async () => {
+  const sacnData = await getKeHoachData({ scope: 'sacn', sacn: true });
+  assert.ok(sacnData && sacnData.ok);
+
+  // Helper simulating kh_periodAgg and kh_firstActualPeriodKey from client script
+  function mockPeriodAgg(per, sites) {
+    let dt = 0;
+    const sitesToCheck = (sites && sites.length) ? sites : Object.keys(per.bySite || {});
+    sitesToCheck.forEach(s => {
+      const siteObj = per.bySite && per.bySite[s];
+      if (siteObj && siteObj.DoanhThu && siteObj.DoanhThu.actual > 0) {
+        dt += siteObj.DoanhThu.actual;
+      }
+    });
+    return { hasActual: dt > 0, DoanhThu: { actual: dt } };
+  }
+
+  function mockFirstActualPeriodKey(periods, sites) {
+    let minKey = '';
+    (periods || []).forEach(p => {
+      if (!String(p.key || '').startsWith('2026-')) return;
+      const agg = mockPeriodAgg(p, sites);
+      if (agg.hasActual && agg.DoanhThu.actual > 0) {
+        if (!minKey || p.key < minKey) minKey = p.key;
+      }
+    });
+    return minKey;
+  }
+
+  // 1. In SACN for All Sites: Months 2026-01 to 2026-06 have 0 revenue. First actual month is 2026-07 (T7)
+  const firstActAllSacn = mockFirstActualPeriodKey(sacnData.periods, []);
+  assert.strictEqual(firstActAllSacn, '2026-07', 'In SACN mode across all sites, first month with actual revenue must be 2026-07 (T7)');
+  const startMAllSacn = parseInt(firstActAllSacn.slice(5, 7), 10);
+  assert.strictEqual(startMAllSacn, 7, 'startM in comparison table for SACN all sites must be 7 (T7)');
+
+  // 2. In SACN for site R515 (G-Group): Months 2026-01 to 2026-08 have 0 revenue. First actual month is 2026-09 (T9)
+  const firstActR515 = mockFirstActualPeriodKey(sacnData.periods, ['MB Bếp ăn canteen G – Group']);
+  assert.strictEqual(firstActR515, '2026-09', 'In SACN mode for R515, first month with actual revenue must be 2026-09 (T9)');
+  const startMR515 = parseInt(firstActR515.slice(5, 7), 10);
+  assert.strictEqual(startMR515, 9, 'startM in comparison table for R515 must be 9 (T9)');
+
+  // 3. Verify closedCols for curM = 11:
+  // For SACN all sites: closedCols only includes T7, T8, T9, T10 (T3..T6 completely excluded)
+  const closedColsAllSacn = [];
+  for (let m = startMAllSacn; m < 11; m++) {
+    closedColsAllSacn.push('T' + m);
+  }
+  assert.deepStrictEqual(closedColsAllSacn, ['T7', 'T8', 'T9', 'T10'], 'closedCols for SACN all sites must be T7, T8, T9, T10');
+
+  // For R515: closedCols only includes T9, T10 (T3..T8 completely excluded)
+  const closedColsR515 = [];
+  for (let m = startMR515; m < 11; m++) {
+    closedColsR515.push('T' + m);
+  }
+  assert.deepStrictEqual(closedColsR515, ['T9', 'T10'], 'closedCols for R515 must be T9, T10');
 });

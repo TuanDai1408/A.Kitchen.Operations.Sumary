@@ -12359,7 +12359,9 @@ function kh_weekAgg(per, weekKey, sites){
 // Tìm kỳ đầu tiên thực sự có số liệu thực tế / doanh thu (để loại bỏ các tháng không có doanh thu trở về trước)
 function kh_firstActualPeriodKey(periods, sites){
   var minKey = '';
+  var year = String(PF.year || '2026');
   (periods || []).forEach(function(p){
+    if (year && !String(p.key || '').startsWith(year + '-')) return;
     var agg = kh_periodAgg(p, sites);
     if (agg.hasActual && (agg.DoanhThu.actual > 0 || (agg.SanLuong && agg.SanLuong.actual > 0))) {
       if (!minKey || p.key < minKey) minKey = p.key;
@@ -12914,11 +12916,10 @@ function drawKhAch(){
   var sites = kh_selSites();
   var allPeriods = (KH && KH.periods) || [];
 
-  // Lọc hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
+  // Lọc hiển thị từ lúc có phát sinh giao dịch (loại bỏ các tháng không có doanh thu trở về trước)
+  var firstActKey = kh_firstActualPeriodKey(allPeriods, sites);
   var validPeriods = allPeriods.filter(function(p){
-    if (PF.year === 2026 || !PF.year) {
-      return p.key >= '2026-03';
-    }
+    if (firstActKey && p.key < firstActKey) return false;
     return true;
   });
 
@@ -13204,8 +13205,11 @@ function kh7ComparisonTableHtml(m, sites, periods){
     return pMap[k] || { key: k, label: 'Tháng ' + (monthNum < 10 ? '0' + monthNum : monthNum) + '/' + year, bySite: {} };
   };
 
-  // 1. Thu thập dữ liệu các tháng đã chốt (từ T3 khi năm 2026, hoặc T1 khi năm khác đến T[curM-1])
-  var startM = (year === '2026' ? 3 : 1);
+  // 1. Thu thập dữ liệu các tháng đã chốt (loại bỏ các tháng không có doanh thu trở về trước)
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var startM = firstActKey ? parseInt(firstActKey.slice(5, 7), 10) : (year === '2026' ? 3 : 1);
+  if (startM < 1) startM = 1;
+  if (startM > curM) startM = curM;
   var closedCols = [];
   var sumPlanClosed = 0, sumActClosed = 0, countPlanClosed = 0, countActClosed = 0;
   for (var mIdx = startM; mIdx < curM; mIdx++) {
@@ -13223,9 +13227,10 @@ function kh7ComparisonTableHtml(m, sites, periods){
   // Cột YTM-1 (LK T[startM]–T[curM-1])
   var ytm1Plan = isPct ? (countPlanClosed ? sumPlanClosed / countPlanClosed : null) : sumPlanClosed;
   var ytm1Act = isPct ? (countActClosed ? sumActClosed / countActClosed : null) : (countActClosed ? sumActClosed : null);
+  var ytm1Label = 'LK T' + startM + (startM === curM - 1 ? '' : '–T' + (curM - 1));
   var ytm1Col = {
     code: 'ytm1',
-    label: 'LK T' + startM + '–T' + (curM - 1),
+    label: ytm1Label,
     plan: ytm1Plan,
     act: ytm1Act,
     hasAct: ytm1Act !== null
@@ -13369,8 +13374,11 @@ function kh7ComparisonTableHtml(m, sites, periods){
   var h = '<table class="kh7-table kh-cmp-table"><thead>';
   h += '<tr class="kh-grp-row">';
   h += '<th class="kh7-c-name" rowspan="2">Chỉ tiêu / đơn vị ('+esc(U)+')</th>';
-  h += '<th colspan="'+closedCols.length+'" class="kh-grp-th kh-grp-closed">Các tháng đã chốt (T'+startM+'–T'+(curM-1)+')</th>';
-  h += '<th colspan="1" class="kh-grp-th kh-grp-ytm">YTM-1</th>';
+  if (closedCols.length > 0) {
+    var closedRangeStr = 'T' + startM + (startM === curM - 1 ? '' : '–T' + (curM - 1));
+    h += '<th colspan="'+closedCols.length+'" class="kh-grp-th kh-grp-closed">Các tháng đã chốt ('+closedRangeStr+')</th>';
+    h += '<th colspan="1" class="kh-grp-th kh-grp-ytm">YTM-1</th>';
+  }
 
   if (isCurExpanded) {
     h += '<th colspan="4" class="kh-grp-th kh-grp-cur kh-expandable-th expanded" data-m="'+curM+'" title="( Click để thu gọn theo tháng )">'+
@@ -13404,8 +13412,10 @@ function kh7ComparisonTableHtml(m, sites, periods){
   h += '</tr>';
 
   h += '<tr class="kh-sub-row">';
-  closedCols.forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
-  h += '<th class="kh-col-ytm-hd">'+esc(ytm1Col.label)+'</th>';
+  if (closedCols.length > 0) {
+    closedCols.forEach(function(c){ h += '<th>'+esc(c.label)+'</th>'; });
+    h += '<th class="kh-col-ytm-hd">'+esc(ytm1Col.label)+'</th>';
+  }
   if (isCurExpanded) {
     curWeeksCols.forEach(function(c){ h += '<th class="kh-col-cur-hd">'+esc(c.label)+'</th>'; });
   } else {
@@ -13424,8 +13434,10 @@ function kh7ComparisonTableHtml(m, sites, periods){
 
   // DÒNG 1: 1. Kế hoạch (KH Target)
   h += '<tr class="kh7-r1"><td class="kh7-c-name">1. Kế hoạch (KH Target)</td>';
-  closedCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
-  h += '<td class="kh-col-ytm">'+(ytm1Col.plan!==null&&ytm1Col.plan!==undefined?f(ytm1Col.plan):dash)+'</td>';
+  if (closedCols.length > 0) {
+    closedCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
+    h += '<td class="kh-col-ytm">'+(ytm1Col.plan!==null&&ytm1Col.plan!==undefined?f(ytm1Col.plan):dash)+'</td>';
+  }
   if (isCurExpanded) {
     curWeeksCols.forEach(function(c){ h += '<td>'+(c.plan!==null&&c.plan!==undefined?f(c.plan):dash)+'</td>'; });
   } else {
@@ -13445,8 +13457,10 @@ function kh7ComparisonTableHtml(m, sites, periods){
 
   // DÒNG 2: 2. Thực tế (TT)
   h += '<tr class="kh7-r2"><td class="kh7-c-name">2. Thực tế (TT)</td>';
-  closedCols.forEach(function(c){ h += '<td>'+(c.act!==null&&c.act!==undefined?f(c.act):dash)+'</td>'; });
-  h += '<td class="kh-col-ytm">'+(ytm1Col.act!==null&&ytm1Col.act!==undefined?f(ytm1Col.act):dash)+'</td>';
+  if (closedCols.length > 0) {
+    closedCols.forEach(function(c){ h += '<td>'+(c.act!==null&&c.act!==undefined?f(c.act):dash)+'</td>'; });
+    h += '<td class="kh-col-ytm">'+(ytm1Col.act!==null&&ytm1Col.act!==undefined?f(ytm1Col.act):dash)+'</td>';
+  }
   if (isCurExpanded) {
     curWeeksCols.forEach(function(c){ h += '<td>'+(c.hasAct?f(c.act):dash)+'</td>'; });
   } else {
@@ -13465,10 +13479,12 @@ function kh7ComparisonTableHtml(m, sites, periods){
 
   // DÒNG 3: 3. Thực tế, chưa có thì cần đạt (YTG)
   h += '<tr class="kh7-r3"><td class="kh7-c-name">3. Thực tế, chưa có thì cần đạt (YTG)</td>';
-  closedCols.forEach(function(c){
-    h += '<td>'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge tt">TT</span></td>';
-  });
-  h += '<td class="kh-col-ytm">'+(ytm1Col.l3!==null&&ytm1Col.l3!==undefined?f(ytm1Col.l3):dash)+(ytm1Col.act!==null?'<span class="kh7-badge tt">TT</span>':'')+'</td>';
+  if (closedCols.length > 0) {
+    closedCols.forEach(function(c){
+      h += '<td>'+(c.l3!==null&&c.l3!==undefined?f(c.l3):dash)+'<span class="kh7-badge tt">TT</span></td>';
+    });
+    h += '<td class="kh-col-ytm">'+(ytm1Col.l3!==null&&ytm1Col.l3!==undefined?f(ytm1Col.l3):dash)+(ytm1Col.act!==null?'<span class="kh7-badge tt">TT</span>':'')+'</td>';
+  }
   if (isCurExpanded) {
     curWeeksCols.forEach(function(c){
       if (c.hasAct){
@@ -13498,10 +13514,12 @@ function kh7ComparisonTableHtml(m, sites, periods){
 
   // DÒNG 4: 4. Chênh lệch (Dòng 3 − KH)
   h += '<tr class="kh7-r4"><td class="kh7-c-name">4. Chênh lệch (Dòng 3 − KH)</td>';
-  closedCols.forEach(function(c){
-    h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
-  });
-  h += '<td class="kh-col-ytm" style="'+kh7DiffStyle(m, ytm1Col.diff, ytm1Col.hasAct)+'">'+(ytm1Col.diff!==null&&ytm1Col.diff!==undefined?kh7sgn(m, ytm1Col.diff):dash)+'</td>';
+  if (closedCols.length > 0) {
+    closedCols.forEach(function(c){
+      h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
+    });
+    h += '<td class="kh-col-ytm" style="'+kh7DiffStyle(m, ytm1Col.diff, ytm1Col.hasAct)+'">'+(ytm1Col.diff!==null&&ytm1Col.diff!==undefined?kh7sgn(m, ytm1Col.diff):dash)+'</td>';
+  }
   if (isCurExpanded) {
     curWeeksCols.forEach(function(c){
       h += '<td style="'+kh7DiffStyle(m, c.diff, c.hasAct)+'">'+(c.diff!==null&&c.diff!==undefined?kh7sgn(m, c.diff):dash)+'</td>';
@@ -13619,8 +13637,11 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     KHUI.khAopCut = cut;
   }
 
-  // Lọc các tháng đã chốt và các tháng thiếu dữ liệu từ tháng có giao dịch (T3 khi năm 2026) đến cut
-  var startMonth = (year === '2026' ? 3 : 1);
+  // Lọc các tháng đã chốt và các tháng thiếu dữ liệu từ tháng có dữ liệu thực tế đầu tiên đến cut
+  var firstActKey = kh_firstActualPeriodKey(periods, sites);
+  var startMonth = firstActKey ? parseInt(firstActKey.slice(5, 7), 10) : (year === '2026' ? 3 : 1);
+  if (startMonth < 1) startMonth = 1;
+  if (startMonth > (maxAvailableCut || 11)) startMonth = maxAvailableCut || 11;
   var closedMonths = [];
   var missingMonths = [];
   for (var i = startMonth - 1; i < cut; i++) {
@@ -13679,7 +13700,7 @@ function kh7AopVarianceChartHtml(m, sites, periods){
   var selectHtml = '<select id="khAopCutSelect" class="kh-select-sm">';
   for (var sm = 1; sm <= (maxAvailableCut || 12); sm++) {
     var hasNum = allMonthsData[sm - 1] && allMonthsData[sm - 1].hasAct;
-    if (sm < (year === '2026' ? 3 : 1)) continue;
+    if (sm < startMonth) continue;
     selectHtml += '<option value="' + sm + '"' + (sm === cut ? ' selected' : '') + '>' +
       'Tháng ' + sm + (hasNum ? ' (đã có số)' : ' (chưa có số)') +
     '</option>';
@@ -14003,6 +14024,7 @@ function kh7BodyHtml(sites, periods){
     if (firstActKey && p.key < firstActKey) return false;
     return true;
   });
+  var startM = firstActKey ? parseInt(firstActKey.slice(5, 7), 10) : (String(PF.year)==='2026'||!PF.year ? 3 : 1);
   var m = kh_metricByKey(KHUI.metric);
   var S = kh_buildSeries(m, sites, validPeriods);
   var perWord = (PF.gran==='quarter')?'quý':(PF.gran==='year'?'năm':'tháng');
@@ -14018,7 +14040,7 @@ function kh7BodyHtml(sites, periods){
   if (KHUI.kh7Mode === 'ytd') {
     var chartS = kh_buildSeries(m, sites, validPeriods);
     h += '<div class="kh7-chart-t">'+svg(IC.line,14,C.brand)+'Biểu đồ so sánh &amp; đường lũy kế tới cuối năm</div>'+
-         '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+' (từ 03/'+PF.year+')'+
+         '<div class="kh7-chart-s">Chỉ tiêu: '+esc(m.label)+' ('+esc(m.unit7||'')+') · Phạm vi: Năm '+PF.year+' (từ '+(startM < 10 ? '0' + startM : startM)+'/'+PF.year+')'+
          ' · Cột: '+chartS.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
          '<div class="cbox kh7-chart"><canvas id="chKh7"></canvas></div>';
   } else {
