@@ -1502,8 +1502,10 @@ export async function getKeHoachData(filtersParam) {
     filters = filtersParam;
   }
 
+  const isSacn = Boolean(filters.sacn || filters.scope === "sacn" || filters.tab === "sacn");
+
   // Sử dụng fetchAllRows để lấy TOÀN BỘ dữ liệu (tránh bị cắt ở 1000 dòng)
-  const [plRows, duAnRes, thamSoRes, opexRes, repRows, txRows] = await Promise.all([
+  const [plRows, duAnRes, thamSoRes, opexRes, repRowsRaw, txRowsRaw] = await Promise.all([
     fetchAllRows("kehoach_pl_thang", "*", "ky"),
     supabase.from("kehoach_duan").select("*"),
     supabase.from("kehoach_thamso").select("*"),
@@ -1511,6 +1513,33 @@ export async function getKeHoachData(filtersParam) {
     fetchAllRows("report", "ten_site, ngay_bao_cao, tong_suat, suat_huy", "ngay_bao_cao"),
     fetchAllRows("transactions", "ten_cua_hang, ma_cua_hang, billing_date, thanh_tien_truoc_thue, ck_truoc_thue, gia_von, so_luong, dvt, ly_do_tra_hang, loai_chung_tu_billing", "billing_date")
   ]);
+
+  let txRows = txRowsRaw || [];
+  let repRows = repRowsRaw || [];
+
+  if (isSacn) {
+    const SACN_EXCLUDE = new Set(["K502", "K003", "K800", "D007"]);
+    txRows = txRows.filter(t => {
+      if (SACN_EXCLUDE.has(t.ma_cua_hang)) return false;
+      const s = t.ten_cua_hang || "";
+      if (/megafar/i.test(s) || /miền nam/i.test(s)) return false;
+      if (t.ma_cua_hang === "R515" || /g[\s\-_–—]*group/i.test(s)) {
+        const d = String(t.billing_date || "");
+        if (d < "2026-09-18") return false;
+      }
+      return true;
+    });
+
+    repRows = repRows.filter(r => {
+      const s = r.ten_site || "";
+      if (/megafar/i.test(s) || /miền nam/i.test(s)) return false;
+      if (/g[\s\-_–—]*group/i.test(s)) {
+        const d = String(r.ngay_bao_cao || "");
+        if (d < "2026-09-18") return false;
+      }
+      return true;
+    });
+  }
 
   const duAnRows = duAnRes.data || [];
   const thamSoRows = thamSoRes.data || [];
@@ -1582,6 +1611,13 @@ export async function getKeHoachData(filtersParam) {
   repRows.forEach(r => { if (r.ten_site) siteSet.add(r.ten_site); });
   txRows.forEach(t => { if (t.ten_cua_hang) siteSet.add(t.ten_cua_hang); });
   siteSet.add(SITE_TONG);
+  if (isSacn) {
+    for (const s of Array.from(siteSet)) {
+      if (/miền nam/i.test(s) || /megafar/i.test(s)) {
+        siteSet.delete(s);
+      }
+    }
+  }
   const viSort = (a, b) => a.localeCompare(b, "vi");
   const sites = Array.from(siteSet).sort(viSort);
 

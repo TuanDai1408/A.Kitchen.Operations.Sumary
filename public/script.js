@@ -645,7 +645,7 @@ var KH_RAW = null;              // payload gốc (theo tháng) từ getKeHoachDa
 var KH = null;                  // payload đã bucket theo gran (month/quarter/year)
 var KH_LOADING = false;
 var KH_INIT = false;            // đã nạp dropdown site lần đầu chưa
-var PF = { gran:'month', nPeriods:24, site:'', year:new Date().getFullYear() };   // site='' nghĩa là cộng dồn tất cả
+var PF = { gran:'month', nPeriods:24, site:'', year:new Date().getFullYear(), scope:'all' };   // site='' nghĩa là cộng dồn tất cả
 // var KHUI = { metric:'DoanhThu' };
 // Site kế hoạch tổng hợp toàn hệ thống (khớp KeHoach_PL_Thang)
 var KEHOACH_SITE_TONG = 'Toàn hệ thống A.Kitchen (Tổng hợp toàn bộ site)';
@@ -12356,6 +12356,18 @@ function kh_weekAgg(per, weekKey, sites){
   return o;
 }
 
+// Tìm kỳ lớn nhất thực sự có số liệu thực tế / doanh thu
+function kh_maxActualPeriodKey(periods, sites){
+  var maxKey = '';
+  (periods || []).forEach(function(p){
+    var agg = kh_periodAgg(p, sites);
+    if (agg.hasActual && (agg.DoanhThu.actual > 0 || (agg.SanLuong && agg.SanLuong.actual > 0))) {
+      if (!maxKey || p.key > maxKey) maxKey = p.key;
+    }
+  });
+  return maxKey;
+}
+
 
 
 
@@ -12596,7 +12608,7 @@ function loadKeHoach(opts){
   if (box && (!KH_RAW || opts.force)) box.innerHTML = akSkeletonHTML('Kế hoạch');
 
   // Backend cắt kỳ từ ĐẦU danh sách nên phải lấy đủ, rồi client tự lọc theo Năm + Số kỳ.
-  return callAPI('getKeHoachData', {filters: JSON.stringify({ gran: 'month', nPeriods: 480, sites: PF.site ? [PF.site] : [] })})
+  return callAPI('getKeHoachData', {filters: JSON.stringify({ gran: 'month', nPeriods: 480, sites: PF.site ? [PF.site] : [], scope: PF.scope || 'all', sacn: (PF.scope === 'sacn') })})
     .then(function(res){
       if (seq !== _tabLoadSeq[tabKey]) return;
       if (res && res.updatedAt) {
@@ -12642,6 +12654,13 @@ function loadKeHoach(opts){
 function renderKeHoach(){ if (!KH_RAW){ loadKeHoach(); return; } if (!KH_INIT){ buildKehoachFilters(); KH_INIT = true; } kh_syncPeriodFilter(); KH = kh_applyGranular(KH_RAW, PF.gran); drawKehoach(); }
 
 function buildKehoachFilters(){
+  var tgScope = document.getElementById('pfScope');
+  if (tgScope) {
+    tgScope.querySelectorAll('button').forEach(function(b){
+      b.classList.toggle('on', b.dataset.v === (PF.scope || 'all'));
+    });
+  }
+
   var ySel = document.getElementById('pfYear');
   if (ySel) {
     var years = kh_yearsOf(KH_RAW);
@@ -12655,19 +12674,19 @@ function buildKehoachFilters(){
   }
 
   var sel = document.getElementById('pfSite');
-  // sel.innerHTML = '<option value="">Tất cả site (cộng dồn)</option>'+
-  //   KH.sites.map(function(s){
-  //     return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
-  //   }).join('');
-
   var siteOpts = (KH.sites || []).filter(function(s){
-  var t = String(s).toLowerCase();
-  return t.indexOf('toàn hệ thống') < 0 && t.indexOf('tong hop') < 0;
-});
-  sel.innerHTML = '<option value="">Toàn hệ thống A.Kitchen</option>'+
-   siteOpts.map(function(s){
-     return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
-  }).join('');
+    var t = String(s).toLowerCase();
+    return t.indexOf('toàn hệ thống') < 0 && t.indexOf('tong hop') < 0;
+  });
+  if (PF.site && siteOpts.indexOf(PF.site) < 0) {
+    PF.site = '';
+  }
+  if (sel) {
+    sel.innerHTML = '<option value="">Toàn hệ thống A.Kitchen</option>'+
+     siteOpts.map(function(s){
+       return '<option value="'+esc(s)+'"'+(PF.site===s?' selected':'')+'>'+esc(s)+'</option>';
+    }).join('');
+  }
 }
 
 function khInfoItem(label, val){
@@ -12770,8 +12789,12 @@ function drawKehoach(){
     }
   }
 
+  // Chỉ hiển thị tới tháng có dữ liệu thực tế / doanh thu
+  var maxActKey = kh_maxActualPeriodKey(periods, sites);
+  var activePeriods = maxActKey ? periods.filter(function(p){ return p.key <= maxActKey; }) : periods;
+
   // KPI 6 chỉ tiêu
-  html += drawKehoachKPI(sites, periods);
+  html += drawKehoachKPI(sites, activePeriods);
 
   // Chart % đạt kế hoạch - tất cả chỉ tiêu cùng lúc
   html += '<div class="card">'+cardHead(IC.bars,'Tỷ lệ đạt kế hoạch (%) theo kỳ — tất cả chỉ tiêu','')+
@@ -12792,7 +12815,7 @@ function drawKehoach(){
         '<button class="btn btn-out" id="khBtnToggleAll">⇕ Mở tất cả</button>'+
         '<button class="btn btn-fill" id="khBtnXlsx">↓ Excel</button>'+
       '</div>')+
-    '<div class="tw" id="khDetailWrap">'+kehoachTableHtml(sites, periods)+'</div></div>';
+    '<div class="tw" id="khDetailWrap">'+kehoachTableHtml(sites, activePeriods)+'</div></div>';
 
   if (!PF.site){
     html += '<div style="margin-top:9px;font-size:11px;color:#A8A8A8">'+
@@ -12895,7 +12918,7 @@ function drawKhAch(){
     });
   });
 
-  var maxShowIdx = lastActualIdx >= 0 ? Math.min(validPeriods.length - 1, Math.max(lastActualIdx + 2, 5)) : validPeriods.length - 1;
+  var maxShowIdx = lastActualIdx >= 0 ? lastActualIdx : validPeriods.length - 1;
   var periods = validPeriods.slice(0, maxShowIdx + 1);
 
   var ds = METRICS_KH.map(function(m){
@@ -13212,11 +13235,16 @@ function kh7ComparisonTableHtml(m, sites, periods){
     }
   });
 
-  // 3. Tuần của các tháng tiếp theo (ví dụ Tháng 12: W1..W4)
+  // 3. Tuần của các tháng tiếp theo (chỉ lấy các tháng có dữ liệu thực tế / doanh thu)
   var futureWeeksCols = [];
   var futureMonthList = [];
   var futureWeeksByMonth = {};
   for (var fM = curM + 1; fM <= 12; fM++) {
+    var fPerTest = getPer(fM);
+    var fAggTest = kh_periodAgg(fPerTest, sites);
+    if (!fAggTest.hasActual || !(fAggTest.DoanhThu.actual > 0 || (fAggTest.SanLuong && fAggTest.SanLuong.actual > 0))) {
+      continue;
+    }
     futureMonthList.push(fM);
     futureWeeksByMonth[fM] = [];
     var fPer = getPer(fM);
@@ -13576,7 +13604,7 @@ function kh7AopVarianceChartHtml(m, sites, periods){
 
   // Tháng chốt (cut)
   var cut = KHUI.khAopCut;
-  if (!cut || cut < 1 || cut > 12) {
+  if (!cut || cut < 1 || cut > (maxAvailableCut || 12)) {
     cut = maxAvailableCut || 11;
     KHUI.khAopCut = cut;
   }
@@ -13637,10 +13665,11 @@ function kh7AopVarianceChartHtml(m, sites, periods){
     return Number(n).toFixed(1).replace('.', ',') + '%';
   };
 
-  // Dựng Select tháng chốt
+  // Dựng Select tháng chốt (chỉ hiển thị tới tháng có số liệu thực tế / doanh thu)
   var selectHtml = '<select id="khAopCutSelect" class="kh-select-sm">';
-  for (var sm = 1; sm <= 12; sm++) {
+  for (var sm = 1; sm <= (maxAvailableCut || 12); sm++) {
     var hasNum = allMonthsData[sm - 1] && allMonthsData[sm - 1].hasAct;
+    if (sm < (year === '2026' ? 3 : 1)) continue;
     selectHtml += '<option value="' + sm + '"' + (sm === cut ? ' selected' : '') + '>' +
       'Tháng ' + sm + (hasNum ? ' (đã có số)' : ' (chưa có số)') +
     '</option>';
@@ -13958,8 +13987,10 @@ function bindKhAopChartEvents(){
 }
 
 function kh7BodyHtml(sites, periods){
+  var maxActKey = kh_maxActualPeriodKey(periods, sites);
+  var activePeriods = maxActKey ? (periods || []).filter(function(p){ return p.key <= maxActKey; }) : (periods || []);
   var m = kh_metricByKey(KHUI.metric);
-  var S = kh_buildSeries(m, sites, periods);
+  var S = kh_buildSeries(m, sites, activePeriods);
   var perWord = (PF.gran==='quarter')?'quý':(PF.gran==='year'?'năm':'tháng');
   var h = '<div class="kh7-pills" id="kh7Pills">';
   METRICS_KH.forEach(function(x){
@@ -13968,11 +13999,11 @@ function kh7BodyHtml(sites, periods){
   });
   h += '</div>';
   h += '<div class="grid g4 kh7-cards">'+kh7CardsHtml(m, S)+'</div>';
-  h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S, sites, periods)+'</div>';
+  h += '<div class="tw kh7-tbl">'+kh7TableHtml(m, S, sites, activePeriods)+'</div>';
 
   if (KHUI.kh7Mode === 'ytd') {
-    // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
-    var chartPeriods = (periods || []).filter(function(p){
+    // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026) tới tháng có dữ liệu
+    var chartPeriods = activePeriods.filter(function(p){
       if (PF.year === 2026 || !PF.year) {
         return p.key >= '2026-03';
       }
@@ -13984,7 +14015,7 @@ function kh7BodyHtml(sites, periods){
          ' · Cột: '+chartS.n+' '+perWord+' (cột xám: KH, cột xanh/vàng: ước tính TT/KH) · Đường: tổng tích lũy</div>'+
          '<div class="cbox kh7-chart"><canvas id="chKh7"></canvas></div>';
   } else {
-    h += kh7AopVarianceChartHtml(m, sites, periods);
+    h += kh7AopVarianceChartHtml(m, sites, activePeriods);
   }
   return h;
 }
@@ -13992,10 +14023,13 @@ function kh7BodyHtml(sites, periods){
 function drawKehoach7(sites, periods){
   var mode = KHUI.kh7Mode === 'ytd' ? 'ytd' : 'month';
   var m = kh_metricByKey(KHUI.metric);
+  var maxActKey = kh_maxActualPeriodKey(periods, sites);
+  var curM = maxActKey ? parseInt(maxActKey.slice(5, 7), 10) : 11;
+  var titleRange = (String(PF.year)==='2026'||!PF.year) ? ('T3–T' + curM) : ('T1–T' + curM);
   return '<div class="card" id="kh7Card">'+
     '<div class="card-t kh7-head">'+
       '<div class="kh7-hl">'+
-        '<h3>'+svg(IC.table,15,C.brand)+'Theo dõi 7 chỉ tiêu theo tháng ('+(String(PF.year)==='2026'||!PF.year?'T3–T12':'T1–T12')+') &amp; Lũy kế cuối năm</h3>'+
+        '<h3>'+svg(IC.table,15,C.brand)+'Theo dõi 7 chỉ tiêu theo tháng ('+titleRange+') &amp; Lũy kế cuối năm</h3>'+
         '<div class="kh7-hint">'+kh7Hint(m)+'</div>'+
       '</div>'+
       '<div class="kh7-hr"><span class="kh7-tgl-lb">Bảng:</span>'+
@@ -14029,14 +14063,17 @@ function drawKh7Chart(){
   var ctx = ctxOf('chKh7'); if (!ctx) return;
   var m = kh_metricByKey(KHUI.metric);
   var allPeriods = (KH && KH.periods) || [];
+  var sites = kh_selSites();
+  var maxActKey = kh_maxActualPeriodKey(allPeriods, sites);
+  var activePeriods = maxActKey ? allPeriods.filter(function(p){ return p.key <= maxActKey; }) : allPeriods;
   // Lọc thời gian hiển thị từ lúc có phát sinh giao dịch (từ 03/2026 khi xem năm 2026)
-  var filteredPeriods = allPeriods.filter(function(p){
+  var filteredPeriods = activePeriods.filter(function(p){
     if (PF.year === 2026 || !PF.year) {
       return p.key >= '2026-03';
     }
     return true;
   });
-  var S = kh_buildSeries(m, kh_selSites(), filteredPeriods);
+  var S = kh_buildSeries(m, sites, filteredPeriods);
   var f = m.fmt7 || m.fmt;
   var unitTxt = m.unit7 || '';
   var ROB = "'Roboto', sans-serif";
@@ -14126,6 +14163,8 @@ function kh_rowCalc(m, sites, per){
 }
 
 function kehoachTableHtml(sites, periods){
+  var maxActKey = kh_maxActualPeriodKey(periods, sites);
+  var validPeriods = maxActKey ? (periods || []).filter(function(p){ return p.key <= maxActKey; }) : (periods || []);
   var h = '<table><thead><tr><th></th><th>Chỉ tiêu</th><th>Kỳ</th><th class="num">Thực tế</th>'+
     '<th class="num">Kế hoạch</th><th class="num">Chênh lệch</th><th class="ctr">% đạt KH</th></tr></thead><tbody>';
   METRICS_KH.forEach(function(m){
@@ -14133,10 +14172,10 @@ function kehoachTableHtml(sites, periods){
     h += '<tr class="grp-hd hov" data-grp="'+m.key+'" style="cursor:pointer">'+
       '<td style="color:#C0C0C0;width:18px">'+(open?'▾':'▸')+'</td>'+
       '<td colspan="6">'+svg(m.icon,12,m.color)+' &nbsp;'+esc(m.label)+
-      '<span style="font-weight:400;color:#B0B0B0;margin-left:8px">('+periods.length+' kỳ'+
+      '<span style="font-weight:400;color:#B0B0B0;margin-left:8px">('+validPeriods.length+' kỳ'+
       (open?'':' — bấm để xem chi tiết')+')</span></td></tr>';
 
-    periods.forEach(function(per){
+    validPeriods.forEach(function(per){
       var r = kh_rowCalc(m, sites, per);
       var achBg = r.ach===null ? '#FEF6E0' : (r.ach>=100 ? '#E7F6EC' : (r.ach>=90 ? '#FEF6E0' : '#FDECEC'));
       var achFg = r.ach===null ? '#A16207' : (r.ach>=100 ? '#15803D' : (r.ach>=90 ? '#A16207' : '#C0342C'));
@@ -14160,9 +14199,11 @@ function kehoachTableHtml(sites, periods){
 // Gom TOÀN BỘ bảng chi tiết (không phụ thuộc nhóm nào đang mở/đóng trên màn hình)
 // thành mảng phẳng để gửi lên backend xuất Excel.
 function kh_flattenForExport(sites, periods){
+  var maxActKey = kh_maxActualPeriodKey(periods, sites);
+  var validPeriods = maxActKey ? (periods || []).filter(function(p){ return p.key <= maxActKey; }) : (periods || []);
   var rows = [];
   METRICS_KH.forEach(function(m){
-    periods.forEach(function(per){
+    validPeriods.forEach(function(per){
       var r = kh_rowCalc(m, sites, per);
       rows.push({
         metric: m.label,
@@ -14313,13 +14354,23 @@ function bindKehoachFilters(){
     if (forceFetch || !KH_RAW) {
       KH_RAW = null;
       KH = null;
-      loadKeHoach();
+      loadKeHoach({ force: true });
       return;
     }
     kh_syncPeriodFilter();
     KH = kh_applyGranular(KH_RAW, PF.gran);
     drawKehoach();
   };
+
+  var tgScope = document.getElementById('pfScope');
+  if (tgScope) tgScope.addEventListener('click', function(e){
+    var b = e.target.closest('button'); if (!b) return;
+    var newScope = b.dataset.v;
+    if (PF.scope === newScope) return;
+    PF.scope = newScope;
+    tgScope.querySelectorAll('button').forEach(function(x){ x.classList.toggle('on', x === b); });
+    reload(true);
+  });
 
   var tg = document.getElementById('pfGran');
   if (tg) tg.addEventListener('click', function(e){
