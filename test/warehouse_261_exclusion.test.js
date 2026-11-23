@@ -64,7 +64,7 @@ test('Warehouse - KPI card and time series exclude 261 and 262 from GT xuất an
   assert.equal(recVal, 1000000, 'GT nhập must exclude 262');
 });
 
-test('Warehouse - Modal detail preserves 261 in ledger while excluding from sum boxes', () => {
+test('Warehouse - Modal detail and Stock table include all documents without excluding any movement type', () => {
   const matchingItems = [{ stock_begin: 200, price: 10000 }];
   const artTx = [
     { mvt: '101', qty: 50, value: 500000, date: '2026-10-01', art_doc: '1001', item: '1' },
@@ -77,11 +77,9 @@ test('Warehouse - Modal detail preserves 261 in ledger while excluding from sum 
   assert.equal(artTx.length, 4, 'Ledger table must display all 4 rows including 261');
   assert.ok(artTx.some(t => t.mvt === '261'), 'Row 261 must remain visible in ledger table');
 
-  // Sum boxes: Total issue and Total receipt exclude 261 and 262
-  const stockBegin = matchingItems.reduce((s, x) => s + (x.stock_begin || 0), 0);
+  // Đối với riêng bảng này, quy tắc không loại bỏ bất kỳ chứng từ nào:
   let recQty = 0, recVal = 0, issQty = 0, issVal = 0;
   artTx.forEach(t => {
-    if (isProductionOrderIssue(t.mvt)) return;
     if (t.qty >= 0) {
       recQty += t.qty;
       recVal += Math.abs(t.value || 0);
@@ -91,10 +89,10 @@ test('Warehouse - Modal detail preserves 261 in ledger while excluding from sum 
     }
   });
 
-  assert.equal(issQty, 20, 'Tổng xuất (SL) must exclude 261 (only 20 from 201)');
-  assert.equal(issVal, 200000, 'GT xuất in modal must exclude 261 (only 200,000)');
-  assert.equal(recQty, 50, 'Tổng nhập (SL) must exclude 262');
-  assert.equal(recVal, 500000, 'GT nhập in modal must exclude 262');
+  assert.equal(issQty, 80, 'Tổng xuất (SL) includes all negative transactions (20 + 60 = 80)');
+  assert.equal(issVal, 800000, 'GT xuất in modal includes all negative transactions (200,000 + 600,000 = 800,000)');
+  assert.equal(recQty, 60, 'Tổng nhập (SL) includes all positive transactions (50 + 10 = 60)');
+  assert.equal(recVal, 600000, 'GT nhập in modal includes all positive transactions (500,000 + 100,000 = 600,000)');
 });
 
 test('Warehouse - Codebase verification: script.js and server-api.js contain 261 exclusion helpers', () => {

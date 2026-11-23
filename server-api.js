@@ -2096,10 +2096,14 @@ export async function getWarehouseDashboardData(filtersParam) {
       priceMap[artKey] = Math.round(amtAbs / qtyAbs);
     }
 
-    // LOẠI TRỪ khỏi tồn kho đầu kỳ:
-    // - Lệnh sản xuất (261, 262)
-    // - Điều chuyển nội bộ (351, 352, 301, 309...) để không gây âm ảo/double-subtract
-    if (isProductionOrderIssue(cleanMvt) || isTransferMovement(cleanMvt)) return;
+    // Chuẩn hóa dấu cho nghiệp vụ xuất chuyển kho
+    if (cleanMvt === "351" && q > 0) {
+      q = -q;
+      amt = -Math.abs(amt);
+    } else if (cleanMvt === "352" && q < 0) {
+      q = Math.abs(q);
+      amt = Math.abs(amt);
+    }
 
     const key = (r.site || "") + "|" + artKey;
     stockBeginMap[key] = (stockBeginMap[key] || 0) + q;
@@ -2169,22 +2173,14 @@ export async function getWarehouseDashboardData(filtersParam) {
     }
     itemsMap[itemKey].doc_count = (itemsMap[itemKey].doc_count || 0) + 1;
 
-    // LOẠI TRỪ KHỎI GT/SL XUẤT VÀ NHẬP:
-    // 1. isProductionOrderIssue: mov_type 261, 262
-    // 2. isTransferMovement: mov_type 351, 352, 301, 309, 311...
-    // (tránh làm GT xuất tăng một phía gây âm ảo)
-    const isProdOrder = isProductionOrderIssue(t.mov_type || t.mvt);
-    const isTransfer = isTransferMovement(t.mov_type || t.mvt);
-
-    if (!isProdOrder && !isTransfer) {
-      if (t.qty >= 0) {
-        itemsMap[itemKey].receipts += t.qty;
-        itemsMap[itemKey].receipts_val += Math.abs(t.value || 0);
-      } else {
-        itemsMap[itemKey].issues += t.qty;
-        itemsMap[itemKey].issues_abs += Math.abs(t.qty);
-        itemsMap[itemKey].issues_val += Math.abs(t.value || 0);
-      }
+    // Đối với bảng Tồn kho & giao dịch theo mã NVL: quy tắc không loại bỏ bất kỳ chứng từ nào
+    if (t.qty >= 0) {
+      itemsMap[itemKey].receipts += t.qty;
+      itemsMap[itemKey].receipts_val += Math.abs(t.value || 0);
+    } else {
+      itemsMap[itemKey].issues += t.qty;
+      itemsMap[itemKey].issues_abs += Math.abs(t.qty);
+      itemsMap[itemKey].issues_val += Math.abs(t.value || 0);
     }
   });
 

@@ -16153,7 +16153,6 @@ var QLK = (function(){
       }).sort(function(a,b){ return (a.date || '') < (b.date || '') ? -1 : ((a.date || '') > (b.date || '') ? 1 : 0); });
 
       artTx.forEach(function(t){
-        if (isProductionOrderIssue(t.mov_type || t.mvt) || isTransferMovement(t.mov_type || t.mvt)) return;
         if (t.qty >= 0) {
           recQty += t.qty;
           recVal += Math.abs(t.value || 0);
