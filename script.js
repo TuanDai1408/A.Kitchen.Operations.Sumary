@@ -3240,6 +3240,12 @@ function clientFallbackExportSiteDaily(site, from, to) {
 
   if (typeof XLSX !== 'undefined') {
     var ws = XLSX.utils.json_to_sheet(data);
+    ws['!cols'] = [
+      { wch: 14 }, { wch: 30 }, { wch: 32 },
+      { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 }, { wch: 12 },
+      { wch: 20 }, { wch: 18 }, { wch: 12 },
+      { wch: 15 }, { wch: 14 }, { wch: 13 }, { wch: 36 }
+    ];
     var wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, ws, 'BaoCaoSuatAnPivot');
     var sName = site && site !== 'all' ? site.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 30) : 'ALL_SITES';

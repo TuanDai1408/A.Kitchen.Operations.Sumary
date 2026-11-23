@@ -3424,57 +3424,43 @@ export async function exportSiteDailyPivotExcel(params = {}) {
   });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "A.Kitchen Operations Dashboard";
-  wb.lastModifiedBy = "A.Kitchen Dashboard";
+  wb.creator = "A.Kitchen Operations Management System";
+  wb.lastModifiedBy = "A.Kitchen Operations";
   wb.created = new Date();
   wb.modified = new Date();
 
+  // =========================================================================
+  // SHEET 1: BÁO CÁO CHI TIẾT & PIVOT SUẤT ĂN (BaoCaoSuatAnPivot)
+  // =========================================================================
   const ws = wb.addWorksheet("BaoCaoSuatAnPivot", {
-    views: [{ state: "frozen", ySplit: 1 }]
+    views: [{ state: "frozen", ySplit: 6, showGridLines: true }]
   });
 
-  // Quy chuẩn: Font Aptos, Size 11
-  // Header: Navy #1F4E79, Chữ trắng, Bold
-  // Căn lề: Số căn phải, Ngày tháng căn giữa, Văn bản căn trái.
-  // Luôn bật: Freeze panes và AutoFilter.
-
+  // Thiết lập độ rộng chuẩn cho 15 cột
   ws.columns = [
-    { header: "Ngày báo cáo", key: "ngay", width: 15 },
-    { header: "Site / Bếp", key: "site", width: 30 },
-    { header: "Khách hàng / Điểm ăn", key: "khach", width: 32 },
-    { header: "Sáng", key: "sang", width: 12 },
-    { header: "Trưa", key: "trua", width: 12 },
-    { header: "Chiều", key: "chieu", width: 12 },
-    { header: "Nhân viên", key: "nv", width: 12 },
-    { header: "Hủy", key: "huy", width: 12 },
-    { header: "Lưu mẫu tại trường", key: "lm_truong", width: 20 },
-    { header: "Lưu mẫu tại site", key: "lm_site", width: 18 },
-    { header: "Giáo viên", key: "gv", width: 12 },
-    { header: "Tổng suất", key: "tong", width: 14 },
-    { header: "Giao hàng", key: "giao", width: 14 },
-    { header: "Thất thoát", key: "that_thoat", width: 13 },
-    { header: "Ghi chú / Đề xuất", key: "ghi_chu", width: 38 }
+    { key: "ngay", width: 15 },         // Col 1: Ngày báo cáo
+    { key: "site", width: 32 },         // Col 2: Site / Bếp
+    { key: "khach", width: 34 },        // Col 3: Khách hàng / Điểm ăn
+    { key: "sang", width: 13 },         // Col 4: Sáng
+    { key: "trua", width: 13 },         // Col 5: Trưa
+    { key: "chieu", width: 13 },        // Col 6: Chiều
+    { key: "nv", width: 13 },           // Col 7: Nhân viên
+    { key: "huy", width: 12 },          // Col 8: Hủy
+    { key: "lm_truong", width: 20 },    // Col 9: Lưu mẫu tại trường
+    { key: "lm_site", width: 18 },      // Col 10: Lưu mẫu tại site
+    { key: "gv", width: 13 },           // Col 11: Giáo viên
+    { key: "tong", width: 16 },         // Col 12: Tổng suất
+    { key: "giao", width: 14 },         // Col 13: Giao hàng
+    { key: "that_thoat", width: 13 },   // Col 14: Thất thoát
+    { key: "ghi_chu", width: 38 }       // Col 15: Ghi chú / Đề xuất
   ];
 
-  // Format header row (Row 1)
-  const headerRow = ws.getRow(1);
-  headerRow.height = 28;
-  headerRow.eachCell((cell) => {
-    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E79" } };
-    cell.alignment = { vertical: "middle", horizontal: "center", wrapText: true };
-    cell.border = {
-      top: { style: "thin", color: { argb: "FF0F2D4A" } },
-      left: { style: "thin", color: { argb: "FF0F2D4A" } },
-      bottom: { style: "medium", color: { argb: "FF0F2D4A" } },
-      right: { style: "thin", color: { argb: "FF0F2D4A" } }
-    };
-  });
-
+  // Tính toán số liệu tổng hợp cho phần Header & Summary KPI
   let sumSang = 0, sumTrua = 0, sumChieu = 0, sumNV = 0, sumHuy = 0;
   let sumLMTruong = 0, sumLMSite = 0, sumGV = 0, sumTong = 0, sumThatThoat = 0;
+  let lateCount = 0, onTimeCount = 0;
 
-  reportRows.forEach((r, idx) => {
+  reportRows.forEach((r) => {
     const siteName = String(r.tenSite || r.ten_site || "");
     const siteCode = String(r.site || "");
     const isDaPhuc = siteName.toLowerCase().includes("đa phúc") || 
@@ -3502,87 +3488,527 @@ export async function exportSiteDailyPivotExcel(params = {}) {
     sumTong += tong;
     sumThatThoat += thatThoat;
 
-    const row = ws.addRow({
-      ngay: r.ngayBaoCao || "",
-      site: r.tenSite || "",
-      khach: r.tenKhachHang || "(Chưa có tên)",
-      sang, trua, chieu, nv, huy,
-      lm_truong: lmTruong,
-      lm_site: lmSite,
+    if (r.giaoTre) lateCount++;
+    else onTimeCount++;
+  });
+
+  const siteLabel = (site && site !== "all" && site !== "ALL") ? site : "Tất cả các Site / Hub";
+  const dateRangeLabel = (fromDate || toDate) ? ((fromDate ? `Từ ngày ${fromDate}` : "") + (toDate ? ` đến ${toDate}` : "")) : "Toàn bộ thời gian";
+  const now = new Date();
+  const exportTimeLabel = `${String(now.getDate()).padStart(2, "0")}/${String(now.getMonth() + 1).padStart(2, "0")}/${now.getFullYear()} ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+
+  // -------------------------------------------------------------------------
+  // ROW 1: TÊN ĐƠN VỊ / TẬP ĐOÀN
+  // -------------------------------------------------------------------------
+  ws.mergeCells("A1:O1");
+  const r1 = ws.getCell("A1");
+  r1.value = "HỆ THỐNG BẾP ĂN A.KITCHEN — TẬP ĐOÀN TÂN LONG (TAN LONG GROUP)";
+  r1.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF595959" } };
+  r1.alignment = { vertical: "middle", horizontal: "left" };
+  ws.getRow(1).height = 18;
+
+  // -------------------------------------------------------------------------
+  // ROW 2: TIÊU ĐỀ BÁO CÁO CHÍNH
+  // -------------------------------------------------------------------------
+  ws.mergeCells("A2:O2");
+  const r2 = ws.getCell("A2");
+  r2.value = "BÁO CÁO PIVOT CHI TIẾT SUẤT ĂN THEO SITE - NGÀY - KHÁCH HÀNG";
+  r2.font = { name: "Aptos", size: 15, bold: true, color: { argb: "FF1F4E79" } };
+  r2.alignment = { vertical: "middle", horizontal: "left" };
+  ws.getRow(2).height = 28;
+
+  // -------------------------------------------------------------------------
+  // ROW 3: METADATA BÁO CÁO (Phạm vi, Kỳ báo cáo, Ngày giờ xuất, ĐVT)
+  // -------------------------------------------------------------------------
+  ws.mergeCells("A3:O3");
+  const r3 = ws.getCell("A3");
+  r3.value = `Phạm vi: ${siteLabel}   |   Kỳ dữ liệu: ${dateRangeLabel}   |   Thời điểm xuất: ${exportTimeLabel}   |   Đơn vị tính: Suất ăn`;
+  r3.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF595959" } };
+  r3.alignment = { vertical: "middle", horizontal: "left" };
+  ws.getRow(3).height = 19;
+
+  // -------------------------------------------------------------------------
+  // ROW 4: DÃY THẺ EXECUTIVE SUMMARY KPI BANNER (5 Khối Thống kê Trực quan)
+  // -------------------------------------------------------------------------
+  // Khối 1: Tổng suất (A4:C4)
+  ws.mergeCells("A4:C4");
+  const kpi1 = ws.getCell("A4");
+  kpi1.value = `TỔNG CỘNG: ${sumTong.toLocaleString("en-US")} suất (${reportRows.length} dòng)`;
+  kpi1.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
+  kpi1.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE9EEF4" } };
+  kpi1.alignment = { vertical: "middle", horizontal: "center" };
+  kpi1.border = { top: { style: "thin", color: { argb: "FFB0C4DE" } }, bottom: { style: "thin", color: { argb: "FFB0C4DE" } }, left: { style: "thin", color: { argb: "FFB0C4DE" } }, right: { style: "thin", color: { argb: "FFB0C4DE" } } };
+
+  // Khối 2: Suất chính (D4:F4)
+  ws.mergeCells("D4:F4");
+  const kpi2 = ws.getCell("D4");
+  kpi2.value = `Suất chính: ${(sumSang + sumTrua + sumChieu).toLocaleString("en-US")} (S: ${sumSang.toLocaleString("en-US")} | T: ${sumTrua.toLocaleString("en-US")} | C: ${sumChieu.toLocaleString("en-US")})`;
+  kpi2.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF046A38" } };
+  kpi2.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2F0D9" } };
+  kpi2.alignment = { vertical: "middle", horizontal: "center" };
+  kpi2.border = { top: { style: "thin", color: { argb: "FFA9D18E" } }, bottom: { style: "thin", color: { argb: "FFA9D18E" } }, left: { style: "thin", color: { argb: "FFA9D18E" } }, right: { style: "thin", color: { argb: "FFA9D18E" } } };
+
+  // Khối 3: Nhân viên & Hủy (G4:H4)
+  ws.mergeCells("G4:H4");
+  const kpi3 = ws.getCell("G4");
+  kpi3.value = `NV: ${sumNV.toLocaleString("en-US")} | Hủy: ${sumHuy.toLocaleString("en-US")}`;
+  kpi3.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FFC00000" } };
+  kpi3.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCE4D6" } };
+  kpi3.alignment = { vertical: "middle", horizontal: "center" };
+  kpi3.border = { top: { style: "thin", color: { argb: "FFF4B084" } }, bottom: { style: "thin", color: { argb: "FFF4B084" } }, left: { style: "thin", color: { argb: "FFF4B084" } }, right: { style: "thin", color: { argb: "FFF4B084" } } };
+
+  // Khối 4: Lưu mẫu & Giáo viên (I4:K4)
+  ws.mergeCells("I4:K4");
+  const kpi4 = ws.getCell("I4");
+  kpi4.value = `LM Trường: ${sumLMTruong.toLocaleString("en-US")} | LM Site: ${sumLMSite.toLocaleString("en-US")} | GV: ${sumGV.toLocaleString("en-US")}`;
+  kpi4.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF7030A0" } };
+  kpi4.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFEDEDF7" } };
+  kpi4.alignment = { vertical: "middle", horizontal: "center" };
+  kpi4.border = { top: { style: "thin", color: { argb: "FFB4A7D6" } }, bottom: { style: "thin", color: { argb: "FFB4A7D6" } }, left: { style: "thin", color: { argb: "FFB4A7D6" } }, right: { style: "thin", color: { argb: "FFB4A7D6" } } };
+
+  // Khối 5: Thất thoát & Giao hàng (L4:O4)
+  ws.mergeCells("L4:O4");
+  const kpi5 = ws.getCell("L4");
+  const onTimePct = reportRows.length > 0 ? ((onTimeCount / reportRows.length) * 100).toFixed(1) : "100.0";
+  kpi5.value = `Thất thoát: ${sumThatThoat.toLocaleString("en-US")} | Đúng giờ: ${onTimePct}% (${onTimeCount}/${reportRows.length})`;
+  kpi5.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF333333" } };
+  kpi5.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F2F2" } };
+  kpi5.alignment = { vertical: "middle", horizontal: "center" };
+  kpi5.border = { top: { style: "thin", color: { argb: "FFD9D9D9" } }, bottom: { style: "thin", color: { argb: "FFD9D9D9" } }, left: { style: "thin", color: { argb: "FFD9D9D9" } }, right: { style: "thin", color: { argb: "FFD9D9D9" } } };
+
+  ws.getRow(4).height = 25;
+
+  // -------------------------------------------------------------------------
+  // ROW 5: DÒNG PHÂN CÁCH TRỐNG
+  // -------------------------------------------------------------------------
+  ws.getRow(5).height = 9;
+
+  // -------------------------------------------------------------------------
+  // ROW 6: TIÊU ĐỀ CÁC CỘT (TABLE HEADER)
+  // Quy chuẩn: Font Aptos, Size 11, Bold, Màu Navy #1F4E79, Chữ Trắng
+  // -------------------------------------------------------------------------
+  const headerTitles = [
+    "Ngày báo cáo",
+    "Site / Bếp",
+    "Khách hàng / Điểm ăn",
+    "Sáng",
+    "Trưa",
+    "Chiều",
+    "Nhân viên",
+    "Hủy",
+    "Lưu mẫu tại trường",
+    "Lưu mẫu tại site",
+    "Giáo viên",
+    "Tổng suất",
+    "Giao hàng",
+    "Thất thoát",
+    "Ghi chú / Đề xuất"
+  ];
+
+  const headerRow = ws.getRow(6);
+  headerRow.values = headerTitles;
+  headerRow.height = 29;
+  headerRow.eachCell((cell, colNumber) => {
+    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E79" } };
+    cell.alignment = {
+      vertical: "middle",
+      horizontal: (colNumber === 2 || colNumber === 3 || colNumber === 15) ? "left" : "center",
+      wrapText: true
+    };
+    cell.border = {
+      top: { style: "medium", color: { argb: "FF163A5C" } },
+      left: { style: "thin", color: { argb: "FF2E6B9E" } },
+      bottom: { style: "medium", color: { argb: "FF163A5C" } },
+      right: { style: "thin", color: { argb: "FF2E6B9E" } }
+    };
+  });
+
+  // -------------------------------------------------------------------------
+  // ROWS 7+: DỮ LIỆU CHI TIẾT (DATA ROWS)
+  // Quy chuẩn: Font Aptos, Size 11, Regular, Zebra Striping, Căn lề chuẩn
+  // -------------------------------------------------------------------------
+  const startDataRow = 7;
+  reportRows.forEach((r, idx) => {
+    const currentRowNumber = startDataRow + idx;
+    const row = ws.getRow(currentRowNumber);
+
+    const siteName = String(r.tenSite || r.ten_site || "");
+    const siteCode = String(r.site || "");
+    const isDaPhuc = siteName.toLowerCase().includes("đa phúc") || 
+                     siteName.toLowerCase().includes("da phuc") ||
+                     siteCode.toUpperCase() === "K505";
+    const lmTruong = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDaPhuc ? Number(r.suatLuuMau || 0) : 0);
+    const lmSite = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDaPhuc ? Number(r.suatLuuMau || 0) : 0);
+    const sang = Number(r.suatSang || 0);
+    const trua = Number(r.suatTrua || 0);
+    const chieu = Number(r.suatChieu || 0);
+    const nv = Number(r.suatNhanVien || 0);
+    const huy = Number(r.suatHuy || 0);
+    const gv = Number(r.suatGiaoVien || 0);
+    const tong = (r.tongSuat || 0) + lmTruong + lmSite + gv;
+    const thatThoat = Number(r.soThatThoat || 0);
+
+    const deliveryStatus = r.giaoTre ? `Trễ ${r.phutTre || ""}p` : "Đúng giờ";
+    const notes = r.deXuat || r.nguyenNhanThatThoat || "";
+
+    row.values = [
+      r.ngayBaoCao || "",
+      r.tenSite || "",
+      r.tenKhachHang || "(Chưa có tên)",
+      sang,
+      trua,
+      chieu,
+      nv,
+      huy,
+      lmTruong,
+      lmSite,
       gv,
       tong,
-      giao: r.giaoTre ? `Trễ ${r.phutTre || ""}p` : "Đúng giờ",
-      that_thoat: thatThoat,
-      ghi_chu: r.deXuat || r.nguyenNhanThatThoat || ""
-    });
+      deliveryStatus,
+      thatThoat,
+      notes
+    ];
 
-    row.height = 20;
+    row.height = 22;
+
+    const isOdd = idx % 2 === 1;
+    const baseRowBg = isOdd ? "FFF8FAFC" : "FFFFFFFF"; // Zebra striping
 
     row.eachCell((cell, colNumber) => {
-      cell.font = { name: "Aptos", size: 11, bold: false };
+      cell.font = { name: "Aptos", size: 11, bold: false, color: { argb: "FF1E293B" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: baseRowBg } };
       cell.border = {
-        top: { style: "thin", color: { argb: "FFE0E0E0" } },
-        left: { style: "thin", color: { argb: "FFE0E0E0" } },
-        bottom: { style: "thin", color: { argb: "FFE0E0E0" } },
-        right: { style: "thin", color: { argb: "FFE0E0E0" } }
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
       };
 
-      if (colNumber === 1 || colNumber === 13) {
+      if (colNumber === 1) {
+        // Ngày tháng: Căn giữa
         cell.alignment = { vertical: "middle", horizontal: "center" };
       } else if (colNumber === 2 || colNumber === 3 || colNumber === 15) {
+        // Text: Căn trái
         cell.alignment = { vertical: "middle", horizontal: "left" };
+      } else if (colNumber === 13) {
+        // Giao hàng: Căn giữa, màu sắc trạng thái chuyên nghiệp
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        if (r.giaoTre) {
+          cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFDC2626" } };
+        } else {
+          cell.font = { name: "Aptos", size: 11, bold: false, color: { argb: "FF16A34A" } };
+        }
       } else {
+        // Số lượng: Căn phải, định dạng #,##0
         cell.alignment = { vertical: "middle", horizontal: "right" };
         cell.numFmt = "#,##0";
-      }
 
-      if (idx % 2 === 1) {
-        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF9FAFB" } };
+        // Tô sáng riêng cho Cột 12 (Tổng suất) để nổi bật
+        if (colNumber === 12) {
+          cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isOdd ? "FFE9F0F8" : "FFF2F6FA" } };
+        }
+
+        // Tô đỏ nếu có Suất hủy > 0
+        if (colNumber === 8 && huy > 0) {
+          cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFDC2626" } };
+        }
+
+        // Tô vàng/cam nếu có Thất thoát > 0
+        if (colNumber === 14 && thatThoat > 0) {
+          cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFD97706" } };
+        }
       }
     });
   });
 
-  const totalRow = ws.addRow({
-    ngay: "TỔNG CỘNG",
-    site: "",
-    khach: `${reportRows.length} dòng báo cáo`,
-    sang: sumSang,
-    trua: sumTrua,
-    chieu: sumChieu,
-    nv: sumNV,
-    huy: sumHuy,
-    lm_truong: sumLMTruong,
-    lm_site: sumLMSite,
-    gv: sumGV,
-    tong: sumTong,
-    giao: "",
-    that_thoat: sumThatThoat,
-    ghi_chu: ""
-  });
+  // -------------------------------------------------------------------------
+  // DÒNG TỔNG CỘNG CUỐI BẢNG (GRAND TOTAL ROW)
+  // Sử dụng công thức SUBTOTAL(109, ...) để tự động tính lại khi người dùng dùng AutoFilter!
+  // Font Aptos 11, Bold, Màu Navy #1F4E79, Double bottom border
+  // -------------------------------------------------------------------------
+  const endDataRow = reportRows.length > 0 ? (startDataRow + reportRows.length - 1) : startDataRow;
+  const totalRowIndex = endDataRow + 1;
+  const totalRow = ws.getRow(totalRowIndex);
 
-  totalRow.height = 24;
+  totalRow.values = [
+    "TỔNG CỘNG",
+    "",
+    `${reportRows.length} dòng báo cáo`,
+    { formula: `SUBTOTAL(109, D${startDataRow}:D${endDataRow})`, result: sumSang },
+    { formula: `SUBTOTAL(109, E${startDataRow}:E${endDataRow})`, result: sumTrua },
+    { formula: `SUBTOTAL(109, F${startDataRow}:F${endDataRow})`, result: sumChieu },
+    { formula: `SUBTOTAL(109, G${startDataRow}:G${endDataRow})`, result: sumNV },
+    { formula: `SUBTOTAL(109, H${startDataRow}:H${endDataRow})`, result: sumHuy },
+    { formula: `SUBTOTAL(109, I${startDataRow}:I${endDataRow})`, result: sumLMTruong },
+    { formula: `SUBTOTAL(109, J${startDataRow}:J${endDataRow})`, result: sumLMSite },
+    { formula: `SUBTOTAL(109, K${startDataRow}:K${endDataRow})`, result: sumGV },
+    { formula: `SUBTOTAL(109, L${startDataRow}:L${endDataRow})`, result: sumTong },
+    `Đúng giờ: ${reportRows.length > 0 ? ((onTimeCount / reportRows.length) * 100).toFixed(1) : 100}%`,
+    { formula: `SUBTOTAL(109, N${startDataRow}:N${endDataRow})`, result: sumThatThoat },
+    ""
+  ];
+
+  totalRow.height = 26;
   totalRow.eachCell((cell, colNumber) => {
     cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF2F4F8" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2ECF6" } };
     cell.border = {
       top: { style: "thin", color: { argb: "FF1F4E79" } },
-      left: { style: "thin", color: { argb: "FFE0E0E0" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
       bottom: { style: "double", color: { argb: "FF1F4E79" } },
-      right: { style: "thin", color: { argb: "FFE0E0E0" } }
+      right: { style: "thin", color: { argb: "FFCBD5E1" } }
     };
+
     if (colNumber === 1) {
       cell.alignment = { vertical: "middle", horizontal: "center" };
     } else if (colNumber === 2 || colNumber === 3 || colNumber === 15) {
       cell.alignment = { vertical: "middle", horizontal: "left" };
+    } else if (colNumber === 13) {
+      cell.alignment = { vertical: "middle", horizontal: "center" };
     } else {
       cell.alignment = { vertical: "middle", horizontal: "right" };
       cell.numFmt = "#,##0";
     }
   });
 
+  // Kích hoạt AutoFilter cho toàn bộ bảng dữ liệu (từ Row 6 đến hết dòng dữ liệu)
   ws.autoFilter = {
-    from: { row: 1, column: 1 },
-    to: { row: reportRows.length + 1, column: 15 }
+    from: { row: 6, column: 1 },
+    to: { row: endDataRow, column: 15 }
+  };
+
+  // =========================================================================
+  // SHEET 2: BẢNG TỔNG HỢP PIVOT (TongHopPivot)
+  // Tổng hợp theo Site (nếu chọn tất cả) hoặc theo Khách hàng (nếu chọn 1 site)
+  // =========================================================================
+  const summaryKey = (site && site !== "all" && site !== "ALL") ? "KhachHang" : "Site";
+  const ws2Title = summaryKey === "Site" ? "TongHopTheoSite" : "TongHopTheoKhachHang";
+  const ws2 = wb.addWorksheet(ws2Title, {
+    views: [{ state: "frozen", ySplit: 5, showGridLines: true }]
+  });
+
+  ws2.columns = [
+    { key: "item", width: 34 },
+    { key: "count", width: 16 },
+    { key: "sang", width: 13 },
+    { key: "trua", width: 13 },
+    { key: "chieu", width: 13 },
+    { key: "nv", width: 13 },
+    { key: "huy", width: 12 },
+    { key: "lm_truong", width: 20 },
+    { key: "lm_site", width: 18 },
+    { key: "gv", width: 13 },
+    { key: "tong", width: 16 },
+    { key: "pct_huy", width: 14 },
+    { key: "that_thoat", width: 14 }
+  ];
+
+  // Header banner sheet 2
+  ws2.mergeCells("A1:M1");
+  const s2r1 = ws2.getCell("A1");
+  s2r1.value = "HỆ THỐNG BẾP ĂN A.KITCHEN — TẬP ĐOÀN TÂN LONG";
+  s2r1.font = { name: "Aptos", size: 10, bold: true, color: { argb: "FF595959" } };
+  s2r1.alignment = { vertical: "middle", horizontal: "left" };
+  ws2.getRow(1).height = 18;
+
+  ws2.mergeCells("A2:M2");
+  const s2r2 = ws2.getCell("A2");
+  s2r2.value = summaryKey === "Site"
+    ? "BẢNG TỔNG HỢP SUẤT ĂN PIVOT THEO TỪNG SITE / HUB"
+    : `BẢNG TỔNG HỢP SUẤT ĂN PIVOT THEO TỪNG KHÁCH HÀNG — ${siteLabel.toUpperCase()}`;
+  s2r2.font = { name: "Aptos", size: 14, bold: true, color: { argb: "FF1F4E79" } };
+  s2r2.alignment = { vertical: "middle", horizontal: "left" };
+  ws2.getRow(2).height = 26;
+
+  ws2.mergeCells("A3:M3");
+  const s2r3 = ws2.getCell("A3");
+  s2r3.value = `Kỳ dữ liệu: ${dateRangeLabel}   |   Thời điểm xuất: ${exportTimeLabel}   |   Đơn vị tính: Suất ăn`;
+  s2r3.font = { name: "Aptos", size: 10, italic: true, color: { argb: "FF595959" } };
+  s2r3.alignment = { vertical: "middle", horizontal: "left" };
+  ws2.getRow(3).height = 18;
+
+  ws2.getRow(4).height = 8; // Blank separator
+
+  // Group data for sheet 2
+  const groupMap = {};
+  reportRows.forEach((r) => {
+    const groupName = summaryKey === "Site" ? (r.tenSite || "(Chưa có site)") : (r.tenKhachHang || "(Chưa có tên KH)");
+    if (!groupMap[groupName]) {
+      groupMap[groupName] = {
+        name: groupName,
+        count: 0,
+        sang: 0, trua: 0, chieu: 0, nv: 0, huy: 0,
+        lmTruong: 0, lmSite: 0, gv: 0, tong: 0, thatThoat: 0
+      };
+    }
+    const g = groupMap[groupName];
+    g.count++;
+    const isDaPhuc = (r.tenSite || r.ten_site || "").toLowerCase().includes("đa phúc") ||
+                     (r.tenSite || r.ten_site || "").toLowerCase().includes("da phuc");
+    const rawLm = Number(r.suatLuuMau || 0);
+    const lmTr = r.suatLuuMauTruong !== undefined ? Number(r.suatLuuMauTruong || 0) : (isDaPhuc ? rawLm : 0);
+    const lmSt = r.suatLuuMauSite !== undefined ? Number(r.suatLuuMauSite || 0) : (!isDaPhuc ? rawLm : 0);
+    const sang = Number(r.suatSang || 0);
+    const trua = Number(r.suatTrua || 0);
+    const chieu = Number(r.suatChieu || 0);
+    const nv = Number(r.suatNhanVien || 0);
+    const huy = Number(r.suatHuy || 0);
+    const gv = Number(r.suatGiaoVien || 0);
+    const tong = (r.tongSuat || 0) + lmTr + lmSt + gv;
+
+    g.sang += sang;
+    g.trua += trua;
+    g.chieu += chieu;
+    g.nv += nv;
+    g.huy += huy;
+    g.lmTruong += lmTr;
+    g.lmSite += lmSt;
+    g.gv += gv;
+    g.tong += tong;
+    g.thatThoat += Number(r.soThatThoat || 0);
+  });
+
+  const groupList = Object.values(groupMap).sort((a, b) => b.tong - a.tong); // Sắp xếp giảm dần theo sản lượng
+
+  // Header sheet 2 (Row 5)
+  const s2Headers = [
+    summaryKey === "Site" ? "Site / Hub bếp ăn" : "Khách hàng / Điểm ăn",
+    "Số lượt báo cáo",
+    "Sáng",
+    "Trưa",
+    "Chiều",
+    "Nhân viên",
+    "Hủy",
+    "Lưu mẫu tại trường",
+    "Lưu mẫu tại site",
+    "Giáo viên",
+    "Tổng suất",
+    "Tỷ lệ hủy",
+    "Thất thoát"
+  ];
+
+  const s2HeaderRow = ws2.getRow(5);
+  s2HeaderRow.values = s2Headers;
+  s2HeaderRow.height = 28;
+  s2HeaderRow.eachCell((cell, colNumber) => {
+    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFFFFFFF" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF1F4E79" } };
+    cell.alignment = {
+      vertical: "middle",
+      horizontal: colNumber === 1 ? "left" : "center",
+      wrapText: true
+    };
+    cell.border = {
+      top: { style: "medium", color: { argb: "FF163A5C" } },
+      left: { style: "thin", color: { argb: "FF2E6B9E" } },
+      bottom: { style: "medium", color: { argb: "FF163A5C" } },
+      right: { style: "thin", color: { argb: "FF2E6B9E" } }
+    };
+  });
+
+  const s2StartRow = 6;
+  groupList.forEach((g, idx) => {
+    const rowNum = s2StartRow + idx;
+    const row = ws2.getRow(rowNum);
+    const huyPct = g.tong > 0 ? (g.huy / g.tong) : 0;
+
+    row.values = [
+      g.name,
+      g.count,
+      g.sang,
+      g.trua,
+      g.chieu,
+      g.nv,
+      g.huy,
+      g.lmTruong,
+      g.lmSite,
+      g.gv,
+      g.tong,
+      huyPct,
+      g.thatThoat
+    ];
+
+    row.height = 22;
+    const isOdd = idx % 2 === 1;
+    const rowBg = isOdd ? "FFF8FAFC" : "FFFFFFFF";
+
+    row.eachCell((cell, colNumber) => {
+      cell.font = { name: "Aptos", size: 11, bold: false, color: { argb: "FF1E293B" } };
+      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: rowBg } };
+      cell.border = {
+        top: { style: "thin", color: { argb: "FFE2E8F0" } },
+        left: { style: "thin", color: { argb: "FFE2E8F0" } },
+        bottom: { style: "thin", color: { argb: "FFE2E8F0" } },
+        right: { style: "thin", color: { argb: "FFE2E8F0" } }
+      };
+
+      if (colNumber === 1) {
+        cell.alignment = { vertical: "middle", horizontal: "left" };
+      } else if (colNumber === 2) {
+        cell.alignment = { vertical: "middle", horizontal: "center" };
+        cell.numFmt = "#,##0";
+      } else if (colNumber === 12) {
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+        cell.numFmt = "0.0%";
+        if (huyPct > 0.03) {
+          cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FFDC2626" } };
+        }
+      } else {
+        cell.alignment = { vertical: "middle", horizontal: "right" };
+        cell.numFmt = "#,##0";
+        if (colNumber === 11) {
+          cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: isOdd ? "FFE9F0F8" : "FFF2F6FA" } };
+        }
+      }
+    });
+  });
+
+  const s2EndRow = groupList.length > 0 ? (s2StartRow + groupList.length - 1) : s2StartRow;
+  const s2TotalRow = ws2.getRow(s2EndRow + 1);
+
+  s2TotalRow.values = [
+    "TỔNG CỘNG",
+    `${groupList.length} ${summaryKey === "Site" ? "site" : "khách hàng"}`,
+    { formula: `SUBTOTAL(109, C${s2StartRow}:C${s2EndRow})`, result: sumSang },
+    { formula: `SUBTOTAL(109, D${s2StartRow}:D${s2EndRow})`, result: sumTrua },
+    { formula: `SUBTOTAL(109, E${s2StartRow}:E${s2EndRow})`, result: sumChieu },
+    { formula: `SUBTOTAL(109, F${s2StartRow}:F${s2EndRow})`, result: sumNV },
+    { formula: `SUBTOTAL(109, G${s2StartRow}:G${s2EndRow})`, result: sumHuy },
+    { formula: `SUBTOTAL(109, H${s2StartRow}:H${s2EndRow})`, result: sumLMTruong },
+    { formula: `SUBTOTAL(109, I${s2StartRow}:I${s2EndRow})`, result: sumLMSite },
+    { formula: `SUBTOTAL(109, J${s2StartRow}:J${s2EndRow})`, result: sumGV },
+    { formula: `SUBTOTAL(109, K${s2StartRow}:K${s2EndRow})`, result: sumTong },
+    sumTong > 0 ? (sumHuy / sumTong) : 0,
+    { formula: `SUBTOTAL(109, M${s2StartRow}:M${s2EndRow})`, result: sumThatThoat }
+  ];
+
+  s2TotalRow.height = 26;
+  s2TotalRow.eachCell((cell, colNumber) => {
+    cell.font = { name: "Aptos", size: 11, bold: true, color: { argb: "FF1F4E79" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE2ECF6" } };
+    cell.border = {
+      top: { style: "thin", color: { argb: "FF1F4E79" } },
+      left: { style: "thin", color: { argb: "FFCBD5E1" } },
+      bottom: { style: "double", color: { argb: "FF1F4E79" } },
+      right: { style: "thin", color: { argb: "FFCBD5E1" } }
+    };
+    if (colNumber === 1 || colNumber === 2) {
+      cell.alignment = { vertical: "middle", horizontal: colNumber === 1 ? "center" : "left" };
+    } else if (colNumber === 12) {
+      cell.alignment = { vertical: "middle", horizontal: "right" };
+      cell.numFmt = "0.0%";
+    } else {
+      cell.alignment = { vertical: "middle", horizontal: "right" };
+      cell.numFmt = "#,##0";
+    }
+  });
+
+  ws2.autoFilter = {
+    from: { row: 5, column: 1 },
+    to: { row: s2EndRow, column: 13 }
   };
 
   const buffer = await wb.xlsx.writeBuffer();
