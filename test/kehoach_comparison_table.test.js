@@ -135,3 +135,31 @@ test('Ke Hoach Comparison Table - CSS styles in style.css and public/style.css',
     assert.ok(css.includes('.kh-aop-insight-box'), 'CSS must include .kh-aop-insight-box');
   });
 });
+
+test('Ke Hoach Comparison Table - Revenue values formatted in billion VND (tỷ đồng)', () => {
+  const sRoot = fs.readFileSync('script.js', 'utf8');
+  const sPub = fs.readFileSync('public/script.js', 'utf8');
+
+  [sRoot, sPub].forEach((s, idx) => {
+    const file = idx === 0 ? 'script.js' : 'public/script.js';
+    assert.ok(s.includes("['DoanhThu',fmtTy,'tỷ đồng',false]"), `${file} must register DoanhThu with fmtTy and 'tỷ đồng' unit`);
+    assert.ok(s.includes("var isDT = (m.key === 'DoanhThu');"), `${file} must check isDT in kh7ComparisonTableHtml`);
+    assert.ok(s.includes("var U = isDT ? 'TỶ ĐỒNG' : (m.unit7||'').toUpperCase();"), `${file} must set U to 'TỶ ĐỒNG' for DoanhThu`);
+    assert.ok(s.includes("eps = { DoanhThu:5e6"), `${file} must define eps 5e6 for DoanhThu`);
+  });
+
+  // Verify fmtTy logic
+  const fmtTy = function(n){
+    if (n===null||n===undefined||isNaN(n)) return '—';
+    const rounded = Math.round(n / 1e7) / 100;
+    if (Object.is(rounded, -0)) return '0,00 tỷ';
+    return rounded.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' tỷ';
+  };
+
+  assert.strictEqual(fmtTy(1085930698), '1,09 tỷ', '1.085.930.698 must format to 1,09 tỷ');
+  assert.strictEqual(fmtTy(307297055), '0,31 tỷ', '307.297.055 must format to 0,31 tỷ');
+  assert.strictEqual(fmtTy(216369444), '0,22 tỷ', '216.369.444 must format to 0,22 tỷ');
+  assert.strictEqual(fmtTy(7105764930), '7,11 tỷ', '7.105.764.930 must format to 7,11 tỷ');
+  assert.strictEqual(fmtTy(0), '0,00 tỷ', '0 must format to 0,00 tỷ');
+  assert.strictEqual(fmtTy(null), '—', 'null must format to dash');
+});

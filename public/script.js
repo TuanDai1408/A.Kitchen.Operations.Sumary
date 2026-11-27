@@ -12107,8 +12107,15 @@ var METRICS_KH = [
 (function(){
   var byKey = {};
   METRICS_KH.forEach(function(m){ byKey[m.key] = m; });
-  // Định dạng rút gọn theo độ lớn (giống thiết kế): <1 triệu -> "32.408đ";
-  // <1 tỷ -> "172,2 tr"; >=1 tỷ -> "55,60 tỷ".
+  // Định dạng rút gọn theo độ lớn:
+  // Doanh thu luôn hiển thị tỷ đồng (2 chữ số thập phân).
+  // Các chỉ tiêu tiền khác: <1 triệu -> "32.408đ"; <1 tỷ -> "172,2 tr"; >=1 tỷ -> "55,60 tỷ".
+  var fmtTy = function(n){
+    if (n===null||n===undefined||isNaN(n)) return '—';
+    var rounded = Math.round(n / 1e7) / 100;
+    if (Object.is(rounded, -0)) rounded = 0;
+    return rounded.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' tỷ';
+  };
   var fmtTrieu = function(n){
     if (n===null||n===undefined||isNaN(n)) return '—';
     var a = Math.abs(n);
@@ -12118,7 +12125,7 @@ var METRICS_KH = [
   };
   var fmtSuat  = function(n){ return (n===null||n===undefined||isNaN(n)) ? '—' : (Math.round(n||0)).toLocaleString('vi-VN')+' suất'; };
   var fmtPc    = function(n){ return (n===null||n===undefined||isNaN(n)) ? '—' : fmtPct(n); };
-  [['DoanhThu',fmtTrieu,'triệu',false],['SanLuong',fmtSuat,'suất',false],['FoodCost',fmtPc,'%',true],
+  [['DoanhThu',fmtTy,'tỷ đồng',false],['SanLuong',fmtSuat,'suất',false],['FoodCost',fmtPc,'%',true],
    ['LaiGop',fmtTrieu,'triệu',false],['Huy',fmtPc,'%',true],['VatTuTieuHao',fmtTrieu,'triệu',false],
    ['EBITDA',fmtTrieu,'triệu',false]].forEach(function(r){
     var m = byKey[r[0]]; if (!m) return;
@@ -12985,7 +12992,7 @@ var KH7_C = {
 // Độ phân giải hiển thị của từng chỉ tiêu: chênh lệch nhỏ hơn mức này thì
 // coi như bằng 0 (màu xám, không hiện dấu "+").
 (function(){
-  var eps = { DoanhThu:0.5, SanLuong:0.5, FoodCost:0.005, LaiGop:0.5,
+  var eps = { DoanhThu:5e6, SanLuong:0.5, FoodCost:0.005, LaiGop:0.5,
               Huy:0.005, VatTuTieuHao:0.5, EBITDA:0.5 };
   METRICS_KH.forEach(function(m){ m.eps7 = eps[m.key] || 0.5; });
 })();
@@ -13103,7 +13110,9 @@ function kh7DiffStyle(m, v, hasAct){
 function kh7sgn(m, v){
   var f = m.fmt7 || m.fmt;
   if (v === null || v === undefined || isNaN(v)) return '—';
-  return (Math.abs(v) < (m.eps7 || 0) ? '' : (v > 0 ? '+' : '')) + f(v);
+  var zero = Math.abs(v) < (m.eps7 || 0);
+  if (zero) return f(0);
+  return (v > 0 ? '+' : '') + f(v);
 }
 
 // Màu CHỮ của giá trị số (nền ô giữ trắng): dương xanh, âm đỏ,
@@ -13177,8 +13186,14 @@ function kh7CardsHtml(m, S){
 
 // Bảng so sánh nâng cao: YTM-1, tuần tháng hiện tại (W1..W4), các tháng tới và cả năm (FY)
 function kh7ComparisonTableHtml(m, sites, periods){
-  var f = m.fmt7 || m.fmt;
-  var U = (m.unit7||'').toUpperCase();
+  var isDT = (m.key === 'DoanhThu');
+  var f = isDT ? function(n){
+    if (n === null || n === undefined || isNaN(n)) return '—';
+    var rounded = Math.round(n / 1e7) / 100;
+    if (Object.is(rounded, -0)) rounded = 0;
+    return rounded.toLocaleString('vi-VN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + ' tỷ';
+  } : (m.fmt7 || m.fmt);
+  var U = isDT ? 'TỶ ĐỒNG' : (m.unit7||'').toUpperCase();
   var isPct = !!m.isPct;
   var year = String(PF.year || 2026);
   var dash = '<span class="kh7-dash">–</span>';
